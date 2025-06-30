@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(eza:*)",
+      "Bash(mkdir:*)",
+      "Bash(npm run lint)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run lint:*)",
+      "Bash(ls:*)",
+      "Bash(rg:*)",
+      "Bash(npm run type-check:*)"
+    ],
+    "deny": [
+      "Read(*.local)",
+      "Read(.env)",
+      "Read(.env.local)",
+      "Read(secrets/*)",
+      "Read(*.key)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": ["docs-mcp"]
+}

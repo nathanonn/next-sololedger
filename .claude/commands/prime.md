@@ -4,7 +4,7 @@
 
 ## Run the following command
 
-eza . --tree -git-ignore --ignore-glob="node_modules|.git|tmp|.claude|dist"
+eza . --tree -git-ignore --ignore-glob="node_modules|.git|tmp|.claude|dist|.next"
 
 ## Read the following files
 
@@ -13,6 +13,3 @@ eza . --tree -git-ignore --ignore-glob="node_modules|.git|tmp|.claude|dist"
 CLAUDE.md
 notes/rules.md
 notes/requirements.md
-notes/user_journey.md
-notes/schema.md
-notes/plan.md

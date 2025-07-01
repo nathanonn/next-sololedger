@@ -4,7 +4,7 @@
 
 ## Run the following command
 
-eza . --tree -git-ignore --ignore-glob="node_modules|.git|tmp|.claude|dist|.next"
+eza . --tree -git-ignore --ignore-glob="node_modules|.git|tmp|.claude|dist|.next|notes"
 
 ## Read the following files
 

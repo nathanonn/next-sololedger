@@ -18,9 +18,44 @@
       "Read(.env)",
       "Read(.env.local)",
       "Read(secrets/*)",
-      "Read(*.key)"
+      "Read(*.key)",
+      "Bash(cat .env)",
+      "Bash(cat .env.local)",
+      "Bash(cat secrets/*)",
+      "Bash(cat *.key)",
+      "Bash(git config:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git checkout:*)",
+      "Bash(git reset:*)",
+      "Bash(git rebase:*)",
+      "Bash(git merge:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
-  "enabledMcpjsonServers": ["docs-mcp"]
+  "enabledMcpjsonServers": ["docs-mcp"],
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /home/pi/Dev/claude-notifier/claude-webhook-notifier.js"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /home/pi/Dev/claude-notifier/claude-webhook-notifier.js"
+          }
+        ]
+      }
+    ]
+  }
 }

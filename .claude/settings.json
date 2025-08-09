@@ -34,8 +34,8 @@
       "Bash(git merge:*)"
     ]
   },
+  "enabledMcpjsonServers": ["context7"],
   "enableAllProjectMcpServers": true,
-  "enabledMcpjsonServers": ["docs-mcp"],
   "hooks": {
     "Notification": [
       {

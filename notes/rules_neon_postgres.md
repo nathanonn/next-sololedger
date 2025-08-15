@@ -61,7 +61,7 @@ This document defines the comprehensive rules, standards, and best practices for
 - **pgvector** — vector embeddings & similarity search
 - **Zod** — schema validation for forms and API
 
-> We use Neon’s serverless Postgres with connection pooling and pgvector. Prisma connects via the **Neon serverless driver + Prisma driver adapter** (Edge) or standard Postgres (Node), depending on runtime. ([Neon][1])
+> We use Neon’s serverless Postgres with connection pooling and pgvector. Prisma connects via the **Neon serverless driver + Prisma driver adapter** (Edge) or standard Postgres (Node), depending on runtime.
 
 ### API & Network
 
@@ -92,34 +92,148 @@ This document defines the comprehensive rules, standards, and best practices for
 ## Project Structure
 
 ```
-next-ideatree/
-
-   
-   
-   
-   
-   
-   
-
-   
-   
-   
-   
-
-   
-   
-   
-   
-
-
-
-   
-   
-
-
-
-
-    
+next-web-app/
+├─ app/
+│  ├─ (auth)/
+│  │  ├─ login/
+│  │  │  └─ page.tsx
+│  │  ├─ register/
+│  │  │  └─ page.tsx
+│  │  └─ layout.tsx
+│  ├─ (protected)/
+│  │  ├─ dashboard/
+│  │  │  └─ page.tsx
+│  │  ├─ settings/
+│  │  │  └─ page.tsx
+│  │  ├─ {protected_page_name_1}/
+│  │  │  └─ page.tsx
+│  │  ├─ {protected_page_name_2}/
+│  │  │  └─ page.tsx
+│  │  ├─ {protected_page_name_3}/
+│  │  │  └─ page.tsx
+│  │  ├─ {other protectedpages}
+│  │  └─ layout.tsx
+│  └─ api/
+│     ├─ auth/
+│     │  ├─ login/route.ts
+│     │  ├─ register/route.ts
+│     │  └─ logout/route.ts
+│     ├─ {api_route_name_1}/
+│     │  └─ route.ts
+│     ├─ {api_route_name_2}/
+│     │  └─ route.ts
+│     ├─ {api_route_name_3}/
+│     │  └─ route.ts
+│     └─ {other api routes}
+│
+├─ components/
+│  ├─ ui/                                  # For Shadcn UI components ONLY (Don't put any other components in this folder)
+│  ├─ features/
+│  │  ├─ {feature_name_1}/
+│  │  │  └─{feature_name_1_component_1}.tsx
+│  │  │  └─{feature_name_1_component_2}.tsx
+│  │  │  └─{feature_name_1_component_3}.tsx
+│  │  │  └─{more components if needed}
+│  │  ├─ {feature_name_2}/
+│  │  │  └─{feature_name_2_component_1}.tsx
+│  │  │  └─{feature_name_2_component_2}.tsx
+│  │  │  └─{feature_name_2_component_3}.tsx
+│  │  │  └─{more components if needed}
+│  │  └─ {other feature components}
+│  ├─ forms/
+│  │  ├─ {form_name_1}/
+│  │  │  └─{form_name_1_component_1}.tsx
+│  │  │  └─{form_name_1_component_2}.tsx
+│  │  │  └─{form_name_1_component_3}.tsx
+│  │  │  └─{more components if needed}
+│  │  └─ {other form components}
+│  ├─ layout/
+│  │  ├─ {layout_name_1}/
+│  │  │  └─{layout_name_1_component_1}.tsx
+│  │  │  └─{layout_name_1_component_2}.tsx
+│  │  │  └─{layout_name_1_component_3}.tsx
+│  │  │  └─{more components if needed}
+│  │  └─ {other layout components}
+│  └─ shared/
+│     ├─ {shared_name_1}/
+│     │  └─{shared_name_1_component_1}.tsx
+│     │  └─{shared_name_1_component_2}.tsx
+│     │  └─{shared_name_1_component_3}.tsx
+│     │  └─{more components if needed}
+│     └─ {other shared components}
+|
+├─ lib/
+│  ├─ ai/
+│  │  └─{ai_helper_1}.ts
+│  │  └─{ai_helper_2}.ts
+│  │  └─{ai_helper_3}.ts
+│  │  └─{more ai helpers if needed}
+│  ├─ auth/
+│  │  └─{auth_helper_1}.ts
+│  │  └─{auth_helper_2}.ts
+│  │  └─{auth_helper_3}.ts
+│  │  └─{more auth helpers if needed}
+│  ├─ validations/
+│  │  └─{validation_helper_1}.ts
+│  │  └─{validation_helper_2}.ts
+│  │  └─{validation_helper_3}.ts
+│  │  └─{more validation helpers if needed}
+│  ├─ database/
+│  │  └─{database_helper_1}.ts
+│  │  └─{database_helper_2}.ts
+│  │  └─{database_helper_3}.ts
+│  │  └─{more database helpers if needed}
+│  └─ {other helpers}
+|
+├─ prisma/
+│  ├─ schema.prisma                        # Datasource: Neon Postgres (cloud)
+│  ├─ seed.ts                              # Seed data for the database (if needed)
+│  └─ migrations/
+│     ├─ <timestamp>_init/…               # Initial tables
+│     └─ <timestamp>_pgvector/…           # CREATE EXTENSION vector; embeddings table & index
+│
+├─ public/
+│  └─ images/
+|
+├─ services/
+│  ├─ {service_name_1}/
+│  │  └─{service_name_1_helper_1}.ts
+│  │  └─{service_name_1_helper_2}.ts
+│  │  └─{service_name_1_helper_3}.ts
+│  │  └─{more service helpers if needed}
+│  └─ {other services}
+|
+├─ styles/
+│  └─ globals.css
+│
+├─ hooks/
+│  ├── use-mobile.ts           # Default hook for mobile detection (used by Shadcn UI) (Don't delete this hook)
+│  ├── use-auth.ts
+│  ├── use-theme.ts
+│  ├── use-{feature_name_1}.ts
+│  ├── use-{feature_name_2}.ts
+│  ├── use-{feature_name_3}.ts
+│  └── {other hooks files}
+│
+├─ types/
+│  ├─ {type_name_1}.ts
+│  ├─ {type_name_2}.ts
+│  ├─ {type_name_3}.ts
+│  └─ {other types}
+│
+├─ tests/
+│  ├─ __tests__/                           # Jest / RTL
+│  └─ e2e/                                 # Playwright
+│
+├─ middleware.ts                           # Security headers, routing guards
+├─ .env.example                            # DATABASE_URL (Neon pooled), optional DIRECT_URL, AI keys
+├─ next.config.ts
+├─ package.json
+├─ postcss.config.js
+├─ tailwind.config.ts
+├─ tsconfig.json
+├─ .eslintrc.cjs
+└─ .prettierrc
 ```
 
 ---
@@ -331,7 +445,7 @@ const data = await fetch(url, { cache: "no-store" });
 
 ### **Neon Postgres Integration (Prisma + pgvector) — Updated Guidelines**
 
-> We ONLY use the **cloud** database (Neon). No local DB. Migrations run against Neon. SSL is required. ([Neon][2], [GitHub][3])
+> We ONLY use the **cloud** database (Neon). No local DB. Migrations run against Neon. SSL is required.
 
 #### Environment
 
@@ -345,7 +459,7 @@ DATABASE_URL="postgresql://USER:PASSWORD@ep-xxxxxx-pooler.REGION.aws.neon.tech/D
 # DIRECT_URL="postgresql://USER:PASSWORD@ep-xxxxxx.REGION.aws.neon.tech/DB?sslmode=require"
 ```
 
-- Prefer the **pooled** (`-pooler`) URL for serverless usage. SSL must be enabled via `sslmode=require`. ([Neon][1])
+- Prefer the **pooled** (`-pooler`) URL for serverless usage. SSL must be enabled via `sslmode=require`.
 
 #### Prisma Setup
 
@@ -370,7 +484,7 @@ datasource db {
 }
 ```
 
-> The **Prisma driver adapter** enables Prisma to use the **Neon serverless driver** (Edge/Workers) for low-latency HTTP/WebSocket connections. ([Neon][1], [Prisma][4])
+> The **Prisma driver adapter** enables Prisma to use the **Neon serverless driver** (Edge/Workers) for low-latency HTTP/WebSocket connections.
 
 #### Runtime Options
 
@@ -401,7 +515,7 @@ export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 ```
 
-> This uses the Neon **serverless driver** with Prisma’s **adapter**, suitable for Edge/serverless environments. ([Neon][1])
+> This uses the Neon **serverless driver** with Prisma’s **adapter**, suitable for Edge/serverless environments.
 
 **B) Node runtime (standard API routes / route handlers)**
 
@@ -425,7 +539,7 @@ export const prisma = base.$extends(withAccelerate());
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 ```
 
-> Accelerate provides pooled, globally cached access and integrates via `@prisma/extension-accelerate`. Configure an Accelerate connection string if using it. ([Prisma][5], [npm][6])
+> Accelerate provides pooled, globally cached access and integrates via `@prisma/extension-accelerate`. Configure an Accelerate connection string if using it.
 
 #### Migrations (Cloud-only)
 
@@ -461,7 +575,7 @@ ON "Document"
 USING hnsw (embedding vector_cosine_ops);
 ```
 
-> Neon includes pgvector; use `<=>` for cosine distance. HNSW often provides strong recall/speed tradeoffs for semantic search. ([Neon][7], [GitHub][8])
+> Neon includes pgvector; use `<=>` for cosine distance. HNSW often provides strong recall/speed tradeoffs for semantic search.
 
 Reflect schema in Prisma:
 
@@ -480,7 +594,7 @@ model Document {
 }
 ```
 
-> Prisma currently treats `vector` as `Unsupported("vector")`; use raw SQL for inserts/queries. ([Neon][1])
+> Prisma currently treats `vector` as `Unsupported("vector")`; use raw SQL for inserts/queries.
 
 #### Inserting Embeddings (example)
 
@@ -583,7 +697,7 @@ try {
 - Ensure `sslmode=require`.
 - For cold-start sensitive paths, consider `connect_timeout` in the URL.
 - Edge routes: use **Neon serverless driver + Prisma adapter**.
-- Node routes: pooled URL; optionally **Accelerate** for global pooling/caching. ([Neon][2], [Prisma][5])
+- Node routes: pooled URL; optionally **Accelerate** for global pooling/caching.
 
 ---
 
@@ -1091,7 +1205,7 @@ DATABASE_URL="postgresql://USER:PASSWORD@ep-xxxxxx-pooler.REGION.aws.neon.tech/D
 # DIRECT_URL="postgresql://USER:PASSWORD@ep-xxxxxx.REGION.aws.neon.tech/DB?sslmode=require"
 ```
 
-> Neon requires SSL; keep `sslmode=require`. Use pooled URLs for serverless. ([Neon][2])
+> Neon requires SSL; keep `sslmode=require`. Use pooled URLs for serverless.
 
 #### AI Service Configuration
 

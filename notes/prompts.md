@@ -19,10 +19,18 @@ Think hard, explore the codebase, understand the requirements, project rules, wi
 
 Use web search to find solutions to problems you encounter.
 
-Use sub-agents if you need to delegate tasks.
+Use @agent-codebase-explorer to read the codebase.
 
 IMPORTANT RULE TO FOLLOW:
 - RUN ONLY ONE SUB AGENT AT A TIME.
 - Follow the directory structure that is defined in @notes/directory_structure.md.
 - Follow the implementation plan defined in @notes/plan.md.
 ```
+
+# prompt
+
+Think hard and plan how to resolve the code review above. Use @agent-codebase-explorer to read the codebase.
+
+Think hard and plan how to implement the above. Use @agent-codebase-explorer to read the codebase.
+
+Think hard and plan how to solve the issues above. Use @agent-codebase-explorer to read the codebase.

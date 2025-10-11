@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { toast } from "sonner";
 
 /**
  * Login page with Email OTP (default) and Dev Password signin
@@ -47,7 +48,6 @@ export default function LoginPage(): JSX.Element {
 
   const [step, setStep] = React.useState<"email" | "code">("email");
   const [email, setEmail] = React.useState("");
-  const [error, setError] = React.useState("");
   const [isLoading, setIsLoading] = React.useState(false);
   const [requiresCaptcha, setRequiresCaptcha] = React.useState(false);
 
@@ -75,7 +75,6 @@ export default function LoginPage(): JSX.Element {
   async function onRequestOtp(data: EmailFormData): Promise<void> {
     try {
       setIsLoading(true);
-      setError("");
 
       const response = await fetch("/api/auth/request-otp", {
         method: "POST",
@@ -88,9 +87,9 @@ export default function LoginPage(): JSX.Element {
       if (!response.ok) {
         if (result.requiresCaptcha) {
           setRequiresCaptcha(true);
-          setError("Please complete the captcha verification");
+          toast.error("Please complete the captcha verification");
         } else {
-          setError(result.error || "Failed to send verification code");
+          toast.error(result.error || "Failed to send verification code");
         }
         return;
       }
@@ -99,7 +98,7 @@ export default function LoginPage(): JSX.Element {
       setEmail(data.email);
       setStep("code");
     } catch (err) {
-      setError("Network error. Please try again.");
+      toast.error("Network error. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -109,7 +108,6 @@ export default function LoginPage(): JSX.Element {
   async function onVerifyOtp(data: OtpFormData): Promise<void> {
     try {
       setIsLoading(true);
-      setError("");
 
       const payload: { email: string; code: string; next?: string } = {
         email,
@@ -128,14 +126,14 @@ export default function LoginPage(): JSX.Element {
       const result = await response.json();
 
       if (!response.ok) {
-        setError(result.error || "Invalid verification code");
+        toast.error(result.error || "Invalid verification code");
         return;
       }
 
       // Success - redirect
       router.replace(result.redirect || "/dashboard");
     } catch (err) {
-      setError("Network error. Please try again.");
+      toast.error("Network error. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -145,7 +143,6 @@ export default function LoginPage(): JSX.Element {
   async function onDevSignin(data: DevSigninFormData): Promise<void> {
     try {
       setIsLoading(true);
-      setError("");
 
       const payload: { email: string; password: string; next?: string } = {
         email: data.email,
@@ -164,14 +161,14 @@ export default function LoginPage(): JSX.Element {
       const result = await response.json();
 
       if (!response.ok) {
-        setError(result.error || "Invalid credentials");
+        toast.error(result.error || "Invalid credentials");
         return;
       }
 
       // Success - redirect
       router.replace(result.redirect || "/dashboard");
     } catch (err) {
-      setError("Network error. Please try again.");
+      toast.error("Network error. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -271,7 +268,6 @@ export default function LoginPage(): JSX.Element {
                       className="flex-1"
                       onClick={() => {
                         setStep("email");
-                        setError("");
                         otpForm.reset();
                       }}
                       disabled={isLoading}
@@ -287,12 +283,6 @@ export default function LoginPage(): JSX.Element {
                     </Button>
                   </div>
                 </form>
-              )}
-
-              {error && (
-                <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
-                  {error}
-                </div>
               )}
             </TabsContent>
 
@@ -343,12 +333,6 @@ export default function LoginPage(): JSX.Element {
                     Development-only password sign-in
                   </p>
                 </form>
-
-                {error && (
-                  <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
-                    {error}
-                  </div>
-                )}
               </TabsContent>
             )}
           </Tabs>

@@ -11,6 +11,7 @@ This Next.js boilerplate includes **production-ready email OTP authentication** 
 - **Auth**: Email OTP (Resend) + JWT sessions (access + refresh tokens, HTTP-only cookies)
 - **Hashing/Crypto**: bcrypt + jose
 - **Forms**: React Hook Form + Zod validation
+- **Toasts**: Sonner for toast notifications (top-right position)
 - **AI**: Vercel AI SDK (provider-agnostic, defaults to Google Gemini)
 
 ## Quick Start
@@ -259,6 +260,31 @@ Components are added to `components/ui/` (excluded from tsconfig).
 const value = formData.category === "none" ? null : formData.category
 ```
 
+**Toast Notifications**: Use Sonner for all toast notifications
+
+```tsx
+'use client'
+
+import { toast } from "sonner"
+
+// Success notification
+toast.success("Password changed successfully")
+
+// Error notification
+toast.error("Failed to save changes")
+
+// Info notification
+toast("Settings updated")
+
+// Custom toast
+toast("Custom message", {
+  description: "Additional details here",
+  duration: 5000,
+})
+```
+
+**Important**: `<Toaster />` is already added to root layout at top-right position. Never add it again.
+
 ## Common Patterns
 
 ### Protected Route
@@ -289,13 +315,14 @@ export async function POST(req: Request) {
 }
 ```
 
-### Form with Validation
+### Form with Validation and Toast Notifications
 ```tsx
 'use client'
 
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { toast } from 'sonner'
 
 const schema = z.object({
   email: z.string().email(),
@@ -306,11 +333,24 @@ export function MyForm() {
   const form = useForm({ resolver: zodResolver(schema) })
 
   async function onSubmit(data: z.infer<typeof schema>) {
-    const res = await fetch('/api/endpoint', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    })
+    try {
+      const res = await fetch('/api/endpoint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+
+      const result = await res.json()
+
+      if (!res.ok) {
+        toast.error(result.error || 'Failed to save')
+        return
+      }
+
+      toast.success('Saved successfully')
+    } catch (error) {
+      toast.error('Network error. Please try again.')
+    }
   }
 
   return <form onSubmit={form.handleSubmit(onSubmit)}>...</form>

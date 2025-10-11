@@ -16,7 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 /**
  * Profile settings page
@@ -37,7 +37,6 @@ type ChangePasswordFormData = z.infer<typeof changePasswordSchema>;
 
 export default function ProfilePage(): JSX.Element {
   const router = useRouter();
-  const { toast } = useToast();
   const [user, setUser] = React.useState<{
     email: string;
     role: string;
@@ -88,28 +87,17 @@ export default function ProfilePage(): JSX.Element {
       const result = await response.json();
 
       if (!response.ok) {
-        toast({
-          title: "Error",
-          description: result.error || "Failed to set password",
-          variant: "destructive",
-        });
+        toast.error(result.error || "Failed to set password");
         return;
       }
 
-      toast({
-        title: "Success",
-        description: "Password set successfully",
-      });
+      toast.success("Password set successfully");
 
       setPasswordForm.reset();
       // Refresh user data
       setUser((prev) => (prev ? { ...prev, hasPassword: true } : null));
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Network error. Please try again.",
-        variant: "destructive",
-      });
+      toast.error("Network error. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -128,26 +116,15 @@ export default function ProfilePage(): JSX.Element {
       const result = await response.json();
 
       if (!response.ok) {
-        toast({
-          title: "Error",
-          description: result.error || "Failed to change password",
-          variant: "destructive",
-        });
+        toast.error(result.error || "Failed to change password");
         return;
       }
 
-      toast({
-        title: "Success",
-        description: "Password changed successfully",
-      });
+      toast.success("Password changed successfully");
 
       changePasswordForm.reset();
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Network error. Please try again.",
-        variant: "destructive",
-      });
+      toast.error("Network error. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -161,11 +138,7 @@ export default function ProfilePage(): JSX.Element {
       });
       router.replace("/login");
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to sign out",
-        variant: "destructive",
-      });
+      toast.error("Failed to sign out");
     }
   }
 

@@ -10,7 +10,7 @@
  *   npm run seed
  */
 
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@prisma/client/index.js";
 import bcrypt from "bcrypt";
 import readline from "readline";
 

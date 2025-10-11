@@ -5,6 +5,7 @@ A production-ready Next.js 15 boilerplate with **email OTP authentication**, JWT
 ## Features
 
 ### Authentication System
+
 - ✅ **Email OTP** primary flow via Resend
 - ✅ **JWT sessions** with access + refresh token rotation
 - ✅ **Rate limiting** (per-email & per-IP)
@@ -17,6 +18,7 @@ A production-ready Next.js 15 boilerplate with **email OTP authentication**, JWT
 - ✅ **Optional hCaptcha** gating after rate limit threshold
 
 ### Dashboard Shell
+
 - ✅ **Resizable sidebar** (15-35% width, collapsible to icon-only)
 - ✅ **Two-level navigation** (Sections → Pages)
 - ✅ **Mobile drawer** with full sidebar content
@@ -25,6 +27,7 @@ A production-ready Next.js 15 boilerplate with **email OTP authentication**, JWT
 - ✅ **Profile dropdown** with sign out
 
 ### Developer Experience
+
 - ✅ **TypeScript strict mode**
 - ✅ **Tailwind CSS v4** with shadcn/ui components
 - ✅ **Prisma ORM** with local PostgreSQL
@@ -120,6 +123,7 @@ SEED_EMAIL=admin@example.com SEED_PASSWORD=yourpassword SEED_NAME="Admin" npm ru
 ```
 
 **Important**: After creating your user:
+
 1. Add the email to `ALLOWED_EMAILS` in your `.env` file
 2. Set `ENABLE_DEV_PASSWORD_SIGNIN=true` in your `.env` file to enable password login in development
 
@@ -134,6 +138,12 @@ npm run dev
 Visit **http://localhost:3000/login** to test the authentication system.
 
 > **Tip**: If you created a user with the seed script, you can sign in using the "Password (Dev)" tab on the login page (make sure `ENABLE_DEV_PASSWORD_SIGNIN=true` is set).
+
+Here's the command to run the seed script with environment variables:
+
+```bash
+SEED_EMAIL="abc@gmail.com" SEED_PASSWORD="Password@123" SEED_NAME="Nathan" npx prisma db seed
+```
 
 ## Testing Authentication
 
@@ -215,13 +225,28 @@ const sections = [
   { id: "main", label: "Main", icon: <Home /> },
   { id: "analytics", label: "Analytics", icon: <BarChart /> },
   { id: "settings", label: "Settings", icon: <Settings /> },
-]
+];
 
 const pages = [
-  { id: "dashboard", label: "Dashboard", href: "/dashboard", sectionId: "main" },
-  { id: "reports", label: "Reports", href: "/analytics/reports", sectionId: "analytics" },
-  { id: "profile", label: "Profile", href: "/settings/profile", sectionId: "settings" },
-]
+  {
+    id: "dashboard",
+    label: "Dashboard",
+    href: "/dashboard",
+    sectionId: "main",
+  },
+  {
+    id: "reports",
+    label: "Reports",
+    href: "/analytics/reports",
+    sectionId: "analytics",
+  },
+  {
+    id: "profile",
+    label: "Profile",
+    href: "/settings/profile",
+    sectionId: "settings",
+  },
+];
 ```
 
 Create corresponding page files:
@@ -246,8 +271,8 @@ npx shadcn@latest add select
 Components are added to `components/ui/` and can be imported:
 
 ```tsx
-import { Button } from "@/components/ui/button"
-import { Dialog } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 ```
 
 ### Customizing Email Templates
@@ -255,7 +280,11 @@ import { Dialog } from "@/components/ui/dialog"
 Edit `lib/email.ts` to customize OTP email templates:
 
 ```tsx
-export async function sendOtpEmail({ to, code, expiresAt }: SendOtpEmailParams) {
+export async function sendOtpEmail({
+  to,
+  code,
+  expiresAt,
+}: SendOtpEmailParams) {
   await resend.emails.send({
     from: env.RESEND_FROM_EMAIL,
     to,
@@ -267,7 +296,7 @@ export async function sendOtpEmail({ to, code, expiresAt }: SendOtpEmailParams) 
       </div>
     `,
     text: `Your verification code is: ${code}`,
-  })
+  });
 }
 ```
 
@@ -315,11 +344,12 @@ const emailCount15m = await db.otpRequest.count({
     email,
     requestedAt: { gte: fifteenMinutesAgo },
   },
-})
+});
 
 // Change threshold (default: 3 per 15 minutes)
-if (emailCount15m >= 5) {  // Increase to 5
-  return { allowed: false, requiresCaptcha: false }
+if (emailCount15m >= 5) {
+  // Increase to 5
+  return { allowed: false, requiresCaptcha: false };
 }
 ```
 
@@ -454,10 +484,12 @@ HCAPTCHA_SECRET_KEY=...
 ### OTP Code Not Received
 
 **In Development**:
+
 - Check your terminal/console — OTP codes are logged in dev mode
 - Look for: `=== OTP Email (Development) ===`
 
 **In Production**:
+
 - Verify `RESEND_API_KEY` is set correctly
 - Check Resend dashboard for delivery status
 - Ensure `RESEND_FROM_EMAIL` domain is verified

@@ -49,24 +49,28 @@ export const otpCodeSchema = z
 
 /**
  * Redirect path validation (internal only)
+ * Coerces null to undefined for tolerant client handling
  */
-export const redirectSchema = z
-  .string()
-  .optional()
-  .refine(
-    (path) => {
-      if (!path) return true;
-      return path.startsWith("/") && !path.startsWith("//");
-    },
-    { message: "Redirect must be an internal path" }
-  );
+export const redirectSchema = z.preprocess(
+  (v) => v ?? undefined,
+  z
+    .string()
+    .optional()
+    .refine(
+      (path) => {
+        if (!path) return true;
+        return path.startsWith("/") && !path.startsWith("//");
+      },
+      { message: "Redirect must be an internal path" }
+    )
+);
 
 /**
  * Request OTP schema
+ * Note: next is omitted as it's not used server-side
  */
 export const requestOtpSchema = z.object({
   email: emailSchema,
-  next: redirectSchema,
   hcaptchaToken: z.string().optional(),
 });
 

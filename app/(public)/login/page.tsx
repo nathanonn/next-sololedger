@@ -43,7 +43,7 @@ type DevSigninFormData = z.infer<typeof devSigninSchema>;
 export default function LoginPage(): JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next");
+  const nextParam = searchParams.get("next") || undefined;
 
   const [step, setStep] = React.useState<"email" | "code">("email");
   const [email, setEmail] = React.useState("");
@@ -80,7 +80,7 @@ export default function LoginPage(): JSX.Element {
       const response = await fetch("/api/auth/request-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: data.email, next }),
+        body: JSON.stringify({ email: data.email }),
       });
 
       const result = await response.json();
@@ -111,10 +111,18 @@ export default function LoginPage(): JSX.Element {
       setIsLoading(true);
       setError("");
 
+      const payload: { email: string; code: string; next?: string } = {
+        email,
+        code: data.code,
+      };
+      if (nextParam) {
+        payload.next = nextParam;
+      }
+
       const response = await fetch("/api/auth/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code: data.code, next }),
+        body: JSON.stringify(payload),
       });
 
       const result = await response.json();
@@ -139,10 +147,18 @@ export default function LoginPage(): JSX.Element {
       setIsLoading(true);
       setError("");
 
+      const payload: { email: string; password: string; next?: string } = {
+        email: data.email,
+        password: data.password,
+      };
+      if (nextParam) {
+        payload.next = nextParam;
+      }
+
       const response = await fetch("/api/auth/dev-signin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, next }),
+        body: JSON.stringify(payload),
       });
 
       const result = await response.json();

@@ -1,0 +1,76 @@
+// Authentication schema for Next.js boilerplate
+// Local PostgreSQL 15 + pgvector
+// Run once: CREATE EXTENSION IF NOT EXISTS vector;
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model: core authentication identity
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique @db.VarChar(255)
+  name              String?   @db.VarChar(255)
+  passwordHash      String?   @db.VarChar(255)
+  emailVerifiedAt   DateTime?
+  role              String    @default("user") @db.VarChar(50)
+  sessionVersion    Int       @default(1)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  auditLogs AuditLog[]
+
+  @@index([email])
+  @@map("users")
+}
+
+// OTP token storage: bcrypt-hashed codes
+model OtpToken {
+  id         String    @id @default(cuid())
+  email      String    @db.VarChar(255)
+  otpHash    String    @db.VarChar(255)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now())
+
+  @@index([email, expiresAt])
+  @@index([email, consumedAt])
+  @@map("otp_tokens")
+}
+
+// Rate limiting: tracks OTP requests per email/IP
+model OtpRequest {
+  id          String   @id @default(cuid())
+  email       String   @db.VarChar(255)
+  ip          String?  @db.VarChar(100)
+  requestedAt DateTime @default(now())
+
+  @@index([email, requestedAt])
+  @@index([ip, requestedAt])
+  @@map("otp_requests")
+}
+
+// Audit log: track authentication and security events
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String   @db.VarChar(100)
+  userId    String?
+  email     String?  @db.VarChar(255)
+  ip        String?  @db.VarChar(100)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([action, createdAt])
+  @@index([userId, createdAt])
+  @@index([email, createdAt])
+  @@map("audit_logs")
+}

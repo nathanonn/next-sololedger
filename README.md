@@ -104,13 +104,36 @@ npx prisma generate
 npx prisma migrate dev
 ```
 
-### 6. Start Development Server
+### 6. Create First User (Optional)
+
+You can create the first user account with a password using the seed script:
+
+```bash
+# Install tsx if not already installed
+npm install
+
+# Run seed interactively (will prompt for email, password, and name)
+npm run seed
+
+# Or use environment variables
+SEED_EMAIL=admin@example.com SEED_PASSWORD=yourpassword SEED_NAME="Admin" npm run seed
+```
+
+**Important**: After creating your user:
+1. Add the email to `ALLOWED_EMAILS` in your `.env` file
+2. Set `ENABLE_DEV_PASSWORD_SIGNIN=true` in your `.env` file to enable password login in development
+
+The seed script is idempotent - running it multiple times with the same email will prompt you to update the password if the user already exists.
+
+### 7. Start Development Server
 
 ```bash
 npm run dev
 ```
 
 Visit **http://localhost:3000/login** to test the authentication system.
+
+> **Tip**: If you created a user with the seed script, you can sign in using the "Password (Dev)" tab on the login page (make sure `ENABLE_DEV_PASSWORD_SIGNIN=true` is set).
 
 ## Testing Authentication
 
@@ -346,12 +369,14 @@ npm run dev          # Start dev server (Turbopack)
 npm run build        # Production build
 npm start            # Serve production build
 npm run lint         # Run ESLint
+npm run seed         # Create/update first user account
 
 # Prisma
 npx prisma generate                   # Generate client after schema changes
 npx prisma migrate dev --name <desc>  # Create + apply migration
 npx prisma studio                     # Open database GUI
 npx prisma db push                    # Push schema without migration (dev only)
+npx prisma db seed                    # Run seed script (same as npm run seed)
 
 # shadcn/ui
 npx shadcn@latest add <component>     # Add UI component

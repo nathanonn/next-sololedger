@@ -22,7 +22,6 @@
       "Bash(cat .env)",
       "Bash(cat .env.local)",
       "Bash(cat secrets/*)",
-      "Bash(cat *.key)",
       "Bash(git config:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
@@ -32,30 +31,6 @@
       "Bash(git reset:*)",
       "Bash(git rebase:*)",
       "Bash(git merge:*)"
-    ]
-  },
-  "enabledMcpjsonServers": ["context7"],
-  "enableAllProjectMcpServers": true,
-  "hooks": {
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /home/pi/Dev/claude-notifier/claude-webhook-notifier.js"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /home/pi/Dev/claude-notifier/claude-webhook-notifier.js"
-          }
-        ]
-      }
     ]
   }
 }

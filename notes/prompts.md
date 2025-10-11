@@ -1,36 +1,37 @@
-# Start
+# Worktree
+
+## Setup the worktree
 
 ```
-# Step 1: Run the following command to understand the current state of the project:
-
-eza . --tree --git-ignore
-
-# Step 2: Review the project requirements and rules:
-
-- @notes/rules.md (this file contains the project rules)
-- @notes/requirements.md (this file contains the project requirements)
-- @notes/wireframes.md (this file contains the project wireframes)
-- @notes/directory_structure.md (this file contains the project directory structure)
-- @notes/plan.md (this file contains the project implementation plan)
-
-# Step 3: Build the project:
-
-Think hard, explore the codebase, understand the requirements, project rules, wireframes, directory structure, and then build the project step by step according to the plan at @notes/plan.md.
-
-Use web search to find solutions to problems you encounter.
-
-Use @agent-codebase-explorer to read the codebase.
-
-IMPORTANT RULE TO FOLLOW:
-- RUN ONLY ONE SUB AGENT AT A TIME.
-- Follow the directory structure that is defined in @notes/directory_structure.md.
-- Follow the implementation plan defined in @notes/plan.md.
+./worktrees.sh setup \
+  --branches feat/enhancement_10111126 \
+  --db-url postgresql://pi:password@localhost:5432/nextwriter
 ```
 
-# prompt
+## Clean the worktree
 
-Think hard and plan how to resolve the code review above. Use @agent-codebase-explorer to read the codebase.
+```
+./worktrees.sh clean --all --yes
+```
 
-Think hard and plan how to implement the above. Use @agent-codebase-explorer to read the codebase.
+## merge
 
-Think hard and plan how to solve the issues above. Use @agent-codebase-explorer to read the codebase.
+```
+./worktrees.sh merge --branches feat/enhancement_10111126 --into main
+```
+
+# create wireframes based on plan
+
+Based on this plan outlined at @notes/plan.md, give me the ux flow map and screen-by-screen content using the ASCII wireframe. Put it at @notes/wireframes.md.
+
+# create wireframes based on plan (copilot version)
+
+Based on this plan outlined at #notes/plan.md, give me the ux flow map and screen-by-screen content using the ASCII wireframe. Put it at #notes/wireframes.md.
+
+# Implementation
+
+Read the plan at @notes/plan.md and @notes/wireframes.md, and implement the plan accordingly. Use the wireframes as a guide for the implementation.
+
+# Review
+
+Please read the git diff, and review the code changes to see if the implementation is correct and follows the plan @notes/plan.md and wireframes @notes/wireframes.md, correctly.

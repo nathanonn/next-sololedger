@@ -1,310 +1,302 @@
-# UX Flow Map and ASCII Wireframes (Auth + Dashboard Shell)
-
-This document turns the plan into a concrete UX flow map and screen-by-screen ASCII wireframes. It covers the email OTP login (with optional dev password), protected routing with access/refresh cookies, and the reusable dashboard shell using the existing sidebar component inside a resizable PanelGroup. Use this as the single source of truth for page content and interaction states.
-
----
-
-## Flow map
-
-- Entry: `/login`
-
-  - Tab: Email OTP (default)
-    - Step A: Enter email → POST `/api/auth/request-otp`
-      - 200 { ok: true } → proceed to Step B (enter code)
-      - 400 { ok: false, requiresCaptcha: true } AND `HCAPTCHA_ENABLED=true` → render hCaptcha, resubmit with `hcaptchaToken`
-    - Step B: Enter code → POST `/api/auth/verify-otp`
-      - 200 { ok: true, redirect } → `router.replace(redirect)` (internal or `/dashboard`)
-      - 400 { error } → show error; allow retry (token consumed after 5 attempts)
-  - Tab: Password (Dev only)
-    - Visible when `NODE_ENV=development` and `ENABLE_DEV_PASSWORD_SIGNIN=true`
-    - Enter email + password → POST `/api/auth/dev-signin`
-      - 200 { ok: true, redirect } → `/dashboard`
-      - 404 when disabled; 401 on invalid; allowlist enforced
-
-- Protected area: `/dashboard`, `/settings/*`
-
-  - Edge middleware checks access JWT (signature only)
-    - If valid → continue
-    - Else if refresh cookie present → rewrite to `/api/auth/refresh?next=...` (Node runtime rotates tokens); continue
-    - Else → redirect to `/login?next=...`
-  - Server layout (`app/(protected)/layout.tsx`) validates session via `getCurrentUser()` (compares tokenVersion to DB `sessionVersion`), fetches `sections` and `pages`, and renders the client `DashboardShell`.
-
-- Profile: `/settings/profile`
-  - Set Password (if none) → POST `/api/auth/profile/set-password` (zxcvbn unless SKIP flag); increments `sessionVersion`; rotates cookies
-  - Change Password → POST `/api/auth/profile/change-password`; verifies current; increments `sessionVersion`; rotates cookies
-  - Sign Out → POST `/api/auth/signout` → navigate to `/login`
-
-Notes
-
-- CSRF: All auth endpoints validate Origin/Referer against `APP_URL` (+ dev localhost variants and optional `ALLOWED_ORIGINS`).
-- Allowlist: All entry points enforce `ALLOWED_EMAILS` (comma-separated, lowercase). Until you fill it, OTP and dev sign-in are blocked.
-- Cookies: Access (~1h) + Refresh (~14d), HttpOnly, `SameSite=Strict`, `Secure` in prod, names from env: `JWT_ACCESS_COOKIE_NAME` and `JWT_REFRESH_COOKIE_NAME`.
-- Dev DX: OTP code is logged to server console in development only.
-
----
-
-## Screens (ASCII)
-
-### 1) Login: Email OTP (Step A — Enter email)
-
-+-------------------------------------------+
-| Welcome Back |
-| Sign in to your account |
-| |
-| [ Tabs ] [ Email OTP ] [ Password (Dev) ]
-| |
-| Email |
-| [ you@example.com_______________________ ]|
-| |
-| [ Send verification code ] |
-| |
-| Tip: If your email is allowed, |
-| you'll receive a 6-digit code. |
-+-------------------------------------------+
-
-States
-
-- Loading: button shows "Sending..."
-- Success (200 ok): advance to Step B
-- If `{ requiresCaptcha: true }` AND `HCAPTCHA_ENABLED=true`: show hCaptcha (see 1b)
-
-### 1b) Login: Email OTP (Step A with hCaptcha)
-
-+-------------------------------------------+
-| Welcome Back |
-| Sign in to your account |
-| |
-| [ Tabs ] [ Email OTP ] [ Password (Dev) ]
-| |
-| Email |
-| [ you@example.com_______________________ ]|
-| |
-| hCaptcha |
-| [ Widget (site key) ] |
-| |
-| [ Verify and send code ] |
-| |
-| Error (if any): |
-| "Captcha verification required/failed" |
-+-------------------------------------------+
-
-Behavior
-
-- Render the widget only when the server signals `requiresCaptcha`
-- Resubmit `/api/auth/request-otp` including `{ hcaptchaToken }`
-- Keep the widget visible if server still requires captcha
-
-### 2) Login: Email OTP (Step B — Enter code)
-
-+-------------------------------------------+
-| Verify your code |
-| Enter the 6-digit code sent to: |
-| you@example.com |
-| |
-| [ _ ] [ _ ] [ _ ] [ _ ] [ _ ] [ _ ] |
-| |
-| [ Verify and sign in ] [ Back ] |
-| |
-| Error (if any): |
-| "Invalid or expired verification code" |
-+-------------------------------------------+
-
-Notes
-
-- Button disabled until 6 digits entered
-- On ≥5 failed attempts, the OTP is consumed; request a new code
-
-### 3) Login: Password (Dev only)
-
-+-------------------------------------------+
-| Welcome Back (Development) |
-| Password sign-in (dev only) |
-| |
-| [ Tabs ] [ Email OTP ] [ Password (Dev) ]
-| |
-| Email |
-| [ you@example.com_______________________ ]|
-| |
-| Password |
-| [ ***************_______________________ ]|
-| |
-| [ Sign in ] |
-| |
-| Error (if any): |
-| "Invalid credentials" |
-+-------------------------------------------+
-
-Visibility
-
-- Render this tab only when `NODE_ENV=development` and `ENABLE_DEV_PASSWORD_SIGNIN=true`
-
-### 4) Dashboard: Desktop — Expanded Sidebar
-
-+-----------------------------------------------------------------------------------+
-| AppName | Actions |
-| Top Bar (border) |
-| [☰] (md:hidden) [ Page Title / Breadcrumb ] [ Button ] |
-|-----------------------------------------------------------------------------------|
-| Sidebar (resizable) | Content Area (scrolls) |
-|----------------------------------------------- |---------------------------------|
-| [AppName] [ < > ] (collapse) | [ Page content ] |
-| [ Search / ⌘K ] | |
-| | |
-| Sections | |
-| - [🏠] Main | |
-| - [•] Dashboard (active) | |
-| - [ ] Profile | |
-| | |
-|-----------------------------------------------|----------------------------------|
-| [👤] user@example.com [▼] (Profile | Sign out) |
-+-----------------------------------------------------------------------------------+
-
-Notes
-
-- Drag the vertical handle to resize (min/max enforced)
-- Collapse button toggles icon-only mode; persist per user
-- Active item uses a filled background style
-
-### 5) Dashboard: Desktop — Collapsed (Icon-only) Sidebar
-
-+-----------------------------------------------------------------------------------+
-| AppName | Actions |
-| Top Bar (border) |
-| [☰] (md:hidden) [ Page Title / Breadcrumb ] [ Button ] |
-|-----------------------------------------------------------------------------------|
-| [≡] | Content Area (scrolls) |
-|-----|----------------------------------------------------------------------------|
-| [<] | [ Page content ] |
-| [🔎]| |
-| [🏠]| |
-| [👤]| |
-| ... | |
-|-----|----------------------------------------------------------------------------|
-| [🙂] | (Profile | Sign out) |
-+-----------------------------------------------------------------------------------+
-
-Notes
-
-- Sidebar width ~56px; icons show tooltips on hover
-- Optional badges render as tiny counters on icons
-
-### 6) Dashboard: Mobile — Sidebar in Left Sheet/Drawer
-
-+--------------------------------+ +---------------------------------------------+
-| [☰] AppName | | Top Bar (border) |
-|--------------------------------| | [☰] [ Spacer / Title ] [ Actions ] |
-| [ Search / ⌘K ] | |---------------------------------------------|
-| | | Content Area (scrolls) |
-| Sections | | [ Page content ] |
-| - [🏠] Main | | |
-| - [ ] Dashboard | | |
-| - [ ] Profile | | |
-|--------------------------------| | |
-| [🙂] user@example.com [▼] | | |
-+--------------------------------+ +---------------------------------------------+
-
-Behavior
-
-- Tap a page; sheet closes and navigates
-- Drawer mirrors the desktop sidebar content
-
-### 7) Settings: Profile (Account)
-
-+-------------------------------------------+
-| Profile Settings |
-| [ Back to Dashboard ] |
-| |
-| Account Information |
-| - Email: user@example.com |
-| - Role: user |
-| - Email Verified: 2025-10-10 |
-| |
-| Password |
-| [ Set Password ] / [ Change Password ] |
-| |
-| Session |
-| [ Sign Out ] |
-+-------------------------------------------+
-
-### 7a) Settings: Set Password
-
-+-------------------------------------------+
-| Set Password |
-| |
-| New Password |
-| [ **************** ] |
-| |
-| [ Set Password ] |
-| |
-| Notes: Min 8 chars; strong per zxcvbn |
-+-------------------------------------------+
-
-### 7b) Settings: Change Password
-
-+-------------------------------------------+
-| Change Password |
-| |
-| Current Password |
-| [ **************** ] |
-| |
-| New Password |
-| [ **************** ] |
-| |
-| [ Change Password ] |
-| |
-| Error (if any): |
-| "Current password is incorrect" |
-+-------------------------------------------+
-
-### 8) Sign out
-
-+-------------------------------------------+
-| Signing out... → Redirect to /login |
-+-------------------------------------------+
-
----
-
-## Interaction & behavior notes
-
-- Keyboard Shortcuts
-
-  - ⌘K / Ctrl+K: open command palette (placeholder)
-  - ⌘⇧N / Ctrl+Shift+N: open Quick Actions (placeholder)
-  - Ignore shortcuts when focus is in inputs or editable content
-
-- State Persistence (per user)
-
-  - `app.v1.sidebar.width:{userId}` — sidebar width percent
-  - `app.v1.sidebar.collapsed:{userId}` — collapsed state
-
-- Security & Cookies
-
-  - Access (~1h) + Refresh (~14d), HttpOnly, `SameSite=Strict`, `Secure` in prod, `Path=/`
-  - Cookie names configurable via env: `JWT_ACCESS_COOKIE_NAME`, `JWT_REFRESH_COOKIE_NAME`
-
-- CSRF & Allowlist
-
-  - All auth routes validate Origin/Referer; allowlist restricts sign-in emails
-
-- hCaptcha
-
-  - Only rendered when server responds with `{ requiresCaptcha: true }` and `HCAPTCHA_ENABLED=true`
-
-- Pointer-events cleanup
-  - If a Dialog opens from a Dropdown/ContextMenu, on close ensure: `setTimeout(() => document.body.style.pointerEvents = "", 300)`
-
----
-
-## Checklist (for implementation)
-
-- [ ] Env and dependencies in place; Prisma configured for local Postgres
-- [ ] Prisma models and migrations applied
-- [ ] Server libs added: jwt, jwt-edge, csrf, rate-limit, email, auth, auth-helpers
-- [ ] API routes implemented (request-otp, verify-otp, dev-signin, signout, set/change password, refresh)
-- [ ] Middleware protects `/dashboard` and `/settings` and cooperates with refresh
-- [ ] Login page (OTP + Dev tab) matches wireframes and states
-- [ ] Protected server layout fetches `user`, `sections`, `pages` and renders `DashboardShell`
-- [ ] Dashboard shell with resizable/collapsible sidebar and mobile drawer
-- [ ] Profile page with set/change password and sign out
-- [ ] CSRF, allowlist, rate limits, audit logging in place
-- [ ] Keyboard shortcuts guarded; pointer-events cleanup verified
+
+UX FLOW MAP
+
+Legend: [] = page/screen, -> = navigation/action, (API) = server call, {cond} = condition
+
+[ /login ]
+  -> Submit Email (POST /api/auth/request-otp) {ok}
+    -> Show code entry state
+  -> Submit Code (POST /api/auth/verify-otp) {ok}
+    -> {has any membership?} yes -> [ Redirect Resolver ]
+       no  -> [ /onboarding/create-organization ]
+
+[ /onboarding/create-organization ]
+  -> Create (POST /api/orgs) {ok}
+    -> [ /o/[org]/dashboard ]
+
+[ /invite?token=...] (accept invitation)
+  -> {signed in?} no -> [ /login?next=/invite?token=... ]
+  -> Accept (POST /api/orgs/invitations/accept) {ok}
+    -> [ /o/[org]/dashboard ]
+
+[ / ] or [ /dashboard ] or [ /settings/* ] (no org in path)
+  -> [ Redirect Resolver ]
+
+[ Redirect Resolver ]
+  -> {last_org cookie} yes -> [ /o/[slug]/dashboard ]
+  -> {defaultOrganizationId} yes -> [ /o/[slug]/dashboard ]
+  -> {has memberships} yes -> [ /o/[first]/dashboard ]
+  -> else -> [ /onboarding/create-organization ]
+
+[ /o/[org]/dashboard ]
+  -> Open Org Switcher -> [ Org Switcher Overlay ]
+  -> Go to Settings -> [ /o/[org]/settings/organization ]
+  -> Go to Members -> [ /o/[org]/settings/members ]
+
+[ Org Switcher Overlay ]
+  -> Select org -> [ /o/[org]/dashboard ] (set last_org cookie)
+  -> Create new -> [ Create Org Modal ]
+  -> Manage members -> [ /o/[org]/settings/members ]
+
+[ /o/[org]/settings/organization ]
+  -> Save name -> toast
+
+[ /o/[org]/settings/members ]
+  -> Invite -> toast
+  -> Change role -> toast
+  -> Remove -> toast
+  -> Resend/Revoke invite -> toast
+
+
+SCREEN-BY-SCREEN ASCII WIREFRAMES
+
+1) Login: /login (Email OTP)
+
++----------------------------------------------------------------------------------+
+|                                   Sign in                                         |
+|----------------------------------------------------------------------------------|
+|  Tabs: [ Email Code ] [ Password (Dev) ]                                          |
+|                                                                                  |
+|  Email                                                                           |
+|  [ user@example.com____________________________________________ ]                |
+|                                                                                  |
+|  [ Request code ]                                                                |
+|                                                                                  |
+|  -- After requesting code --                                                     |
+|  Enter 6-digit code                                                              |
+|  [ _ _ _ _ _ _ ]                                                                 |
+|                                                                                  |
+|  [ Verify & continue ]                                   [ Need a new code? ]    |
+|                                                                                  |
+|  Footer: By continuing you agree to our Terms and Privacy Policy.                |
++----------------------------------------------------------------------------------+
+Notes:
+- If server returns requiresCaptcha, show hCaptcha widget below Email.
+- On verify success: if no memberships -> Onboarding; else -> Redirect Resolver.
+- Errors show inline under inputs and toast.error.
+
+
+2) Onboarding: Create Organization (/onboarding/create-organization)
+
++----------------------------------------------------------------------------------+
+|                              Create your workspace                                |
+|----------------------------------------------------------------------------------|
+|  Name                                                                             |
+|  [ Nathan's workspace__________________________________________ ]                 |
+|                                                                                  |
+|  Slug (immutable)                                                                 |
+|  [ nathan-workspace________________________ ]  https://app/o/nathan-workspace     |
+|  Tip: You can't change the slug later.                                            |
+|                                                                                  |
+|  [ Create workspace ]                                      [ Cancel ]             |
++----------------------------------------------------------------------------------+
+Notes:
+- Validate kebab-case, reserved slugs, <= 50 chars, uniqueness (server).
+- If slug taken -> append random alphanum suggestion (editable before submit).
+- On success -> set as defaultOrganizationId; redirect to /o/[slug]/dashboard.
+
+
+3) Invite Accept: /invite?token=...
+
++----------------------------------------------------------------------------------+
+|                           You’ve been invited to join                              |
+|----------------------------------------------------------------------------------|
+|  Organization: Acme Inc                                                           |
+|  Invited email: user@example.com                                                  |
+|                                                                                  |
+|  [ Accept & join ]                                           [ Decline ]          |
+|                                                                                  |
+|  Problems? This invite may have expired. Ask an admin to resend.                  |
++----------------------------------------------------------------------------------+
+States:
+- Not signed in: show a prompt with a button "Sign in to accept" that routes to /login?next=/invite?token=...
+- Invalid/expired token: show error panel with [Back to login] and [Contact admin].
+
+
+4) Dashboard: /o/[org]/dashboard
+
++----------------------------------------------------------------------------------+
+| [☰]  Acme Inc ▾        Search__________________________________    💬  ⚙  ◉      |
+|----------------------------------------------------------------------------------|
+| |▮ Sidebar (resizable 15–35%)              |  Content area                        |
+| |                                          |                                      |
+| |  Main                                    |  [ Page title ]                      |
+| |   • Dashboard (active)                   |  Primary content cards, tables, etc. |
+| |                                          |                                      |
+| |  Settings                                |                                      |
+| |   • Profile                              |                                      |
+| |   • Organization                         |                                      |
+| |   • Members                              |                                      |
+| |                                          |                                      |
+| |  Collapse ◀                              |                                      |
+|----------------------------------------------------------------------------------|
+| Footer / status bar (optional)                                                    |
++----------------------------------------------------------------------------------+
+Notes:
+- Org Switcher on org name (Acme Inc ▾). Clicking opens Command dialog.
+- Sidebar collapses to icons; state persisted per userId.
+
+
+5) Org Switcher Overlay (Command dialog)
+
++-----------------------------------------------+
+|  Switch organization                          |
+|-----------------------------------------------|
+|  > Filter orgs...                             |
+|-----------------------------------------------|
+|  Recent                                       |
+|  • Acme Inc                                   |
+|  • Personal workspace                         |
+|-----------------------------------------------|
+|  All                                          |
+|  • Design Guild                               |
+|  • Sales Ops                                  |
+|-----------------------------------------------|
+|  Actions                                      |
+|  + Create new organization                    |
+|  ⚙ Manage members (current org)               |
++-----------------------------------------------+
+Notes:
+- Enter selects highlighted org; Esc closes. Selecting sets last_org cookie and navigates.
+
+
+6) Organization Settings: /o/[org]/settings/organization
+
++----------------------------------------------------------------------------------+
+|  Organization settings                                                              |
+|----------------------------------------------------------------------------------|
+|  Name                                                                              |
+|  [ Acme Inc____________________________________________ ]                          |
+|                                                                                   |
+|  Slug (immutable)                                                                  |
+|  [ acme-inc________________________ ]   https://app/o/acme-inc                     |
+|  Note: Slug cannot be changed.                                                     |
+|                                                                                   |
+|  [ Save changes ]                                              [ Cancel ]          |
++----------------------------------------------------------------------------------+
+Notes:
+- Admin only. Show 403 screen for non-admins.
+
+
+7) Members: /o/[org]/settings/members
+
++----------------------------------------------------------------------------------+
+|  Members & invitations (Admin)                                                     |
+|----------------------------------------------------------------------------------|
+|  Invite member                                                                     |
+|  Email: [ user@example.com____________________________ ]  Role: ( ) Member ( ) Admin |
+|  [ Send invite ]                                                                    |
+|----------------------------------------------------------------------------------|
+|  Members                                                                           |
+|  user1@example.com        Admin        [ Change role ] [ Remove ]                   |
+|  user2@example.com        Member       [ Change role ] [ Remove ]                   |
+|                                                                                     |
+|----------------------------------------------------------------------------------|
+|  Pending invitations                                                                |
+|  jane@example.com        Member      Expires in 5d   [ Resend ] [ Revoke ]          |
+|  bob@example.com         Admin       Expires in 2d   [ Resend ] [ Revoke ]          |
++----------------------------------------------------------------------------------+
+Notes:
+- Change role dialog blocks demoting the last admin.
+- Remove blocks removing the last admin; self-leave blocked if sole admin.
+- Actions show toast.success/error.
+
+
+7.1) Change Role Dialog
+
++----------------------------+
+| Change role                |
+|----------------------------|
+| ( ) Member                 |
+| ( ) Admin                  |
+|                            |
+| [ Save ]         [ Cancel ]|
++----------------------------+
+Error state:
+- "You must have at least one admin in this organization."
+
+
+7.2) Remove Member Dialog
+
++----------------------------+
+| Remove member              |
+|----------------------------|
+| Remove user2@example.com from Acme Inc?        |
+|                                                |
+| [ Remove ]       [ Cancel ]                    |
++----------------------------+
+Error state:
+- "Cannot remove the last admin. Assign another admin first."
+
+
+7.3) Resend / Revoke Invite Confirm
+
++----------------------------+
+| Resend invitation?         |
+|----------------------------|
+| We’ll send a fresh invite link to jane@example.com. |
+| [ Resend ]       [ Cancel ]                    |
++----------------------------+
+
++----------------------------+
+| Revoke invitation?         |
+|----------------------------|
+| Revoke the pending invite for bob@example.com? |
+| [ Revoke ]       [ Cancel ]                    |
++----------------------------+
+
+
+8) Create Org Modal (from Switcher)
+
++-----------------------------------------------+
+|  Create organization                          |
+|-----------------------------------------------|
+|  Name                                          |
+|  [ New Team________________________________ ]  |
+|                                               |
+|  Slug (immutable)                              |
+|  [ new-team______________________________ ]    |
+|  Tip: Slug can’t be changed later.            |
+|                                               |
+|  [ Create ]                     [ Cancel ]     |
++-----------------------------------------------+
+
+
+9) Redirect screens (helpers)
+
+- 403 Not a member (when accessing /o/[org]/... without membership)
+
++-----------------------------------------------+
+|  Access denied                                 |
+|-----------------------------------------------|
+|  You’re not a member of this organization.     |
+|  [ Switch organization ]  [ Go to login ]      |
++-----------------------------------------------+
+
+- 404 Org not found (bad slug)
+
++-----------------------------------------------+
+|  Organization not found                        |
+|-----------------------------------------------|
+|  Check the URL or switch to another org.       |
+|  [ Switch organization ]                       |
++-----------------------------------------------+
+
+
+10) Mobile behavior (summary)
+- Top bar contains org switcher and hamburger to open left drawer.
+- Sidebar content rendered inside a Sheet; same menu items.
+- Dialogs and Command overlay full-screen on small viewports.
+
+
+11) Toasts (Sonner positions)
+- Success: "Invitation sent", "Role updated", "Member removed", "Workspace created".
+- Error: human-friendly messages, fallback generic.
+
+
+COPY & VALIDATION HINTS
+- Slug validation messages: "Only lowercase letters, numbers, and hyphens. Max 50 chars."
+- Reserved slugs: "This slug is reserved. Choose another."
+- Invite expired/invalid: "This invitation is no longer valid. Ask the admin to resend."
+- Last-admin guard: "At least one admin is required."
+- Email allowlist note remains on login only (invites bypass allowlist).

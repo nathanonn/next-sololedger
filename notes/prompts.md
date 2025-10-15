@@ -4,8 +4,8 @@
 
 ```
 ./worktrees.sh setup \
-  --branches feat/enhancement_10111126 \
-  --db-url postgresql://pi:password@localhost:5432/nextwriter
+  --branches feat/multi_tenant_support \
+  --db-url postgresql://pi:password@localhost:5432/nextboilerplate
 ```
 
 ## Clean the worktree
@@ -17,7 +17,7 @@
 ## merge
 
 ```
-./worktrees.sh merge --branches feat/enhancement_10111126 --into main
+./worktrees.sh merge --branches feat/multi_tenant_support --into main
 ```
 
 # create wireframes based on plan

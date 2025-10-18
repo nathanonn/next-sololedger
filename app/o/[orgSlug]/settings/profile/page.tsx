@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 
 /**
@@ -96,7 +95,7 @@ export default function ProfilePage(): React.JSX.Element {
       setPasswordForm.reset();
       // Refresh user data
       setUser((prev) => (prev ? { ...prev, hasPassword: true } : null));
-    } catch (error) {
+    } catch {
       toast.error("Network error. Please try again.");
     } finally {
       setIsLoading(false);
@@ -123,7 +122,7 @@ export default function ProfilePage(): React.JSX.Element {
       toast.success("Password changed successfully");
 
       changePasswordForm.reset();
-    } catch (error) {
+    } catch {
       toast.error("Network error. Please try again.");
     } finally {
       setIsLoading(false);
@@ -137,7 +136,7 @@ export default function ProfilePage(): React.JSX.Element {
         headers: { "Content-Type": "application/json" },
       });
       router.replace("/login");
-    } catch (error) {
+    } catch {
       toast.error("Failed to sign out");
     }
   }

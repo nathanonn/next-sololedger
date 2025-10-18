@@ -205,7 +205,8 @@ export async function audit(event: AuditEvent): Promise<void> {
       userId: event.userId,
       email: event.email ? normalizeEmail(event.email) : undefined,
       ip: event.ip,
-      metadata: event.metadata ? (event.metadata as Record<string, any>) : undefined,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      metadata: event.metadata ? (event.metadata as any) : undefined,
     },
   });
 }

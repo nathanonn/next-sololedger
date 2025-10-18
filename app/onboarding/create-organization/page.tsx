@@ -88,7 +88,7 @@ export default function CreateOrganizationPage(): React.JSX.Element {
 
       // Redirect to new organization dashboard
       router.push(`/o/${result.organization.slug}/dashboard`);
-    } catch (error) {
+    } catch {
       toast.error("Network error. Please try again.");
     } finally {
       setIsLoading(false);

@@ -8,7 +8,6 @@ import {
   signRefreshJwt,
   setAccessCookie,
   setRefreshCookie,
-  type AccessTokenPayload,
 } from "@/lib/jwt";
 
 /**

@@ -97,7 +97,7 @@ export default function LoginPage(): React.JSX.Element {
       // Success - advance to code entry
       setEmail(data.email);
       setStep("code");
-    } catch (err) {
+    } catch {
       toast.error("Network error. Please try again.");
     } finally {
       setIsLoading(false);
@@ -132,7 +132,7 @@ export default function LoginPage(): React.JSX.Element {
 
       // Success - redirect to root (triggers org selection logic)
       router.replace(result.redirect || "/");
-    } catch (err) {
+    } catch {
       toast.error("Network error. Please try again.");
     } finally {
       setIsLoading(false);
@@ -167,7 +167,7 @@ export default function LoginPage(): React.JSX.Element {
 
       // Success - redirect to root (triggers org selection logic)
       router.replace(result.redirect || "/");
-    } catch (err) {
+    } catch {
       toast.error("Network error. Please try again.");
     } finally {
       setIsLoading(false);

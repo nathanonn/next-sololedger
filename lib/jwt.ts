@@ -20,8 +20,6 @@ export type RefreshTokenPayload = {
   tokenVersion: number;
 };
 
-type JWTPayload = AccessTokenPayload | RefreshTokenPayload;
-
 // Secret as Uint8Array for jose
 const secret = new TextEncoder().encode(env.JWT_SECRET);
 

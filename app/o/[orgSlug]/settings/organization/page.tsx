@@ -90,7 +90,7 @@ export default function OrganizationSettingsPage(): React.JSX.Element {
 
       toast.success("Organization updated successfully");
       setOrg(result.organization);
-    } catch (error) {
+    } catch {
       toast.error("Network error. Please try again.");
     } finally {
       setIsLoading(false);

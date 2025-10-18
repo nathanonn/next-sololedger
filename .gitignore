@@ -49,3 +49,4 @@ next-env.d.ts
 
 /lib/generated/prisma
 worktrees
+backup_*.sql

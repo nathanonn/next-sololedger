@@ -24,10 +24,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     // CSRF check
     if (!isRequestOriginValid(request)) {
-      return NextResponse.json(
-        { error: "Invalid origin" },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
     }
 
     // Parse and validate body
@@ -54,7 +51,10 @@ export async function POST(request: Request): Promise<Response> {
         metadata: { reason: "email_not_allowed" },
       });
       return NextResponse.json(
-        { ok: true, message: "If your email is allowed, you will receive a code" },
+        {
+          ok: true,
+          message: "If your email is allowed, you will receive a code",
+        },
         { status: 200 }
       );
     }
@@ -85,17 +85,14 @@ export async function POST(request: Request): Promise<Response> {
 
       // Verify hCaptcha if enabled
       if (env.HCAPTCHA_ENABLED && env.HCAPTCHA_SECRET_KEY) {
-        const verifyResponse = await fetch(
-          "https://hcaptcha.com/siteverify",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({
-              secret: env.HCAPTCHA_SECRET_KEY,
-              response: hcaptchaToken,
-            }),
-          }
-        );
+        const verifyResponse = await fetch("https://hcaptcha.com/siteverify", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            secret: env.HCAPTCHA_SECRET_KEY,
+            response: hcaptchaToken,
+          }),
+        });
 
         const verifyData = await verifyResponse.json();
 
@@ -125,7 +122,10 @@ export async function POST(request: Request): Promise<Response> {
     });
 
     return NextResponse.json(
-      { ok: true, message: "If your email is allowed, you will receive a code" },
+      {
+        ok: true,
+        message: "If your email is allowed, you will receive a code",
+      },
       { status: 200 }
     );
   } catch (error) {

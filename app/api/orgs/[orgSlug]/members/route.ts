@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getOrgBySlug, requireAdmin } from "@/lib/org-helpers";
+import { getOrgBySlug } from "@/lib/org-helpers";
 import { db } from "@/lib/db";
 
 export const runtime = "nodejs";

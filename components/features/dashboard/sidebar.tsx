@@ -36,7 +36,6 @@ export type SidebarProps = {
 };
 
 export function Sidebar({
-  userId,
   userEmail,
   sections,
   pages,
@@ -50,7 +49,6 @@ export function Sidebar({
   const router = useRouter();
 
   const [organizations, setOrganizations] = React.useState<CurrentOrg[]>([]);
-  const [loadingOrgs, setLoadingOrgs] = React.useState(false);
 
   // Fetch user's organizations when currentOrg is available
   React.useEffect(() => {
@@ -58,12 +56,11 @@ export function Sidebar({
 
     async function fetchOrganizations() {
       try {
-        setLoadingOrgs(true);
         const response = await fetch("/api/orgs");
         if (response.ok) {
           const data = await response.json();
           setOrganizations(
-            data.organizations.map((org: any) => ({
+            data.organizations.map((org: { id: string; name: string; slug: string; role: string }) => ({
               id: org.id,
               name: org.name,
               slug: org.slug,
@@ -73,8 +70,6 @@ export function Sidebar({
         }
       } catch (error) {
         console.error("Error fetching organizations:", error);
-      } finally {
-        setLoadingOrgs(false);
       }
     }
 

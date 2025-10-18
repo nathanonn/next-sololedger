@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -64,7 +64,6 @@ interface Invitation {
 
 export default function MembersPage(): React.JSX.Element {
   const params = useParams();
-  const router = useRouter();
   const orgSlug = params.orgSlug as string;
 
   const [members, setMembers] = React.useState<Member[]>([]);
@@ -131,7 +130,7 @@ export default function MembersPage(): React.JSX.Element {
       toast.success(`Invitation sent to ${data.email}`);
       form.reset();
       fetchData();
-    } catch (error) {
+    } catch {
       toast.error("Network error. Please try again.");
     } finally {
       setIsLoading(false);
@@ -164,7 +163,7 @@ export default function MembersPage(): React.JSX.Element {
       setChangeRoleDialogOpen(false);
       setSelectedMember(null);
       fetchData();
-    } catch (error) {
+    } catch {
       toast.error("Network error. Please try again.");
     } finally {
       setIsLoading(false);
@@ -195,7 +194,7 @@ export default function MembersPage(): React.JSX.Element {
       setRemoveDialogOpen(false);
       setSelectedMember(null);
       fetchData();
-    } catch (error) {
+    } catch {
       toast.error("Network error. Please try again.");
     } finally {
       setIsLoading(false);
@@ -220,7 +219,7 @@ export default function MembersPage(): React.JSX.Element {
 
       toast.success("Invitation resent successfully");
       fetchData();
-    } catch (error) {
+    } catch {
       toast.error("Network error. Please try again.");
     }
   }
@@ -243,7 +242,7 @@ export default function MembersPage(): React.JSX.Element {
 
       toast.success("Invitation revoked successfully");
       fetchData();
-    } catch (error) {
+    } catch {
       toast.error("Network error. Please try again.");
     }
   }

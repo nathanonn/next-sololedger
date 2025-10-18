@@ -133,7 +133,7 @@ export default function InvitePage(): React.JSX.Element {
           router.push("/");
         }, 1000);
       }
-    } catch (error) {
+    } catch {
       toast.error("Network error. Please try again.");
     } finally {
       setIsAccepting(false);

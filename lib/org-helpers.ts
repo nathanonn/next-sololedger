@@ -227,7 +227,7 @@ export function isReservedSlug(slug: string): boolean {
  */
 export async function generateUniqueSlug(baseName: string): Promise<string> {
   // Convert to slug format
-  let slug = baseName
+  const slug = baseName
     .toLowerCase()
     .trim()
     .replace(/[^\w\s-]/g, "")

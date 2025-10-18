@@ -17,3 +17,8 @@ what else that can be considered:
 - **Invitation System**: Implement a robust invitation system that allows admins to invite users via email. Consider adding expiration dates for invitations and the ability to resend invitations.
 
 - **User Experience**: Design the user interface to make it easy for users to switch between organizations. Consider using modals or dedicated pages for organization management tasks.
+
+======
+
+- [ ] Add an env variable to disable allowed emails check.
+- [ ] Only admin of the organization can see the /o/[orgSlug]/settings/members and /app/o/[orgSlug]/settings/organization pages. We need to control the API routes as well to make sure only admin can perform those actions.

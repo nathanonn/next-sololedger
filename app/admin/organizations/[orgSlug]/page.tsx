@@ -33,11 +33,13 @@ export default async function OrganizationDetailPage({
   const { orgSlug } = await params;
   const search = await searchParams;
 
-  // Parse pagination params
-  const page = parseInt(search.page || "1", 10);
-  const pageSize = parseInt(search.pageSize || "20", 10);
+  // Parse and validate pagination params
+  const parsedPage = parseInt(search.page || "1", 10);
+  const page = parsedPage > 0 && !isNaN(parsedPage) ? parsedPage : 1;
+
+  const parsedPageSize = parseInt(search.pageSize || "20", 10);
   const validPageSizes = [10, 20, 50];
-  const effectivePageSize = validPageSizes.includes(pageSize) ? pageSize : 20;
+  const effectivePageSize = validPageSizes.includes(parsedPageSize) ? parsedPageSize : 20;
 
   // Load organization
   const org = await db.organization.findUnique({

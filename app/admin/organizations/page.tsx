@@ -40,16 +40,17 @@ export default async function OrganizationsPage({
 }): Promise<React.JSX.Element> {
   const params = await searchParams;
 
-  // Parse search params
-  const page = parseInt(params.page || "1", 10);
-  const pageSize = parseInt(params.pageSize || "20", 10);
+  // Parse and validate search params
+  const parsedPage = parseInt(params.page || "1", 10);
+  const page = parsedPage > 0 && !isNaN(parsedPage) ? parsedPage : 1;
+
+  const parsedPageSize = parseInt(params.pageSize || "20", 10);
+  const validPageSizes = [10, 20, 50];
+  const effectivePageSize = validPageSizes.includes(parsedPageSize) ? parsedPageSize : 20;
+
   const q = params.q || "";
   const sort = params.sort || "createdAt";
   const dir = params.dir || "desc";
-
-  // Validate pageSize
-  const validPageSizes = [10, 20, 50];
-  const effectivePageSize = validPageSizes.includes(pageSize) ? pageSize : 20;
 
   // Build where clause for search
   const where = q

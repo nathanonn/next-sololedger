@@ -47,6 +47,7 @@ export type DashboardShellProps = {
   children: React.ReactNode;
   currentOrg?: CurrentOrg;
   lastOrgCookieName?: string;
+  defaultOrgSlug?: string;
   canCreateOrganizations?: boolean;
   isSuperadmin?: boolean;
 };
@@ -102,6 +103,7 @@ export function DashboardShell({
   children,
   currentOrg,
   lastOrgCookieName = "__last_org",
+  defaultOrgSlug,
   canCreateOrganizations = false,
   isSuperadmin = false,
 }: DashboardShellProps): React.JSX.Element {
@@ -140,6 +142,7 @@ export function DashboardShell({
             collapsed={false}
             currentOrg={currentOrg}
             lastOrgCookieName={lastOrgCookieName}
+            defaultOrgSlug={defaultOrgSlug}
             canCreateOrganizations={canCreateOrganizations}
             isSuperadmin={isSuperadmin}
             onNavigate={() => setMobileOpen(false)}
@@ -172,6 +175,7 @@ export function DashboardShell({
             collapsed={effectiveCollapsed}
             currentOrg={currentOrg}
             lastOrgCookieName={lastOrgCookieName}
+            defaultOrgSlug={defaultOrgSlug}
             canCreateOrganizations={canCreateOrganizations}
             isSuperadmin={isSuperadmin}
             onToggleCollapse={() => setCollapsed(!collapsed)}

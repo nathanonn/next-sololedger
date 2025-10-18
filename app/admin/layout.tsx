@@ -4,6 +4,7 @@ import { isSuperadmin } from "@/lib/org-helpers";
 import { DashboardShell } from "@/components/features/dashboard/dashboard-shell";
 import { Building2, Settings } from "lucide-react";
 import { env } from "@/lib/env";
+import { db } from "@/lib/db";
 
 /**
  * Admin layout - Superadmin-only access
@@ -26,6 +27,16 @@ export default async function AdminLayout({
   if (!userIsSuperadmin) {
     // Not a superadmin - redirect to home with error
     redirect("/?error=unauthorized");
+  }
+
+  // Fetch user's defaultOrganization slug for "Back to Dashboard" fallback
+  let defaultOrgSlug: string | undefined = undefined;
+  if (user.defaultOrganizationId) {
+    const defaultOrg = await db.organization.findUnique({
+      where: { id: user.defaultOrganizationId },
+      select: { slug: true },
+    });
+    defaultOrgSlug = defaultOrg?.slug;
   }
 
   // Build sections and pages for admin area
@@ -56,6 +67,7 @@ export default async function AdminLayout({
       isSuperadmin={true}
       canCreateOrganizations={true}
       lastOrgCookieName={env.LAST_ORG_COOKIE_NAME}
+      defaultOrgSlug={defaultOrgSlug}
     >
       {children}
     </DashboardShell>

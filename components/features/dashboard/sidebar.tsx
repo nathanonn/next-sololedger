@@ -33,6 +33,146 @@ import type { Section, Page, CurrentOrg } from "./dashboard-shell";
  * Supports collapsed and expanded states
  */
 
+type UserMenuContentProps = {
+  userEmail: string;
+  currentOrg?: CurrentOrg;
+  organizations: CurrentOrg[];
+  isSuperadmin: boolean;
+  canCreateOrganizations: boolean;
+  lastOrgSlug: string | null;
+  defaultOrgSlug?: string;
+  pathname: string | null;
+  router: ReturnType<typeof useRouter>;
+  handleSignOut: () => Promise<void>;
+  handleSwitchOrg: (org: CurrentOrg) => void;
+  handleCreateOrg: () => void;
+};
+
+/**
+ * Reusable user menu content for both collapsed and expanded sidebar states
+ */
+function UserMenuContent({
+  userEmail,
+  currentOrg,
+  organizations,
+  isSuperadmin,
+  canCreateOrganizations,
+  lastOrgSlug,
+  defaultOrgSlug,
+  pathname,
+  router,
+  handleSignOut,
+  handleSwitchOrg,
+  handleCreateOrg,
+}: UserMenuContentProps): React.JSX.Element {
+  return (
+    <>
+      <DropdownMenuLabel className="font-normal">
+        <div className="flex flex-col space-y-1">
+          <p className="text-sm font-medium leading-none">Account</p>
+          <p className="text-xs leading-none text-muted-foreground truncate">
+            {userEmail}
+          </p>
+        </div>
+      </DropdownMenuLabel>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem
+        onClick={() => {
+          const profileUrl = currentOrg
+            ? `/o/${currentOrg.slug}/settings/profile`
+            : "/settings/profile";
+          router.push(profileUrl);
+        }}
+      >
+        <User className="mr-2 h-4 w-4" />
+        Profile
+      </DropdownMenuItem>
+      {currentOrg && (
+        <DropdownMenuItem
+          onClick={() =>
+            router.push(`/o/${currentOrg.slug}/settings/organization`)
+          }
+        >
+          <Settings className="mr-2 h-4 w-4" />
+          Organization
+        </DropdownMenuItem>
+      )}
+      {currentOrg &&
+        (currentOrg.role === "admin" || currentOrg.role === "superadmin") && (
+          <DropdownMenuItem
+            onClick={() =>
+              router.push(`/o/${currentOrg.slug}/settings/members`)
+            }
+          >
+            <Users className="mr-2 h-4 w-4" />
+            Members
+          </DropdownMenuItem>
+        )}
+      {isSuperadmin &&
+        pathname?.startsWith("/admin") &&
+        (lastOrgSlug || defaultOrgSlug) && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() =>
+                router.push(
+                  `/o/${lastOrgSlug || defaultOrgSlug}/dashboard`
+                )
+              }
+            >
+              <LayoutDashboard className="mr-2 h-4 w-4" />
+              Back to Organization Dashboard
+            </DropdownMenuItem>
+          </>
+        )}
+      {(isSuperadmin || currentOrg?.role === "superadmin") && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() => router.push("/admin/organizations")}
+          >
+            <Building2 className="mr-2 h-4 w-4" />
+            Manage Organizations
+          </DropdownMenuItem>
+        </>
+      )}
+      {currentOrg && organizations.length > 1 && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Switch Organization</DropdownMenuLabel>
+          {organizations
+            .filter((org) => org.id !== currentOrg.id)
+            .map((org) => (
+              <DropdownMenuItem
+                key={org.id}
+                onClick={() => handleSwitchOrg(org)}
+              >
+                <Building2 className="mr-2 h-4 w-4" />
+                <div className="flex-1 min-w-0">
+                  <div className="truncate">{org.name}</div>
+                </div>
+              </DropdownMenuItem>
+            ))}
+        </>
+      )}
+      {currentOrg && canCreateOrganizations && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={handleCreateOrg}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Organization
+          </DropdownMenuItem>
+        </>
+      )}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onClick={handleSignOut}>
+        <LogOut className="mr-2 h-4 w-4" />
+        Sign out
+      </DropdownMenuItem>
+    </>
+  );
+}
+
 export type SidebarProps = {
   userId: string;
   userEmail: string;
@@ -41,6 +181,7 @@ export type SidebarProps = {
   collapsed: boolean;
   currentOrg?: CurrentOrg;
   lastOrgCookieName?: string;
+  defaultOrgSlug?: string;
   canCreateOrganizations?: boolean;
   isSuperadmin?: boolean;
   onToggleCollapse?: () => void;
@@ -54,6 +195,7 @@ export function Sidebar({
   collapsed,
   currentOrg,
   lastOrgCookieName = "__last_org",
+  defaultOrgSlug,
   canCreateOrganizations = false,
   isSuperadmin = false,
   onToggleCollapse,
@@ -67,12 +209,14 @@ export function Sidebar({
 
   // Read last org cookie for "Back to Organization Dashboard" link
   React.useEffect(() => {
-    if (isSuperadmin && pathname?.startsWith('/admin') && lastOrgCookieName) {
+    if (isSuperadmin && pathname?.startsWith("/admin") && lastOrgCookieName) {
       // Read cookie client-side
-      const cookies = document.cookie.split('; ');
-      const lastOrgCookie = cookies.find(c => c.startsWith(`${lastOrgCookieName}=`));
+      const cookies = document.cookie.split("; ");
+      const lastOrgCookie = cookies.find((c) =>
+        c.startsWith(`${lastOrgCookieName}=`)
+      );
       if (lastOrgCookie) {
-        const slug = lastOrgCookie.split('=')[1];
+        const slug = lastOrgCookie.split("=")[1];
         setLastOrgSlug(slug || null);
       } else {
         setLastOrgSlug(null);
@@ -216,103 +360,20 @@ export function Sidebar({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="right" align="end" className="w-56">
-              <DropdownMenuLabel className="font-normal">
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">Account</p>
-                  <p className="text-xs leading-none text-muted-foreground truncate">
-                    {userEmail}
-                  </p>
-                </div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => {
-                  const profileUrl = currentOrg
-                    ? `/o/${currentOrg.slug}/settings/profile`
-                    : "/settings/profile";
-                  router.push(profileUrl);
-                }}
-              >
-                <User className="mr-2 h-4 w-4" />
-                Profile
-              </DropdownMenuItem>
-              {currentOrg && (
-                <DropdownMenuItem
-                  onClick={() =>
-                    router.push(`/o/${currentOrg.slug}/settings/organization`)
-                  }
-                >
-                  <Settings className="mr-2 h-4 w-4" />
-                  Organization
-                </DropdownMenuItem>
-              )}
-              {currentOrg &&
-                (currentOrg.role === "admin" ||
-                  currentOrg.role === "superadmin") && (
-                  <DropdownMenuItem
-                    onClick={() =>
-                      router.push(`/o/${currentOrg.slug}/settings/members`)
-                    }
-                  >
-                    <Users className="mr-2 h-4 w-4" />
-                    Members
-                  </DropdownMenuItem>
-                )}
-              {isSuperadmin && pathname?.startsWith('/admin') && lastOrgSlug && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => router.push(`/o/${lastOrgSlug}/dashboard`)}
-                  >
-                    <LayoutDashboard className="mr-2 h-4 w-4" />
-                    Back to Organization Dashboard
-                  </DropdownMenuItem>
-                </>
-              )}
-              {(isSuperadmin || currentOrg?.role === "superadmin") && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => router.push("/admin/organizations")}
-                  >
-                    <Building2 className="mr-2 h-4 w-4" />
-                    Manage Organizations
-                  </DropdownMenuItem>
-                </>
-              )}
-              {currentOrg && organizations.length > 1 && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel>Switch Organization</DropdownMenuLabel>
-                  {organizations
-                    .filter((org) => org.id !== currentOrg.id)
-                    .map((org) => (
-                      <DropdownMenuItem
-                        key={org.id}
-                        onClick={() => handleSwitchOrg(org)}
-                      >
-                        <Building2 className="mr-2 h-4 w-4" />
-                        <div className="flex-1 min-w-0">
-                          <div className="truncate">{org.name}</div>
-                        </div>
-                      </DropdownMenuItem>
-                    ))}
-                </>
-              )}
-              {currentOrg && canCreateOrganizations && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleCreateOrg}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create Organization
-                  </DropdownMenuItem>
-                </>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleSignOut}>
-                <LogOut className="mr-2 h-4 w-4" />
-                Sign out
-              </DropdownMenuItem>
+              <UserMenuContent
+                userEmail={userEmail}
+                currentOrg={currentOrg}
+                organizations={organizations}
+                isSuperadmin={isSuperadmin}
+                canCreateOrganizations={canCreateOrganizations}
+                lastOrgSlug={lastOrgSlug}
+                defaultOrgSlug={defaultOrgSlug}
+                pathname={pathname}
+                router={router}
+                handleSignOut={handleSignOut}
+                handleSwitchOrg={handleSwitchOrg}
+                handleCreateOrg={handleCreateOrg}
+              />
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -418,85 +479,20 @@ export function Sidebar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="end" className="w-56">
-            <DropdownMenuLabel>My Account</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => {
-                const profileUrl = currentOrg
-                  ? `/o/${currentOrg.slug}/settings/profile`
-                  : "/settings/profile";
-                router.push(profileUrl);
-              }}
-            >
-              <User className="mr-2 h-4 w-4" />
-              Profile
-            </DropdownMenuItem>
-            {currentOrg &&
-              (currentOrg.role === "admin" ||
-                currentOrg.role === "superadmin") && (
-                <>
-                  <DropdownMenuItem
-                    onClick={() =>
-                      router.push(`/o/${currentOrg.slug}/settings/organization`)
-                    }
-                  >
-                    <Settings className="mr-2 h-4 w-4" />
-                    Organization
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() =>
-                      router.push(`/o/${currentOrg.slug}/settings/members`)
-                    }
-                  >
-                    <Users className="mr-2 h-4 w-4" />
-                    Members
-                  </DropdownMenuItem>
-                </>
-              )}
-            {(isSuperadmin || currentOrg?.role === "superadmin") && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => router.push("/admin/organizations")}
-                >
-                  <Building2 className="mr-2 h-4 w-4" />
-                  Manage Organizations
-                </DropdownMenuItem>
-              </>
-            )}
-            {currentOrg && organizations.length > 1 && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel>Switch Organization</DropdownMenuLabel>
-                {organizations
-                  .filter((org) => org.id !== currentOrg.id)
-                  .map((org) => (
-                    <DropdownMenuItem
-                      key={org.id}
-                      onClick={() => handleSwitchOrg(org)}
-                    >
-                      <Building2 className="mr-2 h-4 w-4" />
-                      <div className="flex-1 min-w-0">
-                        <div className="truncate">{org.name}</div>
-                      </div>
-                    </DropdownMenuItem>
-                  ))}
-              </>
-            )}
-            {currentOrg && canCreateOrganizations && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleCreateOrg}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Organization
-                </DropdownMenuItem>
-              </>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleSignOut}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Sign out
-            </DropdownMenuItem>
+            <UserMenuContent
+              userEmail={userEmail}
+              currentOrg={currentOrg}
+              organizations={organizations}
+              isSuperadmin={isSuperadmin}
+              canCreateOrganizations={canCreateOrganizations}
+              lastOrgSlug={lastOrgSlug}
+              defaultOrgSlug={defaultOrgSlug}
+              pathname={pathname}
+              router={router}
+              handleSignOut={handleSignOut}
+              handleSwitchOrg={handleSwitchOrg}
+              handleCreateOrg={handleCreateOrg}
+            />
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

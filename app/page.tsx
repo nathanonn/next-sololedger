@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { getUserOrganizations, isSuperadmin } from "@/lib/org-helpers";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
+import { OrgCreationDenied } from "./_components/org-creation-denied";
 
 /**
  * Root page redirect logic
@@ -87,8 +88,8 @@ export default async function Home(): Promise<React.JSX.Element> {
 
   // No organizations - check if user can create
   if (!env.ORG_CREATION_ENABLED) {
-    // Cannot create org - redirect with notice
-    redirect("/login?notice=org_creation_disabled");
+    // Cannot create org - show denial page with toast
+    return <OrgCreationDenied />;
   }
 
   // Check org creation limit
@@ -97,7 +98,8 @@ export default async function Home(): Promise<React.JSX.Element> {
   });
 
   if (orgCount >= env.ORG_CREATION_LIMIT) {
-    redirect("/login?notice=org_creation_disabled");
+    // Limit reached - show denial page with toast
+    return <OrgCreationDenied />;
   }
 
   // User can create - redirect to onboarding

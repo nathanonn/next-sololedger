@@ -26,7 +26,8 @@ export default async function CreateOrganizationLayout({
   if (!userIsSuperadmin) {
     // Check if org creation is enabled
     if (!env.ORG_CREATION_ENABLED) {
-      redirect("/login?notice=org_creation_disabled");
+      // Keep authenticated user in app shell with notice
+      redirect("/?notice=org_creation_disabled");
     }
 
     // Check if user hasn't reached the limit
@@ -35,7 +36,8 @@ export default async function CreateOrganizationLayout({
     });
 
     if (orgCount >= env.ORG_CREATION_LIMIT) {
-      redirect("/login?notice=org_creation_disabled");
+      // Keep authenticated user in app shell with notice
+      redirect("/?notice=org_creation_disabled");
     }
   }
 

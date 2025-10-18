@@ -31,6 +31,7 @@ export type SidebarProps = {
   collapsed: boolean;
   currentOrg?: CurrentOrg;
   lastOrgCookieName?: string;
+  canCreateOrganizations?: boolean;
   onToggleCollapse?: () => void;
   onNavigate?: () => void;
 };
@@ -42,6 +43,7 @@ export function Sidebar({
   collapsed,
   currentOrg,
   lastOrgCookieName = "__last_org",
+  canCreateOrganizations = false,
   onToggleCollapse,
   onNavigate,
 }: SidebarProps): React.JSX.Element {
@@ -209,7 +211,7 @@ export function Sidebar({
                   Organization
                 </DropdownMenuItem>
               )}
-              {currentOrg && currentOrg.role === "admin" && (
+              {currentOrg && (currentOrg.role === "admin" || currentOrg.role === "superadmin") && (
                 <DropdownMenuItem
                   onClick={() => router.push(`/o/${currentOrg.slug}/settings/members`)}
                 >
@@ -236,7 +238,7 @@ export function Sidebar({
                     ))}
                 </>
               )}
-              {currentOrg && (
+              {currentOrg && canCreateOrganizations && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleCreateOrg}>
@@ -269,7 +271,11 @@ export function Sidebar({
                 {currentOrg.name}
               </h2>
               <p className="text-xs text-muted-foreground">
-                {currentOrg.role === "admin" ? "Admin" : "Member"}
+                {currentOrg.role === "superadmin"
+                  ? "Superadmin"
+                  : currentOrg.role === "admin"
+                  ? "Admin"
+                  : "Member"}
               </p>
             </div>
           ) : (
@@ -376,7 +382,7 @@ export function Sidebar({
                 Organization
               </DropdownMenuItem>
             )}
-            {currentOrg && currentOrg.role === "admin" && (
+            {currentOrg && (currentOrg.role === "admin" || currentOrg.role === "superadmin") && (
               <DropdownMenuItem
                 onClick={() => router.push(`/o/${currentOrg.slug}/settings/members`)}
               >
@@ -403,7 +409,7 @@ export function Sidebar({
                   ))}
               </>
             )}
-            {currentOrg && (
+            {currentOrg && canCreateOrganizations && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleCreateOrg}>

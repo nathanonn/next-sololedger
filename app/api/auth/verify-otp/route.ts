@@ -10,6 +10,8 @@ import {
 } from "@/lib/auth";
 import { signAccessJwt, signRefreshJwt, setAccessCookie, setRefreshCookie } from "@/lib/jwt";
 import { safeRedirect, getClientIp } from "@/lib/auth-helpers";
+import { env } from "@/lib/env";
+import { db } from "@/lib/db";
 
 /**
  * POST /api/auth/verify-otp
@@ -43,8 +45,32 @@ export async function POST(request: Request): Promise<Response> {
     const normalizedEmail = normalizeEmail(email);
     const ip = getClientIp(request);
 
-    // Allowlist check
-    if (!isEmailAllowed(normalizedEmail)) {
+    // Check if user exists
+    const existingUser = await db.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true, role: true },
+    });
+
+    // Signup toggle check: if disabled and user doesn't exist, block
+    if (!env.AUTH_SIGNUP_ENABLED && !existingUser) {
+      await audit({
+        action: "otp_verify_failure",
+        email: normalizedEmail,
+        ip,
+        metadata: { reason: "signup_disabled_no_account" },
+      });
+      return NextResponse.json(
+        {
+          error:
+            "Your account does not exist and sign up is disabled. Please contact an administrator.",
+        },
+        { status: 401 }
+      );
+    }
+
+    // Allowlist check (superadmins bypass allowlist)
+    const isSuperadmin = existingUser?.role === "superadmin";
+    if (!isSuperadmin && !isEmailAllowed(normalizedEmail)) {
       await audit({
         action: "otp_verify_failure",
         email: normalizedEmail,

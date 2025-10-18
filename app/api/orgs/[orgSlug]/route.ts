@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getOrgBySlug, requireAdmin } from "@/lib/org-helpers";
+import { getOrgBySlug, requireAdminOrSuperadmin } from "@/lib/org-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 /**
  * PATCH /api/orgs/[orgSlug]
  * Update organization details
- * Requires: Admin role
+ * Requires: Admin or Superadmin role
  */
 export async function PATCH(
   request: Request,
@@ -38,12 +38,12 @@ export async function PATCH(
       );
     }
 
-    // Verify user is admin
+    // Verify user is admin or superadmin
     try {
-      await requireAdmin(user.id, org.id);
+      await requireAdminOrSuperadmin(user.id, org.id);
     } catch {
       return NextResponse.json(
-        { error: "Admin access required" },
+        { error: "Admin or superadmin access required" },
         { status: 403 }
       );
     }

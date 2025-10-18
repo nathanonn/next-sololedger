@@ -17,7 +17,15 @@ const envSchema = z.object({
   JWT_REFRESH_COOKIE_NAME: z.string().default("__session"),
 
   // Auth
-  ALLOWED_EMAILS: z.string().min(1, "ALLOWED_EMAILS required for authentication"),
+  AUTH_ALLOWLIST_ENABLED: z
+    .string()
+    .transform((val) => val === "true")
+    .default("true"),
+  AUTH_SIGNUP_ENABLED: z
+    .string()
+    .transform((val) => val === "true")
+    .default("true"),
+  ALLOWED_EMAILS: z.string().optional(), // Only required when AUTH_ALLOWLIST_ENABLED=true
   ALLOWED_ORIGINS: z.string().optional(),
 
   // Email (Resend)
@@ -60,6 +68,14 @@ const envSchema = z.object({
     .default("false"),
 
   // Multi-tenant
+  ORG_CREATION_ENABLED: z
+    .string()
+    .transform((val) => val === "true")
+    .default("false"),
+  ORG_CREATION_LIMIT: z
+    .string()
+    .transform((val) => parseInt(val, 10))
+    .default("1"),
   INVITE_EXP_MINUTES: z
     .string()
     .transform((val) => parseInt(val, 10))
@@ -76,7 +92,23 @@ const envSchema = z.object({
     .string()
     .default("o,api,dashboard,settings,login,invite,onboarding,_next,assets,auth,public"),
   LAST_ORG_COOKIE_NAME: z.string().default("__last_org"),
-});
+
+  // Seed (for scripts)
+  SEED_EMAIL: z.string().email().optional(),
+})
+  .refine(
+    (data) => {
+      // If allowlist is enabled, ALLOWED_EMAILS must be provided
+      if (data.AUTH_ALLOWLIST_ENABLED && !data.ALLOWED_EMAILS) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "ALLOWED_EMAILS is required when AUTH_ALLOWLIST_ENABLED=true",
+      path: ["ALLOWED_EMAILS"],
+    }
+  );
 
 // Parse and export validated env
 const parseEnv = () => {

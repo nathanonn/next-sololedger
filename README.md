@@ -10,12 +10,23 @@ A production-ready Next.js 15 boilerplate with **email OTP authentication**, JWT
 - ✅ **JWT sessions** with access + refresh token rotation
 - ✅ **Rate limiting** (per-email & per-IP)
 - ✅ **CSRF protection** (Origin/Referer validation)
-- ✅ **Email allowlist** enforcement
+- ✅ **Email allowlist** with toggle (optional)
+- ✅ **Signup toggle** (disable new user registration)
+- ✅ **Superadmin role** with global access
 - ✅ **Audit logging** for all auth events
 - ✅ **Password management** with zxcvbn strength validation
 - ✅ **Session versioning** for global invalidation
 - ✅ **Dev mode** password signin for testing
 - ✅ **Optional hCaptcha** gating after rate limit threshold
+
+### Multi-Tenant Features
+
+- ✅ **Organization-based tenancy** with full data isolation
+- ✅ **Admin & Superadmin roles** with granular permissions
+- ✅ **Organization creation policies** with configurable limits
+- ✅ **Member invitations** with email-based workflow
+- ✅ **Organization switcher** in sidebar
+- ✅ **Protected settings pages** (admin-only access)
 
 ### Dashboard Shell
 
@@ -83,8 +94,14 @@ DATABASE_URL=postgresql://user:password@localhost:5432/nextboilerplate
 # JWT Secret (generate with: openssl rand -base64 32)
 JWT_SECRET=your-32-plus-character-secret-here
 
-# Email Allowlist (comma-separated)
-ALLOWED_EMAILS=your-email@example.com,admin@example.com
+# Authentication Toggles
+AUTH_ALLOWLIST_ENABLED=true              # Enable email allowlist (default: true)
+AUTH_SIGNUP_ENABLED=true                 # Enable new user signup (default: true)
+ALLOWED_EMAILS=your-email@example.com    # Required when allowlist enabled
+
+# Multi-Tenant Settings
+ORG_CREATION_ENABLED=false               # Allow users to create orgs (default: false)
+ORG_CREATION_LIMIT=1                     # Max orgs per user (default: 1)
 
 # App URL
 APP_URL=http://localhost:3000
@@ -95,6 +112,9 @@ RESEND_FROM_EMAIL=noreply@yourdomain.com
 
 # Optional: Dev mode password signin
 ENABLE_DEV_PASSWORD_SIGNIN=true
+
+# Optional: Superadmin seed
+SEED_EMAIL=admin@example.com
 ```
 
 See `.env.example` for all available options.
@@ -129,7 +149,24 @@ SEED_EMAIL=admin@example.com SEED_PASSWORD=yourpassword SEED_NAME="Admin" npm ru
 
 The seed script is idempotent - running it multiple times with the same email will prompt you to update the password if the user already exists.
 
-### 7. Start Development Server
+### 7. Create Superadmin (Optional)
+
+To create a superadmin user with full system privileges:
+
+```bash
+# Set SEED_EMAIL in .env or via environment variable
+SEED_EMAIL=admin@example.com npx tsx scripts/seed-superadmin.ts
+```
+
+**Superadmin Privileges:**
+- Access **ALL organizations** without membership
+- Create organizations bypassing limits
+- Manage all members and settings
+- Bypass email allowlist and signup restrictions
+
+**Security Warning**: Only grant superadmin access to trusted administrators.
+
+### 8. Start Development Server
 
 ```bash
 npm run dev

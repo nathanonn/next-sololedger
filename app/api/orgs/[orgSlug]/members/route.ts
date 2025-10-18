@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getOrgBySlug } from "@/lib/org-helpers";
+import { getOrgBySlug, requireAdminOrSuperadmin } from "@/lib/org-helpers";
 import { db } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 /**
  * GET /api/orgs/[orgSlug]/members
  * List all members of an organization
- * Requires: Membership in organization
+ * Requires: Admin or Superadmin role
  */
 export async function GET(
   request: Request,
@@ -30,19 +30,12 @@ export async function GET(
       );
     }
 
-    // Verify user is a member
-    const userMembership = await db.membership.findUnique({
-      where: {
-        userId_organizationId: {
-          userId: user.id,
-          organizationId: org.id,
-        },
-      },
-    });
-
-    if (!userMembership) {
+    // Verify user is admin or superadmin
+    try {
+      await requireAdminOrSuperadmin(user.id, org.id);
+    } catch {
       return NextResponse.json(
-        { error: "Not a member of this organization" },
+        { error: "Admin or superadmin access required" },
         { status: 403 }
       );
     }

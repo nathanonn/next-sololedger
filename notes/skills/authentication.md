@@ -58,12 +58,26 @@ npm i -D prisma @types/bcrypt
 **Required env vars**
 
 - `RESEND_API_KEY`, `RESEND_EMAIL_DOMAIN`, `RESEND_FROM_EMAIL`
-- `ALLOWED_EMAILS` (comma-separated exact emails; normalized lowercase compare)
-- `ENABLE_DEV_PASSWORD_SIGNIN` (`"true"` enables dev password sign-in; requires NODE_ENV=development)
 - `JWT_SECRET` (≥32 chars), `JWT_COOKIE_NAME` (default `__session`)
 - `APP_URL` (used for CSRF origin allowlist)
+
+**Authentication Feature Toggles**
+
+- `AUTH_ALLOWLIST_ENABLED` (default `"true"`): Enable email allowlist enforcement
+- `AUTH_SIGNUP_ENABLED` (default `"true"`): Enable new user signup
+- `ALLOWED_EMAILS` (required when `AUTH_ALLOWLIST_ENABLED=true`; comma-separated exact emails; normalized lowercase compare)
+
+**Multi-Tenant Settings**
+
+- `ORG_CREATION_ENABLED` (default `"false"`): Allow regular users to create organizations
+- `ORG_CREATION_LIMIT` (default `1`): Maximum organizations per user (superadmins bypass)
+
+**Optional**
+
+- `ENABLE_DEV_PASSWORD_SIGNIN` (`"true"` enables dev password sign-in; requires NODE_ENV=development)
 - `HCAPTCHA_SITE_KEY`, `HCAPTCHA_SECRET_KEY` (optional; enables CAPTCHA gating during high-frequency OTP requests)
 - `ALLOWED_ORIGINS` (optional, comma-separated hostnames or URLs for additional allowed origins in CSRF checks)
+- `SEED_EMAIL` (for superadmin seed script)
 - **Tunables:** `OTP_EXP_MINUTES` (default 10), `OTP_LENGTH` (min 4, max 8, default 6), `BCRYPT_ROUNDS` (min 10, max 15, default 12)
 
 Dev-only helper:
@@ -80,16 +94,40 @@ Dev-only helper:
 
 ## 2. Database Model (Prisma / Postgres)
 
-**User**: `id`, `email (unique)`, `name?`, `passwordHash?`, `emailVerifiedAt?`, `role` (default `"user"`), `sessionVersion` (default 1), timestamps
+**User**: `id`, `email (unique)`, `name?`, `passwordHash?`, `emailVerifiedAt?`, `role` (default `"user"`, can be `"superadmin"`), `sessionVersion` (default 1), `defaultOrganizationId?`, timestamps
 **OtpToken**: `id`, `email`, `otpHash (bcrypt)`, `expiresAt`, `consumedAt?`, `attempts` (default 0), `createdAt`
 **OtpRequest**: `id`, `email`, `ip?`, `requestedAt`
-**AuditLog**: `id`, `action`, `userId?`, `email?`, `ip?`, `metadata?`, `createdAt`
+**AuditLog**: `id`, `action`, `userId?`, `email?`, `ip?`, `organizationId?`, `metadata?`, `createdAt`
+
+**Superadmin Role**:
+- Set via seed script: `npx tsx scripts/seed-superadmin.ts`
+- Grants global access to all organizations without membership
+- Bypasses email allowlist and signup restrictions
+- Can create organizations regardless of `ORG_CREATION_ENABLED` and limits
+- Security critical: only grant to trusted system administrators
 
 ---
 
-## 3. Allowed Emails Gate
+## 3. Authentication Feature Toggles
 
-Checked before OTP issuance and dev password sign-in. Exact match against `ALLOWED_EMAILS` (normalized lowercase). Endpoints return generic responses to avoid enumeration.
+### Allowlist Toggle (`AUTH_ALLOWLIST_ENABLED`)
+- **Default**: `true`
+- **When enabled**: Only emails in `ALLOWED_EMAILS` (comma-separated, normalized lowercase) can sign up or sign in
+- **When disabled**: Any email can sign up/sign in (allowlist is bypassed)
+- **Superadmin bypass**: Users with `role="superadmin"` bypass allowlist checks regardless of toggle state
+
+### Signup Toggle (`AUTH_SIGNUP_ENABLED`)
+- **Default**: `true`
+- **When enabled**: New users can create accounts via OTP or invitation acceptance
+- **When disabled**: Only existing users can sign in; new signups are blocked with explicit error message
+- **Superadmin bypass**: Superadmins bypass this restriction
+- **Implementation**:
+  - `request-otp` checks if user exists; if not and signup disabled → 400 error
+  - `verify-otp` checks if user exists; if not and signup disabled → 401 error
+  - Audit logs track denials with `reason: 'signup_disabled_no_account'`
+
+### Allowed Emails Gate (Legacy Behavior)
+When `AUTH_ALLOWLIST_ENABLED=true`, checked before OTP issuance and dev password sign-in. Exact match against `ALLOWED_EMAILS` (normalized lowercase). Endpoints return generic responses to avoid enumeration.
 
 ---
 
@@ -114,12 +152,16 @@ Sends from `RESEND_FROM_EMAIL`, subject includes the code. Both HTML and plain-t
 
 ## 6. Route Handlers (API Endpoints)
 
-- `POST /api/auth/request-otp` → CSRF origin check; validate; allowlist gate; rate-limit + optional hCaptcha; single-active OTP; send email; audit `otp_request`. Returns generic success message.
-- `POST /api/auth/verify-otp` → CSRF origin check; validate; allowlist gate; verify latest unconsumed, unexpired OTP; consume on success; JIT user upsert (verifies email); issue JWT; audit success/failure. Redirect: uses `next` if internal, else `/dashboard`.
+- `POST /api/auth/request-otp` → CSRF origin check; validate; signup toggle check (blocks if disabled and user doesn't exist); allowlist gate (superadmins bypass); rate-limit + optional hCaptcha; single-active OTP; send email; audit `otp_request` or `otp_request_blocked`. Returns generic success message or explicit error for signup disabled.
+- `POST /api/auth/verify-otp` → CSRF origin check; validate; signup toggle check (blocks if disabled and user doesn't exist); allowlist gate (superadmins bypass); verify latest unconsumed, unexpired OTP; consume on success; JIT user upsert (verifies email); issue JWT; audit success/failure. Redirect: uses `next` if internal, else `/dashboard`.
 - `POST /api/auth/dev-signin` (dev-only) → returns 404 unless dev and flag enabled; CSRF check; validate; allowlist gate; bcrypt compare; issue JWT; audit success/failure.
 - `POST /api/auth/signout` → CSRF check; clear cookie always; when token valid, audit `signout` with decoded claims.
 - `POST /api/auth/profile/set-password` → CSRF check; auth required; optional dev-only `SKIP_PASSWORD_VALIDATION`; bcrypt hash; increment `sessionVersion` and rotate JWT; audit `password_set`.
 - `POST /api/auth/profile/change-password` → CSRF check; auth required; verify current password; bcrypt new; increment `sessionVersion` and rotate JWT; audit success/failure.
+
+**Superadmin Bypass Rules**:
+- Superadmins (`role="superadmin"`) bypass email allowlist checks in request-otp and verify-otp
+- Superadmins bypass signup toggle restrictions (can always use OTP even when `AUTH_SIGNUP_ENABLED=false`)
 
 Bodies validated with **Zod**; UI uses `fetch` with JSON.
 

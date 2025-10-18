@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getOrgBySlug, requireAdmin } from "@/lib/org-helpers";
+import { getOrgBySlug, requireAdminOrSuperadmin } from "@/lib/org-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 
@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 /**
  * DELETE /api/orgs/[orgSlug]/invitations/[id]
  * Revoke an invitation
- * Requires: Admin role
+ * Requires: Admin or Superadmin role
  */
 export async function DELETE(
   request: Request,
@@ -37,12 +37,12 @@ export async function DELETE(
       );
     }
 
-    // Verify user is admin
+    // Verify user is admin or superadmin
     try {
-      await requireAdmin(user.id, org.id);
+      await requireAdminOrSuperadmin(user.id, org.id);
     } catch {
       return NextResponse.json(
-        { error: "Admin access required" },
+        { error: "Admin or superadmin access required" },
         { status: 403 }
       );
     }

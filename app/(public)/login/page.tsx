@@ -45,11 +45,34 @@ export default function LoginPage(): React.JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextParam = searchParams.get("next") || undefined;
+  const noticeParam = searchParams.get("notice");
 
   const [step, setStep] = React.useState<"email" | "code">("email");
   const [email, setEmail] = React.useState("");
   const [isLoading, setIsLoading] = React.useState(false);
   const [requiresCaptcha, setRequiresCaptcha] = React.useState(false);
+
+  // Show toast for notice params
+  React.useEffect(() => {
+    if (noticeParam) {
+      switch (noticeParam) {
+        case "signup_disabled":
+          toast.error("Sign up is disabled. Ask an administrator to create your account.");
+          break;
+        case "org_creation_disabled":
+          toast.error("Organization creation is disabled. You must be invited.");
+          break;
+        case "forbidden":
+          toast.error("You don't have permission to view that page.");
+          break;
+      }
+      // Clear the notice param from URL
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("notice");
+      const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
+      window.history.replaceState({}, "", newUrl);
+    }
+  }, [noticeParam, searchParams]);
 
   // Check if dev password signin is enabled
   const isDevMode =

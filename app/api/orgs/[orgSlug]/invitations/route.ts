@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getOrgBySlug, requireAdmin } from "@/lib/org-helpers";
+import { getOrgBySlug, requireAdminOrSuperadmin } from "@/lib/org-helpers";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { validateCsrf } from "@/lib/csrf";
@@ -17,7 +17,7 @@ export const runtime = "nodejs";
 /**
  * GET /api/orgs/[orgSlug]/invitations
  * List all pending invitations for an organization
- * Requires: Admin role
+ * Requires: Admin or Superadmin role
  */
 export async function GET(
   request: Request,
@@ -39,12 +39,12 @@ export async function GET(
       );
     }
 
-    // Verify user is admin
+    // Verify user is admin or superadmin
     try {
-      await requireAdmin(user.id, org.id);
+      await requireAdminOrSuperadmin(user.id, org.id);
     } catch {
       return NextResponse.json(
-        { error: "Admin access required" },
+        { error: "Admin or superadmin access required" },
         { status: 403 }
       );
     }
@@ -90,7 +90,7 @@ export async function GET(
 /**
  * POST /api/orgs/[orgSlug]/invitations
  * Create a new invitation
- * Requires: Admin role
+ * Requires: Admin or Superadmin role
  * Rate limited: org/day and IP/15min
  */
 export async function POST(
@@ -119,12 +119,12 @@ export async function POST(
       );
     }
 
-    // Verify user is admin
+    // Verify user is admin or superadmin
     try {
-      await requireAdmin(user.id, org.id);
+      await requireAdminOrSuperadmin(user.id, org.id);
     } catch {
       return NextResponse.json(
-        { error: "Admin access required" },
+        { error: "Admin or superadmin access required" },
         { status: 403 }
       );
     }

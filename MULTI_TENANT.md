@@ -10,7 +10,9 @@ This Next.js boilerplate now includes **complete multi-tenant support** with Org
 - ✅ **Organizations**: Create and manage multiple workspaces
 - ✅ **Memberships**: User-organization relationships with roles (admin/member)
 - ✅ **Invitations**: Email-based invitations with expiry and rate limiting
-- ✅ **Role-Based Access**: Admin vs Member permissions
+- ✅ **Role-Based Access**: Admin vs Member vs Superadmin permissions
+- ✅ **Superadmin Role**: Global access to all organizations without membership
+- ✅ **Organization Creation Policies**: Configurable limits and toggles
 - ✅ **Organization Switcher**: Easy navigation between organizations
 - ✅ **Data Isolation**: Strict tenant boundaries with org-scoped routing
 - ✅ **Audit Logging**: Track all organization-related actions
@@ -70,10 +72,58 @@ All protected content is under `/o/[orgSlug]/`:
 
 ### Root Redirect Logic
 When a user visits `/` or `/dashboard`:
-1. Check `__last_org` cookie → redirect to that org
+1. Check `__last_org` cookie → redirect to that org (superadmins can access any org)
 2. Check `defaultOrganizationId` → redirect to that org
 3. Check first membership → redirect to that org
-4. No orgs → redirect to `/onboarding/create-organization`
+4. For superadmins: check for any org in system
+5. No orgs & can create → redirect to `/onboarding/create-organization`
+6. No orgs & cannot create → redirect with notice
+
+## Roles & Permissions
+
+### Member Role
+- View organization content
+- Access own profile settings
+- Cannot access organization settings or members
+
+### Admin Role
+- All Member permissions
+- Access organization settings
+- Manage members (invite, change roles, remove)
+- Manage invitations (send, resend, revoke)
+- Cannot remove or demote last admin
+
+### Superadmin Role
+- **Global access** to all organizations without membership
+- All Admin permissions across all organizations
+- Can create organizations bypassing `ORG_CREATION_ENABLED` and limits
+- Bypasses email allowlist restrictions
+- Bypasses signup restrictions
+- Created via seed script: `npx tsx scripts/seed-superadmin.ts`
+
+**Security Note**: Only grant superadmin role to trusted system administrators.
+
+## Feature Toggles
+
+### Authentication Toggles
+- **AUTH_ALLOWLIST_ENABLED** (default: true)
+  - When `false`: Any email can sign up
+  - When `true`: Only emails in `ALLOWED_EMAILS` can sign up
+  - Superadmins bypass this restriction
+
+- **AUTH_SIGNUP_ENABLED** (default: true)
+  - When `false`: Only existing users can sign in
+  - When `true`: New users can create accounts
+  - Superadmins bypass this restriction
+
+### Organization Creation Policies
+- **ORG_CREATION_ENABLED** (default: false)
+  - When `false`: Only superadmins can create organizations
+  - When `true`: Regular users can create organizations (subject to limit)
+
+- **ORG_CREATION_LIMIT** (default: 1)
+  - Maximum number of organizations a user can create
+  - Superadmins bypass this limit
 
 ## API Endpoints
 
@@ -110,11 +160,17 @@ getOrgBySlug(slug: string): Promise<Organization | null>
 
 // Membership checks
 getUserMembership(userId, orgId): Promise<Membership | null>
-getCurrentUserAndOrg(pathname): Promise<{user, org, membership} | null>
+getCurrentUserAndOrg(pathname): Promise<{user, org, membership | null} | null>
+  // Superadmins return membership=null with org access
+
+// Superadmin checks
+isSuperadmin(userId: string): Promise<boolean>
 
 // Authorization guards
 requireMembership(userId, orgId): Promise<Membership>
 requireAdmin(userId, orgId): Promise<Membership>
+requireAdminOrSuperadmin(userId, orgId): Promise<Membership | null>
+  // Returns null for superadmins (no membership needed)
 isLastAdmin(userId, orgId): Promise<boolean>
 
 // Utility functions
@@ -130,12 +186,24 @@ scopeTenant(where, orgId): WhereInput  // Helper for scoped queries
 Add to your `.env`:
 
 ```bash
+# Authentication Feature Toggles
+AUTH_ALLOWLIST_ENABLED=true           # Enable email allowlist (default: true)
+AUTH_SIGNUP_ENABLED=true              # Enable new user signup (default: true)
+ALLOWED_EMAILS="user@example.com"     # Required when allowlist enabled
+
+# Organization Creation Policies
+ORG_CREATION_ENABLED=false            # Allow users to create orgs (default: false)
+ORG_CREATION_LIMIT=1                  # Max orgs per user (default: 1)
+
 # Multi-tenant Configuration
 INVITE_EXP_MINUTES=10080              # 7 days
 INVITES_PER_ORG_PER_DAY=20
 INVITES_PER_IP_15M=5
 ORG_RESERVED_SLUGS="o,api,dashboard,settings,login,invite,onboarding,_next,assets,auth,public"
 LAST_ORG_COOKIE_NAME="__last_org"
+
+# Superadmin (for seed script)
+SEED_EMAIL="admin@example.com"
 ```
 
 ## Usage Examples

@@ -7,13 +7,16 @@ import {
   generateUniqueSlug,
   validateSlug,
   isReservedSlug,
+  isSuperadmin,
 } from "@/lib/org-helpers";
+import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
 
 /**
  * GET /api/orgs
  * List all organizations for current user
+ * Superadmins see all organizations
  */
 export async function GET(): Promise<Response> {
   try {
@@ -22,30 +25,59 @@ export async function GET(): Promise<Response> {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const memberships = await db.membership.findMany({
-      where: { userId: user.id },
-      include: {
-        organization: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            createdAt: true,
-            updatedAt: true,
+    // Check if user is superadmin
+    const userIsSuperadmin = await isSuperadmin(user.id);
+
+    let orgs;
+
+    if (userIsSuperadmin) {
+      // Superadmins see all organizations
+      const allOrgs = await db.organization.findMany({
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      orgs = allOrgs.map((org) => ({
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        role: "superadmin", // Special role indicator for UI
+        createdAt: org.createdAt,
+        updatedAt: org.updatedAt,
+      }));
+    } else {
+      // Regular users see only their memberships
+      const memberships = await db.membership.findMany({
+        where: { userId: user.id },
+        include: {
+          organization: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              createdAt: true,
+              updatedAt: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+        orderBy: { createdAt: "desc" },
+      });
 
-    const orgs = memberships.map((m) => ({
-      id: m.organization.id,
-      name: m.organization.name,
-      slug: m.organization.slug,
-      role: m.role,
-      createdAt: m.organization.createdAt,
-      updatedAt: m.organization.updatedAt,
-    }));
+      orgs = memberships.map((m) => ({
+        id: m.organization.id,
+        name: m.organization.name,
+        slug: m.organization.slug,
+        role: m.role,
+        createdAt: m.organization.createdAt,
+        updatedAt: m.organization.updatedAt,
+      }));
+    }
 
     return NextResponse.json({ organizations: orgs });
   } catch (error) {
@@ -91,6 +123,60 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const { name, slug: requestedSlug } = validation.data;
+
+    // Check organization creation policy
+    const userIsSuperadmin = await isSuperadmin(user.id);
+
+    if (!userIsSuperadmin) {
+      // Check if organization creation is enabled
+      if (!env.ORG_CREATION_ENABLED) {
+        // Audit denial
+        await db.auditLog.create({
+          data: {
+            action: "org_create_denied",
+            userId: user.id,
+            email: user.email,
+            metadata: { reason: "disabled" },
+          },
+        });
+
+        return NextResponse.json(
+          {
+            error:
+              "Organization creation is disabled. Please contact an administrator.",
+          },
+          { status: 403 }
+        );
+      }
+
+      // Check organization creation limit
+      const orgCount = await db.organization.count({
+        where: { createdById: user.id },
+      });
+
+      if (orgCount >= env.ORG_CREATION_LIMIT) {
+        // Audit denial
+        await db.auditLog.create({
+          data: {
+            action: "org_create_denied",
+            userId: user.id,
+            email: user.email,
+            metadata: {
+              reason: "limit_exceeded",
+              limit: env.ORG_CREATION_LIMIT,
+              current: orgCount,
+            },
+          },
+        });
+
+        return NextResponse.json(
+          {
+            error: `Organization creation limit reached. You can create up to ${env.ORG_CREATION_LIMIT} organization(s).`,
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     // Generate or validate slug
     let slug: string;
@@ -169,6 +255,7 @@ export async function POST(request: Request): Promise<Response> {
           metadata: {
             orgName: name,
             orgSlug: slug,
+            ...(userIsSuperadmin && { actingRole: "superadmin" }),
           },
         },
       });

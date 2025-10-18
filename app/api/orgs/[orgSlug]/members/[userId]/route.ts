@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getOrgBySlug, requireAdmin, isLastAdmin } from "@/lib/org-helpers";
+import { getOrgBySlug, requireAdminOrSuperadmin, isLastAdmin } from "@/lib/org-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 /**
  * PATCH /api/orgs/[orgSlug]/members/[userId]
  * Update member role
- * Requires: Admin role
+ * Requires: Admin or Superadmin role
  */
 export async function PATCH(
   request: Request,
@@ -38,12 +38,12 @@ export async function PATCH(
       );
     }
 
-    // Verify user is admin
+    // Verify user is admin or superadmin
     try {
-      await requireAdmin(user.id, org.id);
+      await requireAdminOrSuperadmin(user.id, org.id);
     } catch {
       return NextResponse.json(
-        { error: "Admin access required" },
+        { error: "Admin or superadmin access required" },
         { status: 403 }
       );
     }
@@ -141,7 +141,7 @@ export async function PATCH(
 /**
  * DELETE /api/orgs/[orgSlug]/members/[userId]
  * Remove member from organization
- * Requires: Admin role
+ * Requires: Admin or Superadmin role
  * Users can remove themselves (leave) unless they're the last admin
  */
 export async function DELETE(
@@ -172,13 +172,13 @@ export async function DELETE(
 
     const isSelfLeave = user.id === targetUserId;
 
-    // Verify permission: admin OR self-leave
+    // Verify permission: admin/superadmin OR self-leave
     if (!isSelfLeave) {
       try {
-        await requireAdmin(user.id, org.id);
+        await requireAdminOrSuperadmin(user.id, org.id);
       } catch {
         return NextResponse.json(
-          { error: "Admin access required to remove other members" },
+          { error: "Admin or superadmin access required to remove other members" },
           { status: 403 }
         );
       }

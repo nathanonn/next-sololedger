@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getOrgBySlug, requireAdmin } from "@/lib/org-helpers";
+import { getOrgBySlug, requireAdminOrSuperadmin } from "@/lib/org-helpers";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { validateCsrf } from "@/lib/csrf";
@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 /**
  * POST /api/orgs/[orgSlug]/invitations/[id]/resend
  * Resend an invitation with a new token
- * Requires: Admin role
+ * Requires: Admin or Superadmin role
  */
 export async function POST(
   request: Request,
@@ -39,12 +39,12 @@ export async function POST(
       );
     }
 
-    // Verify user is admin
+    // Verify user is admin or superadmin
     try {
-      await requireAdmin(user.id, org.id);
+      await requireAdminOrSuperadmin(user.id, org.id);
     } catch {
       return NextResponse.json(
-        { error: "Admin access required" },
+        { error: "Admin or superadmin access required" },
         { status: 403 }
       );
     }

@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getOrgBySlug, getUserMembership } from "@/lib/org-helpers";
+import { getOrgBySlug, getUserMembership, isSuperadmin } from "@/lib/org-helpers";
 import { DashboardShell } from "@/components/features/dashboard/dashboard-shell";
 import { env } from "@/lib/env";
 import { Home, Settings, Users } from "lucide-react";
+import { db } from "@/lib/db";
 
 /**
  * Organization-scoped protected layout
@@ -32,11 +33,30 @@ export default async function OrgLayout({
     redirect("/");
   }
 
-  // Check membership
+  // Check if user is superadmin
+  const userIsSuperadmin = await isSuperadmin(user.id);
+
+  // Check membership (superadmins bypass membership requirement)
   const membership = await getUserMembership(user.id, org.id);
-  if (!membership) {
-    // Not a member - show access denied or redirect
+  if (!membership && !userIsSuperadmin) {
+    // Not a member and not superadmin - redirect
     redirect("/?error=not_a_member");
+  }
+
+  // Determine user's role (use membership role or 'superadmin')
+  const userRole = userIsSuperadmin ? "superadmin" : membership?.role || "member";
+  const isAdminOrSuperadmin = userRole === "admin" || userRole === "superadmin";
+
+  // Compute canCreateOrganizations
+  let canCreateOrganizations = false;
+  if (userIsSuperadmin) {
+    canCreateOrganizations = true;
+  } else if (env.ORG_CREATION_ENABLED) {
+    // Check if user hasn't reached the limit
+    const orgCount = await db.organization.count({
+      where: { createdById: user.id },
+    });
+    canCreateOrganizations = orgCount < env.ORG_CREATION_LIMIT;
   }
 
   // Build sections and pages with org-scoped URLs
@@ -53,7 +73,8 @@ export default async function OrgLayout({
     },
   ];
 
-  const pages = [
+  // Build all pages (will be filtered below)
+  const allPages = [
     {
       id: "dashboard",
       label: "Dashboard",
@@ -71,6 +92,7 @@ export default async function OrgLayout({
       label: "Organization",
       href: `/o/${orgSlug}/settings/organization`,
       sectionId: "settings",
+      adminOnly: true, // Only visible to admins/superadmins
     },
     {
       id: "members",
@@ -78,9 +100,17 @@ export default async function OrgLayout({
       href: `/o/${orgSlug}/settings/members`,
       sectionId: "settings",
       icon: <Users className="h-4 w-4" />,
-      badge: membership.role === "admin" ? undefined : undefined,
+      adminOnly: true, // Only visible to admins/superadmins
     },
   ];
+
+  // Filter pages based on role
+  const pages = allPages.filter((page) => {
+    if (page.adminOnly && !isAdminOrSuperadmin) {
+      return false;
+    }
+    return true;
+  });
 
   return (
     <DashboardShell
@@ -93,9 +123,10 @@ export default async function OrgLayout({
         id: org.id,
         name: org.name,
         slug: org.slug,
-        role: membership.role,
+        role: userRole,
       }}
       lastOrgCookieName={env.LAST_ORG_COOKIE_NAME}
+      canCreateOrganizations={canCreateOrganizations}
     >
       {children}
     </DashboardShell>

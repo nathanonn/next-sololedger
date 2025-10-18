@@ -11,6 +11,7 @@ import { checkOtpRateLimit, recordOtpRequest } from "@/lib/rate-limit";
 import { sendOtpEmail } from "@/lib/email";
 import { getClientIp } from "@/lib/auth-helpers";
 import { env } from "@/lib/env";
+import { db } from "@/lib/db";
 
 /**
  * POST /api/auth/request-otp
@@ -42,8 +43,32 @@ export async function POST(request: Request): Promise<Response> {
     const normalizedEmail = normalizeEmail(email);
     const ip = getClientIp(request);
 
-    // Allowlist check (generic response to avoid enumeration)
-    if (!isEmailAllowed(normalizedEmail)) {
+    // Check if user exists
+    const existingUser = await db.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true, role: true },
+    });
+
+    // Signup toggle check: if disabled and user doesn't exist, block with explicit message
+    if (!env.AUTH_SIGNUP_ENABLED && !existingUser) {
+      await audit({
+        action: "otp_request_blocked",
+        email: normalizedEmail,
+        ip,
+        metadata: { reason: "signup_disabled_no_account" },
+      });
+      return NextResponse.json(
+        {
+          error:
+            "No account found for this email. Sign up is disabled. Please contact an administrator.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Allowlist check (superadmins bypass allowlist)
+    const isSuperadmin = existingUser?.role === "superadmin";
+    if (!isSuperadmin && !isEmailAllowed(normalizedEmail)) {
       await audit({
         action: "otp_request_blocked",
         email: normalizedEmail,

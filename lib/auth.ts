@@ -15,9 +15,21 @@ export function normalizeEmail(email: string): string {
 }
 
 /**
- * Check if email is in allowlist
+ * Check if email is allowed
+ * If allowlist is disabled, all emails are allowed
+ * If allowlist is enabled, only emails in ALLOWED_EMAILS are allowed
  */
 export function isEmailAllowed(email: string): boolean {
+  // If allowlist is disabled, allow all emails
+  if (!env.AUTH_ALLOWLIST_ENABLED) {
+    return true;
+  }
+
+  // If allowlist is enabled, check against ALLOWED_EMAILS
+  if (!env.ALLOWED_EMAILS) {
+    return false;
+  }
+
   const normalizedEmail = normalizeEmail(email);
   const allowedEmails = env.ALLOWED_EMAILS.split(",").map((e) =>
     normalizeEmail(e)

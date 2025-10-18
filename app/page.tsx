@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getUserOrganizations } from "@/lib/org-helpers";
+import { getUserOrganizations, isSuperadmin } from "@/lib/org-helpers";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 
@@ -22,6 +22,9 @@ export default async function Home(): Promise<React.JSX.Element> {
     redirect("/login");
   }
 
+  // Check if user is superadmin
+  const userIsSuperadmin = await isSuperadmin(user.id);
+
   // Get last org from cookie
   const cookieStore = await cookies();
   const lastOrgCookieName = env.LAST_ORG_COOKIE_NAME;
@@ -38,7 +41,8 @@ export default async function Home(): Promise<React.JSX.Element> {
       },
     });
 
-    if (org && org.memberships.length > 0) {
+    // Superadmins have access to all orgs, regular users need membership
+    if (org && (userIsSuperadmin || org.memberships.length > 0)) {
       redirect(`/o/${lastOrgSlug}/dashboard`);
     }
   }
@@ -54,7 +58,8 @@ export default async function Home(): Promise<React.JSX.Element> {
       },
     });
 
-    if (defaultOrg && defaultOrg.memberships.length > 0) {
+    // Superadmins have access to all orgs, regular users need membership
+    if (defaultOrg && (userIsSuperadmin || defaultOrg.memberships.length > 0)) {
       redirect(`/o/${defaultOrg.slug}/dashboard`);
     }
   }
@@ -66,6 +71,35 @@ export default async function Home(): Promise<React.JSX.Element> {
     redirect(`/o/${orgs[0].slug}/dashboard`);
   }
 
-  // No organizations - redirect to onboarding
+  // If superadmin sees all orgs even without membership, check for any org
+  if (userIsSuperadmin) {
+    const anyOrg = await db.organization.findFirst({
+      select: { slug: true },
+    });
+
+    if (anyOrg) {
+      redirect(`/o/${anyOrg.slug}/dashboard`);
+    }
+
+    // Superadmin with no orgs - allow them to create
+    redirect("/onboarding/create-organization");
+  }
+
+  // No organizations - check if user can create
+  if (!env.ORG_CREATION_ENABLED) {
+    // Cannot create org - redirect with notice
+    redirect("/login?notice=org_creation_disabled");
+  }
+
+  // Check org creation limit
+  const orgCount = await db.organization.count({
+    where: { createdById: user.id },
+  });
+
+  if (orgCount >= env.ORG_CREATION_LIMIT) {
+    redirect("/login?notice=org_creation_disabled");
+  }
+
+  // User can create - redirect to onboarding
   redirect("/onboarding/create-organization");
 }

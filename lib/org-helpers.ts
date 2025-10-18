@@ -36,16 +36,29 @@ export async function getUserMembership(
 }
 
 /**
+ * Check if user is a superadmin
+ */
+export async function isSuperadmin(userId: string): Promise<boolean> {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+
+  return user?.role === "superadmin";
+}
+
+/**
  * Get current user and organization context from pathname
- * Returns null if user not authenticated or not a member
+ * Superadmins have access to all organizations without membership
+ * Returns null if user not authenticated or (not a member and not superadmin)
  *
  * @param pathname - Current request pathname (e.g., /o/[orgSlug]/dashboard)
- * @returns Object with user, org, and membership, or null
+ * @returns Object with user, org, and membership (null for superadmin), or null
  */
 export async function getCurrentUserAndOrg(pathname: string): Promise<{
   user: CurrentUser;
   org: Organization;
-  membership: Membership;
+  membership: Membership | null;
 } | null> {
   // Get current user
   const user = await getCurrentUser();
@@ -60,6 +73,12 @@ export async function getCurrentUserAndOrg(pathname: string): Promise<{
   // Get organization
   const org = await getOrgBySlug(orgSlug);
   if (!org) return null;
+
+  // Superadmins have access to all orgs without membership
+  const userIsSuperadmin = await isSuperadmin(user.id);
+  if (userIsSuperadmin) {
+    return { user, org, membership: null };
+  }
 
   // Get user's membership
   const membership = await getUserMembership(user.id, org.id);
@@ -97,6 +116,31 @@ export async function requireAdmin(
 
   if (membership.role !== "admin") {
     throw new Error("Admin access required");
+  }
+
+  return membership;
+}
+
+/**
+ * Require user to be either an admin of the organization or a superadmin
+ * Throws error if neither
+ * Returns membership (or null for superadmin)
+ */
+export async function requireAdminOrSuperadmin(
+  userId: string,
+  orgId: string
+): Promise<Membership | null> {
+  // Check if user is a superadmin
+  const userIsSuperadmin = await isSuperadmin(userId);
+  if (userIsSuperadmin) {
+    return null; // Superadmins don't have membership
+  }
+
+  // Otherwise, require admin membership
+  const membership = await requireMembership(userId, orgId);
+
+  if (membership.role !== "admin") {
+    throw new Error("Admin or superadmin access required");
   }
 
   return membership;

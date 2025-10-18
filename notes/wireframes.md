@@ -1,204 +1,246 @@
-# Admin • Manage Organizations — UX Flow & ASCII Wireframes
+# Admin Organization Management — UX Flow Map and ASCII Wireframes
 
-  This document captures the superadmin-only admin area at /admin/organizations. It includes the flow map, route/query contracts, and screen-by-screen ASCII wireframes. Decisions applied: separate details page (1/a), selectable page
-  size 10/20/50 default 20 (2/c), sort by name and createdAt asc/desc (3/b), search by name/slug (4/b), hard delete with confirm by slug (5/a + 12/b), members table only (6/a), roles admin|member (7/a), disable demote/remove when last
-  admin (8/b), user-menu link label: “Manage Organizations” (9/b), /admin covered by middleware (10/a), server-first queries (11/a).
+  Updated: 2025-10-18
 
-  ## Flow Map
+  This document maps the superadmin organization management flows and shows the screen-by-screen content using lightweight ASCII wireframes. It covers: creating an
+  organization, navigating back to an org dashboard from the admin area, editing organization details (including slug), managing members (read-only role in table +
+  edit dialog), and inviting new members.
 
-  Sign in → Any protected page (e.g., /o/[slug]/dashboard)
-     │
-     └─ Open user menu in sidebar
-          │
-          └─ Click “Manage Organizations” (superadmin only)
-                │
-                └─ /admin/organizations  (List)
-                      │               │                 │
-           (Search/Sort/PageSize)   (Pagination)      (Row: View)
-                      │               │                 │
-                      └───────────────┴─────────────────┘
-                                        │
-                                        └─ /admin/organizations/[orgSlug]  (Details)
-                                              │                 │                 │
-                                       (Change Role)      (Remove Member)   (Delete Org)
-                                              │                 │                 │
-                                     PATCH /members     DELETE /members     DELETE /org
-                                     [userId] role      [userId]            [orgSlug]
+  Legend:
 
-  ## Routes & Query Contracts
-
-  - /admin/organizations
-      - page (number, default 1)
-      - pageSize (10|20|50, default 20)
-      - q (string, optional; matches name or slug, case-insensitive)
-      - sort (name|createdAt, default createdAt)
-      - dir (asc|desc, default desc when sort=createdAt, else asc)
-  - /admin/organizations/[orgSlug]
-      - page (number, default 1)
-      - pageSize (10|20|50, default 20)
-      - q (string, optional; filters members by email/name substring)
-
-  Notes
-
-  - All mutations use CSRF-validated Node runtime APIs and show Sonner toasts.
-  - UI disables demote/remove for the last admin when adminCount <= 1 (server still enforces).
+  - [btn] denotes a clickable button, (link) denotes a link.
+  - (icon) indicates a Lucide icon next to a label.
+  - … indicates omitted repeated rows.
+  - Toasts are implied for success/error; no extra <Toaster /> is added.
 
   ———
 
-  ## Entry Point (User Menu)
+  Flow Map (Superadmin)
 
-  Collapsed sidebar (icon-only) user menu shows an item for superadmins:
+  1. Admin → Manage Organizations → Create Organization
 
-  [ Avatar ]  ▼
-    ├─ Profile
-    ├─ Organization (when in /o/…)
-    ├─ Members (when admin/superadmin in /o/…)
-    ├─ Manage Organizations   ← superadmin only
-    └─ Sign out
+     /admin/organizations
+     └─[btn Create Organization] → Create Organization Dialog
+     └─ POST /api/orgs (CSRF-validated)
+     ├─ success → redirect → /admin/organizations/{slug}
+     └─ error → inline error + toast
+  2. Back to Organization Dashboard (from any /admin page)
 
-  Expanded sidebar user menu (footer):
+     /admin/* (sidebar user menu)
+     └─ [menu Back to Organization Dashboard] (only if superadmin AND last-org cookie exists)
+     └─ navigate → /o/{lastOrgSlug}/dashboard
+  3. Admin Org Detail → Edit Organization
 
-  ┌─────────────────────────────────────────────┐
-  │ My Account                                  │
-  ├─────────────────────────────────────────────┤
-  │ Profile                                     │
-  │ Organization (contextual)                   │
-  │ Members (contextual)                        │
-  │ Manage Organizations    ← superadmin only   │
-  ├─────────────────────────────────────────────┤
-  │ Sign out                                    │
-  └─────────────────────────────────────────────┘
+     /admin/organizations/{orgSlug}
+     └─ [btn Edit Organization] → Edit Organization Dialog
+     └─ PATCH /api/orgs/{orgSlug} { name?, slug? }
+     ├─ success (slug changed) → update last-org cookie if matched old slug → redirect → /admin/organizations/{newSlug}
+     ├─ success (slug unchanged) → refresh
+     └─ error → inline error + toast
+  4. Admin Org Detail → Members
+      - Table shows Role as plain text (no inline selector).
+      - Actions column has [icon Edit] (opens dialog) and existing [icon Remove].
+      - Invite Member from header button.
+
+     Edit Member Dialog → PATCH /api/orgs/{orgSlug}/members/{userId} { name?, role? }
+     ├─ success → refresh
+     └─ error → inline error + toast (prevents demoting last admin)
+
+     Invite Member Dialog → POST /api/orgs/{orgSlug}/invitations { name?, email, role, sendEmail? }
+     ├─ success → show invite URL with Copy; if sendEmail true (and Resend configured) → emailed
+     └─ error → inline error + toast
 
   ———
 
-  ## Screen 1 — Organizations List (/admin/organizations)
+  Screen-by-Screen Wireframes
 
-  +--------------------------------------------------------------------------------+
-  | Admin • Manage Organizations                                                   |
-  |                                                                                |
-  | Search: [________________________]   Sort: [ Name ▼ ]   Dir: (• Asc ○ Desc)   |
-  | Page size: ( 10 ○ 20 • 50 ○ )       Showing rows 1–20 of 132                  |
-  |                                                                                |
-  | ┌────────────────────────────────────────────────────────────────────────────┐ |
-  | | Name                 | Slug              | Members | Created       | View | | |
-  | |───────────────────────────────────────────────────────────────────────────| | |
-  | | Acme Corp           | acme-corp         |     12  | 2025-09-17    | 🔍   | | |
-  | | Beacon Analytics    | beacon-analytics  |      7  | 2025-08-04    | 🔍   | | |
-  | | Nimbus Labs         | nimbus-labs       |     31  | 2025-07-22    | 🔍   | | |
-  | | …                                                                    …    | | |
-  | └────────────────────────────────────────────────────────────────────────────┘ |
-  |                                                                                |
-  | « Prev   1   2   3   …   7   Next »                                            |
-  +--------------------------------------------------------------------------------+
+  1. Manage Organizations (List)
+
+  Route: /admin/organizations
+
+  +----------------------------------------------------------------------------------+
+  | Manage Organizations                                                            |
+  | View and manage all organizations in the system                                 |
+  |                                                                                  |
+  | [ Search by name/slug ............... ]  Sort:[v]  Order:[v]  Per page:[v]   [btn|
+  |                                                                            Create|
+  |                                                                      Organization]|
+  |                                                                                  |
+  | Results: Showing X–Y of Z                                                        |
+  |                                                                                  |
+  |  Name                | Slug              | Members | Created     | Actions        |
+  |----------------------------------------------------------------------------------|
+  |  Acme Inc            | acme              |     12  | 2025-09-01  | [icon Eye]View |
+  |  Example Org         | example           |      3  | 2025-10-10  | [icon Eye]View |
+  |  …                                                                               |
+  |----------------------------------------------------------------------------------|
+  |  [ Prev ]   1  2  3  4  5   [ Next ]                                          |
+  +----------------------------------------------------------------------------------+
 
   Interactions
 
-  - Search debounced (updates q, resets page=1).
-  - Sort switches between name and createdAt; dir toggles asc/desc.
-  - Page size radio updates pageSize, resets page=1.
-  - View icon (🔍) goes to /admin/organizations/[orgSlug].
+  - Create Organization opens the dialog below.
+  - Clicking View navigates to /admin/organizations/{slug}.
 
-  Empty State
+  2. Create Organization — Dialog
 
-  +----------------------------------------------+
-  | No organizations found                        |
-  | Try adjusting your search or filters.         |
-  +----------------------------------------------+
+  Trigger: [btn Create Organization]
 
-  ———
+  +-------------------------------- Create Organization -----------------------------+
+  | Name *                                                                          |
+  | [ _________________________________________________ ]                            |
+  |                                                                                  |
+  | Slug (optional, kebab-case)                                                      |
+  | [ __________________________ ]                                                   |
+  | URL Preview: https://your-app/o/<slug-or-suggestion>                             |
+  |                                                                                  |
+  | [ Cancel ]                                                       [ Create ]      |
+  +----------------------------------------------------------------------------------+
 
-  ## Screen 2 — Organization Details (/admin/organizations/[orgSlug])
+  Validation & States
 
-  +--------------------------------------------------------------------------------+
-  | ← Back to Organizations                                                         |
-  |                                                                                 |
-  | Organization: Acme Corp   (acme-corp)                                           |
-  | Created: 2025-09-17   •   Members: 12                                           |
-  |                                                                                 |
-  | [ Delete Organization ]  (destructive)                                          |
-  |                                                                                 |
-  | Members                                                                          |
-  | Search: [__________________]    Page size: ( 10 ○ 20 • 50 ○ )                   |
-  | Showing rows 1–20 of 12                                                          |
-  |                                                                                 |
-  | ┌────────────────────────────────────────────────────────────────────────────┐  |
-  | | Name           | Email                     | Role       | Joined      | ⚙ |  |
-  | |──────────────────────────────────────────────────────────────────────────|  |
-  | | Jane Admin     | jane@acme.com             | [admin ▾]  | 2025-09-17  | ⓘ|  |
-  | | John Member    | john@acme.com             | [member ▾] | 2025-09-19  | ✖ |  |
-  | | …                                                                       … |  |
-  | └────────────────────────────────────────────────────────────────────────────┘  |
-  |                                                                                 |
-  | « Prev   1   Next »                                                              |
-  +--------------------------------------------------------------------------------+
+  - Name required, ≤ 255 chars. Slug validated client-side and server-side.
+  - Duplicate or reserved slug returns server error → inline message + toast.error.
+  - On success → redirect to /admin/organizations/{slug}.
+
+  3. Organization Detail (Admin)
+
+  Route: /admin/organizations/{orgSlug}
+
+  +----------------------------------------------------------------------------------+
+  | (link) ← Back to Organizations                                                   |
+  |                                                                                  |
+  | {Org Name}                                                                       |
+  | slug: {orgSlug}                                                                  |
+  | Created: 2025-09-01   •   Members: 12                                           |
+  |                                                                                  |
+  | [btn Edit Organization]                                  [btn Delete Organization]|
+  |                                                                                  |
+  | Members                                                            [btn Invite]  |
+  | Showing A–B of N                                                                 |
+  |                                                                                  |
+  |  Name / Email                         | Role     | Joined      | Actions         |
+  |----------------------------------------------------------------------------------|
+  |  Jane Doe                              Admin      2025-09-02    [icon Pencil]Edit |
+  |  jane@acme.com                                                            [🗑]   |
+  |----------------------------------------------------------------------------------|
+  |  John Smith                            Member     2025-09-03    [icon Pencil]Edit |
+  |  john@acme.com                                                             [🗑]  |
+  |----------------------------------------------------------------------------------|
+  |  …                                                                               |
+  |----------------------------------------------------------------------------------|
+  |  Page {p} of {totalPages}      [ Prev ]                    [ Next ]              |
+  +----------------------------------------------------------------------------------+
 
   Notes
 
-  - Role column is an inline Select with values: admin, member (no empty string).
-  - When the listed user is the last admin (adminCount <= 1 and this row is admin):
-      - Role Select is disabled; an info icon (ⓘ) shows tooltip: “Cannot demote the last admin.”
-      - Remove action (✖) is disabled with tooltip: “Cannot remove the last admin.”
+  - Role column is plain text (“Admin” / “Member”).
+  - Remove button is disabled when the user is the last admin (tooltip explains why).
+  - Edit icon opens Edit Member dialog.
+  - Invite opens Invite Member dialog.
 
-  Empty State (no members)
+  4. Edit Organization — Dialog
 
-  +----------------------------------------------+
-  | No members yet                                |
-  | Invite users from the organization settings.  |
-  +----------------------------------------------+
+  Trigger: [btn Edit Organization]
+
+  +------------------------------- Edit Organization --------------------------------+
+  | Name *                                                                          |
+  | [ _________________________________________________ ]                            |
+  |                                                                                  |
+  | Slug (kebab-case)                                                                |
+  | [ __________________________ ]                                                   |
+  | URL Preview: https://your-app/o/<new-slug>                                       |
+  |                                                                                  |
+  | [ Cancel ]                                                       [ Save Changes ] |
+  +----------------------------------------------------------------------------------+
+
+  Validation & States
+
+  - Slug change validated server-side (unique, not reserved, kebab-case).
+  - On success with slug change → update last-org cookie if it matched old slug; redirect to new admin URL.
+  - On success without slug change → refresh page.
+
+  5. Edit Member — Dialog
+
+  Trigger: Members table → [icon Pencil] Edit
+
+  +---------------------------------- Edit Member -----------------------------------+
+  | Email (read-only)                                                                  |
+  | jane@acme.com                                                                      |
+  |                                                                                   |
+  | Name                                                                              |
+  | [ Jane Doe ______________________________ ]                                        |
+  |                                                                                   |
+  | Role                                                                              |
+  | [ Member v ]  (options: Admin, Member)                                            |
+  |                                                                                   |
+  | [ Cancel ]                                             [ Save Changes ]           |
+  +-----------------------------------------------------------------------------------+
+
+  Validation & States
+
+  - Changing Role to Member for the last admin returns an error from the server (toast.error + inline message).
+  - Changing Name updates the global user.name.
+
+  6. Invite Member — Dialog
+
+  Trigger: Members header → [btn Invite]
+
+  +-------------------------------- Invite Member -----------------------------------+
+  | Name (optional)                                                                   |
+  | [ __________________________________________ ]                                    |
+  |                                                                                   |
+  | Email *                                                                           |
+  | [ user@example.com _________________________ ]                                    |
+  |                                                                                   |
+  | Role *                                                                            |
+  | [ Member v ]  (options: Admin, Member)                                            |
+  |                                                                                   |
+  | [ ] Send email invitation (if email provider configured)                          |
+  |                                                                                   |
+  | [ Cancel ]                                             [ Send Invite ]            |
+  +-----------------------------------------------------------------------------------+
+
+  Post-Send State (Success)
+
+  +-------------------------------- Invite Sent -------------------------------------+
+  | Invitation link:                                                                  |
+  | https://your-app/invite?token=XXXXXXXXXXXXXXXXXXXX                                |
+  |                                                                                   |
+  | [btn Copy Link]           [btn Open Invite Page]                                  |
+  |                                                                                   |
+  | (If email sending ON) “Email sent to user@example.com”                            |
+  +-----------------------------------------------------------------------------------+
+
+  7. Sidebar User Menu (Admin Context, Superadmin Only)
+
+  Context: Any /admin/* route, last-org cookie available.
+
+  +------------------- User Menu -------------------+
+  | My Account                                      |
+  | ---------------------------------------------- |
+  | Profile                                         |
+  | Organization                                    |
+  | Members                                         |
+  | ---------------------------------------------- |
+  | Back to Organization Dashboard                  |
+  |  → /o/{lastOrgSlug}/dashboard                   |
+  | ---------------------------------------------- |
+  | Manage Organizations                            |
+  | Sign out                                        |
+  +------------------------------------------------+
+
+  Visibility Rules
+
+  - “Back to Organization Dashboard” only appears for superadmins on /admin/* when a valid last-org cookie exists.
 
   ———
 
-  ## Dialogs
+  Validation, Feedback, and Patterns
 
-  Remove Member (shadcn Dialog)
-
-  +-------------------------------+
-  | Remove Member                 |
-  |                               |
-  | Are you sure you want to      |
-  | remove john@acme.com from     |
-  | “Acme Corp”?                   |
-  |                               |
-  | [ Cancel ]   [ Remove ]       |
-  +-------------------------------+
-
-  Delete Organization (requires typing slug)
-
-  +-----------------------------------------------+
-  | Delete Organization                           |
-  |                                               |
-  | This will permanently delete “Acme Corp”,     |
-  | remove all memberships and invitations.       |
-  | Audit logs will be retained.                  |
-  |                                               |
-  | Type the slug to confirm:                     |
-  |  [ acme-corp____________________________ ]    |
-  |                                               |
-  | [ Cancel ]     [ Delete ] (disabled until     |
-  |                               exact match)    |
-  +-----------------------------------------------+
-
-  Pointer Events Restoration (Dropdown → Dialog)
-
-   // When opening Dialog from a Dropdown/ContextMenu, ensure on close:
-   setTimeout(() => { document.body.style.pointerEvents = "" }, 300)
-
-  ———
-
-  ## Behaviors & Feedback
-
-  - Success: Sonner toast top-right (e.g., “Role updated”, “Member removed”, “Organization deleted”).
-  - Failure: Sonner error toast with API message. Server still enforces last-admin protection.
-  - Navigation: After delete, redirect to /admin/organizations and refresh list.
-
-  ## Permissions & Security
-
-  - /admin/* is protected by middleware and server guard; only superadmins pass.
-  - All mutations are CSRF-validated and run on Node runtime; no Edge DB operations.
-  - UI visibility (Manage Organizations link, destructive buttons) is not a security boundary.
-
-  ## Data Requirements (SSR)
-
-  - List page: organization fields { id, name, slug, createdAt }, _count.memberships for member counts.
-  - Details page: organization header + paginated membership rows with user { id, email, name, createdAt }, role, joinedAt.
-  - Precompute adminCount once per details view to drive “last admin” disables.
+  - Forms use React Hook Form + Zod; show inline validation and Sonner toasts.
+  - Select values are semantic (“admin”, “member”); never use empty string values.
+  - Dialogs restore pointer events on close per the required pattern.
+  - All mutating requests use same-origin fetch (Origin/Referer CSRF check passes).
+  - Last admin protections enforced server-side; UI disables where applicable.
+  - No additional <Toaster /> is added (already present in root layout).

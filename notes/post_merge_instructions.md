@@ -1,0 +1,298 @@
+# Post-Merge Instructions: Multi-Tenant Superadmin Support
+
+## Summary of Changes
+
+This feature branch adds **superadmin role support** with **configurable authentication and organization creation policies** to the multi-tenant boilerplate. Key additions include:
+
+- **Superadmin Role**: Global access to all organizations without membership
+- **Authentication Toggles**: Optional email allowlist and signup controls
+- **Organization Creation Policies**: Configurable limits and enable/disable toggle
+- **Enhanced Security**: Role-based access controls with admin/superadmin checks
+- **Improved UX**: Toast notifications for policy violations with proper error handling
+
+## New Features Added
+
+### 1. Superadmin Role
+- Access all organizations without membership
+- Bypass email allowlist restrictions
+- Bypass signup restrictions
+- Create organizations without limits
+- Seed script: `scripts/seed-superadmin.ts`
+
+### 2. Authentication Feature Toggles
+- `AUTH_ALLOWLIST_ENABLED` - Toggle email allowlist enforcement
+- `AUTH_SIGNUP_ENABLED` - Control new user registration
+
+### 3. Organization Creation Policies
+- `ORG_CREATION_ENABLED` - Enable/disable org creation for regular users
+- `ORG_CREATION_LIMIT` - Set maximum organizations per user
+
+### 4. API & Route Updates
+- All org/member/invitation routes use `requireAdminOrSuperadmin()`
+- Org creation enforces policies with proper limits
+- Superadmin bypass logic in auth routes
+
+### 5. UI Components
+- Sidebar shows superadmin role and hides "Create Organization" based on policy
+- Settings pages protected with admin/superadmin guards
+- Login page displays toast notifications for policy violations
+- New denial page for users blocked from creating organizations
+
+### 6. Helper Functions
+- `isSuperadmin(userId)` - Check if user is superadmin
+- `requireAdminOrSuperadmin(userId, orgId)` - Authorization guard
+- Updated `getCurrentUserAndOrg()` - Returns `membership: null` for superadmins
+
+## Important Notes
+
+### For Developers
+- The `role` field on User model now accepts `"superadmin"` (no migration needed - already supported)
+- Superadmins return `membership: null` in org contexts (update code that assumes membership exists)
+- All admin-only routes now accept superadmins
+- Organization layout filters pages based on admin/superadmin status
+
+### For Users
+- Default configuration has **restrictive settings** for security:
+  - `ORG_CREATION_ENABLED=false` (only superadmins can create orgs)
+  - `AUTH_ALLOWLIST_ENABLED=true` (only allowed emails can sign up)
+  - `AUTH_SIGNUP_ENABLED=true` (but can be disabled to prevent new signups)
+- Adjust environment variables based on your use case
+
+### Security Considerations
+- **Only grant superadmin to trusted administrators** - they have unrestricted access
+- Review and set appropriate limits in production
+- Consider disabling `ORG_CREATION_ENABLED` in production to control org creation
+
+---
+
+## Post-Merge Steps
+
+Follow these steps **after merging** to the main branch to ensure full functionality:
+
+### Step 1: Update Environment Variables
+
+Add the following to your `.env` file:
+
+```bash
+# Authentication Feature Toggles
+AUTH_ALLOWLIST_ENABLED=true              # Enable email allowlist (default: true)
+AUTH_SIGNUP_ENABLED=true                 # Enable new user signup (default: true)
+
+# Note: ALLOWED_EMAILS is now optional (only required when AUTH_ALLOWLIST_ENABLED=true)
+ALLOWED_EMAILS="user@example.com,admin@example.com"
+
+# Organization Creation Policies
+ORG_CREATION_ENABLED=false               # Allow users to create orgs (default: false)
+ORG_CREATION_LIMIT=1                     # Max orgs per user (default: 1)
+
+# Superadmin Seed (optional)
+SEED_EMAIL="admin@example.com"
+```
+
+**Important**: The defaults are **restrictive for security**. Adjust based on your needs:
+- For **open signup**: Set `AUTH_ALLOWLIST_ENABLED=false` and `AUTH_SIGNUP_ENABLED=true`
+- For **invite-only**: Set `AUTH_SIGNUP_ENABLED=false` and `ORG_CREATION_ENABLED=false`
+- For **user-managed orgs**: Set `ORG_CREATION_ENABLED=true` and adjust `ORG_CREATION_LIMIT`
+
+### Step 2: Update `.env.example` (if not already done)
+
+Ensure `.env.example` includes the new variables:
+
+```bash
+# Copy from the updated .env.example in the worktree
+cp .env.example .env.example.backup
+# The file is already updated in the worktree
+```
+
+### Step 3: Database Check
+
+**No new migrations required** - the `role` field on the User model already supports `"superadmin"` value.
+
+Verify your database is up to date:
+
+```bash
+npx prisma generate
+npx prisma migrate deploy  # In production, or:
+npx prisma migrate dev      # In development
+```
+
+### Step 4: Create First Superadmin (Optional but Recommended)
+
+Create a superadmin user to manage the system:
+
+```bash
+# Set SEED_EMAIL in .env or pass as environment variable
+SEED_EMAIL="admin@example.com" npx tsx scripts/seed-superadmin.ts
+```
+
+**Output**: You'll see confirmation with the user ID and instructions to sign in.
+
+**Security**: The script increments `sessionVersion`, invalidating existing sessions for that user.
+
+### Step 5: Verify Functionality
+
+Test the following scenarios:
+
+#### a) Superadmin Access
+1. Sign in as the superadmin user
+2. Verify you see all organizations in the sidebar
+3. Navigate to any organization without membership
+4. Verify you can access organization settings and members pages
+5. Create a new organization (should bypass limits)
+
+#### b) Regular User with ORG_CREATION_ENABLED=false
+1. Sign in as a regular user with no organizations
+2. Verify you see the "No Organizations" page
+3. Check that "Create Organization" is hidden in sidebar
+4. Verify toast shows: "Organization creation is disabled"
+
+#### c) Regular User with ORG_CREATION_ENABLED=true
+1. Set `ORG_CREATION_ENABLED=true` in .env
+2. Restart dev server
+3. Sign in as regular user with no orgs
+4. Verify they can create an organization
+5. Create up to the limit, then verify blocked by `ORG_CREATION_LIMIT`
+
+#### d) Authentication Toggles
+1. Test `AUTH_SIGNUP_ENABLED=false`:
+   - Try to request OTP for non-existent user
+   - Verify error: "No account found for this email. Sign up is disabled."
+
+2. Test `AUTH_ALLOWLIST_ENABLED=false`:
+   - Try OTP with email not in `ALLOWED_EMAILS`
+   - Verify it works (allowlist bypassed)
+
+3. Test superadmin bypass:
+   - Set `AUTH_ALLOWLIST_ENABLED=true` and `AUTH_SIGNUP_ENABLED=false`
+   - Request OTP for superadmin user
+   - Verify it works (superadmins bypass restrictions)
+
+### Step 6: Update Production Environment
+
+For production deployments:
+
+1. **Set environment variables** on your hosting platform:
+   ```bash
+   # Example for Vercel
+   vercel env add AUTH_ALLOWLIST_ENABLED
+   vercel env add AUTH_SIGNUP_ENABLED
+   vercel env add ORG_CREATION_ENABLED
+   vercel env add ORG_CREATION_LIMIT
+   vercel env add SEED_EMAIL
+   ```
+
+2. **Deploy the application**
+
+3. **Run superadmin seed** in production (if needed):
+   ```bash
+   # SSH into production or use deployment console
+   SEED_EMAIL="admin@yourcompany.com" npx tsx scripts/seed-superadmin.ts
+   ```
+
+4. **Verify production functionality** using the tests above
+
+### Step 7: Team Communication
+
+Notify your team about:
+
+1. **New environment variables** - Developers need to update local `.env`
+2. **Superadmin role** - Who has superadmin access
+3. **Policy changes** - Current org creation and signup policies
+4. **Documentation updates**:
+   - `README.md` - Setup instructions and superadmin info
+   - `MULTI_TENANT.md` - Roles, permissions, and feature toggles
+   - `notes/skills/authentication.md` - Toggle behavior details
+
+### Step 8: Monitoring & Audit
+
+After deployment, monitor:
+
+1. **Audit logs** - Check for `org_create_denied`, `otp_request_blocked` actions
+2. **User feedback** - Users trying to create orgs when disabled
+3. **Superadmin activity** - Review actions taken by superadmins
+4. **Error rates** - Watch for auth-related errors
+
+---
+
+## Rollback Plan (If Needed)
+
+If issues arise, you can safely rollback:
+
+1. **Revert the merge** from main branch
+2. **No database rollback needed** - schema unchanged
+3. **Remove new env vars** or set to defaults:
+   ```bash
+   AUTH_ALLOWLIST_ENABLED=true
+   AUTH_SIGNUP_ENABLED=true
+   ORG_CREATION_ENABLED=false
+   ORG_CREATION_LIMIT=1
+   ```
+
+4. **Demote superadmins** if needed:
+   ```sql
+   UPDATE "User" SET role = 'user' WHERE role = 'superadmin';
+   ```
+
+---
+
+## Troubleshooting
+
+### Issue: Users can't create organizations
+**Solution**: Check `ORG_CREATION_ENABLED` and `ORG_CREATION_LIMIT` in `.env`
+
+### Issue: "ALLOWED_EMAILS is required" error
+**Solution**: Either set `AUTH_ALLOWLIST_ENABLED=false` or provide `ALLOWED_EMAILS`
+
+### Issue: Superadmin can't access organizations
+**Solution**: Verify `role='superadmin'` in database:
+```sql
+SELECT id, email, role FROM "User" WHERE email = 'admin@example.com';
+```
+
+### Issue: Infinite redirects on root page
+**Solution**: Check that users have at least one organization OR can create one
+
+### Issue: Toast notifications not showing
+**Solution**: Verify `<Toaster />` component is in root layout (already added)
+
+---
+
+## File Changes Reference
+
+### New Files
+- `scripts/seed-superadmin.ts` - Superadmin seed script
+- `app/_components/org-creation-denied.tsx` - Denial page component
+- `app/o/[orgSlug]/settings/organization/layout.tsx` - Org settings guard
+- `app/o/[orgSlug]/settings/members/layout.tsx` - Members page guard
+- `app/onboarding/create-organization/layout.tsx` - Create org guard
+
+### Modified Files
+- `lib/env.ts` - New environment variables
+- `lib/auth.ts` - Allowlist toggle logic
+- `lib/org-helpers.ts` - Superadmin functions
+- `app/api/auth/request-otp/route.ts` - Signup toggle enforcement
+- `app/api/auth/verify-otp/route.ts` - Signup toggle enforcement
+- `app/api/orgs/route.ts` - Org creation policies, superadmin sees all
+- All org/member/invitation API routes - Admin/superadmin checks
+- `app/o/[orgSlug]/layout.tsx` - Superadmin access, canCreateOrganizations
+- `components/features/dashboard/dashboard-shell.tsx` - Pass canCreateOrganizations
+- `components/features/dashboard/sidebar.tsx` - Hide button, show superadmin role
+- `app/(public)/login/page.tsx` - Toast notices
+- `app/page.tsx` - Root redirect logic with denial page
+- `.env.example` - New variables
+- `README.md` - Superadmin and toggles documentation
+- `MULTI_TENANT.md` - Roles and feature toggles
+- `notes/skills/authentication.md` - Toggle behavior
+
+---
+
+## Questions?
+
+If you encounter issues during or after the merge:
+
+1. Check this document's troubleshooting section
+2. Review the updated documentation in `README.md` and `MULTI_TENANT.md`
+3. Verify environment variables match your intended configuration
+4. Check audit logs for denied actions: `SELECT * FROM "AuditLog" WHERE action LIKE '%denied%' ORDER BY "createdAt" DESC LIMIT 20;`
+
+**Support**: Refer to `CLAUDE.md` for architecture guidelines and coding standards.

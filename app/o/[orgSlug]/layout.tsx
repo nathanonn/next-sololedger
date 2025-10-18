@@ -127,6 +127,7 @@ export default async function OrgLayout({
       }}
       lastOrgCookieName={env.LAST_ORG_COOKIE_NAME}
       canCreateOrganizations={canCreateOrganizations}
+      isSuperadmin={userIsSuperadmin}
     >
       {children}
     </DashboardShell>

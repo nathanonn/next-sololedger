@@ -41,6 +41,7 @@ export type SidebarProps = {
   currentOrg?: CurrentOrg;
   lastOrgCookieName?: string;
   canCreateOrganizations?: boolean;
+  isSuperadmin?: boolean;
   onToggleCollapse?: () => void;
   onNavigate?: () => void;
 };
@@ -53,6 +54,7 @@ export function Sidebar({
   currentOrg,
   lastOrgCookieName = "__last_org",
   canCreateOrganizations = false,
+  isSuperadmin = false,
   onToggleCollapse,
   onNavigate,
 }: SidebarProps): React.JSX.Element {
@@ -237,6 +239,17 @@ export function Sidebar({
                     Members
                   </DropdownMenuItem>
                 )}
+              {(isSuperadmin || currentOrg?.role === "superadmin") && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => router.push("/admin/organizations")}
+                  >
+                    <Building2 className="mr-2 h-4 w-4" />
+                    Manage Organizations
+                  </DropdownMenuItem>
+                </>
+              )}
               {currentOrg && organizations.length > 1 && (
                 <>
                   <DropdownMenuSeparator />
@@ -410,6 +423,17 @@ export function Sidebar({
                   </DropdownMenuItem>
                 </>
               )}
+            {(isSuperadmin || currentOrg?.role === "superadmin") && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => router.push("/admin/organizations")}
+                >
+                  <Building2 className="mr-2 h-4 w-4" />
+                  Manage Organizations
+                </DropdownMenuItem>
+              </>
+            )}
             {currentOrg && organizations.length > 1 && (
               <>
                 <DropdownMenuSeparator />

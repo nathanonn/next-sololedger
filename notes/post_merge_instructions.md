@@ -2,9 +2,11 @@
 
 ## Summary of Changes
 
-This feature branch adds **superadmin role support** with **configurable authentication and organization creation policies** to the multi-tenant boilerplate. Key additions include:
+This feature branch adds **superadmin role support** with **configurable authentication and organization creation policies** and a **full admin area for managing organizations** to the multi-tenant boilerplate. Key additions include:
 
 - **Superadmin Role**: Global access to all organizations without membership
+- **Admin Area**: Dedicated `/admin/organizations` dashboard for managing all organizations
+- **Organization Management**: View, edit, and delete organizations with full member management
 - **Authentication Toggles**: Optional email allowlist and signup controls
 - **Organization Creation Policies**: Configurable limits and enable/disable toggle
 - **Enhanced Security**: Role-based access controls with admin/superadmin checks
@@ -38,7 +40,28 @@ This feature branch adds **superadmin role support** with **configurable authent
 - Login page displays toast notifications for policy violations
 - New denial page for users blocked from creating organizations
 
-### 6. Helper Functions
+### 6. Admin Area for Superadmins
+- **Organizations List** (`/admin/organizations`)
+  - Search organizations by name or slug
+  - Sort by name or creation date (ascending/descending)
+  - Paginate with configurable page size (10/20/50)
+  - View member counts and creation dates
+  - Direct links to organization details
+
+- **Organization Detail Page** (`/admin/organizations/[orgSlug]`)
+  - View organization metadata and member count
+  - Full member list with pagination
+  - Inline role management (admin/member)
+  - Remove members with confirmation dialog
+  - Delete entire organization with slug confirmation
+  - "Last admin" protection (cannot demote/remove)
+
+- **"Manage Organizations" Menu Link**
+  - Appears in sidebar user menu for superadmins only
+  - Available in both collapsed and expanded sidebar modes
+  - Provides quick access to admin area
+
+### 7. Helper Functions
 - `isSuperadmin(userId)` - Check if user is superadmin
 - `requireAdminOrSuperadmin(userId, orgId)` - Authorization guard
 - Updated `getCurrentUserAndOrg()` - Returns `membership: null` for superadmins
@@ -50,6 +73,10 @@ This feature branch adds **superadmin role support** with **configurable authent
 - Superadmins return `membership: null` in org contexts (update code that assumes membership exists)
 - All admin-only routes now accept superadmins
 - Organization layout filters pages based on admin/superadmin status
+- Admin area (`/admin/*`) is protected by middleware and server-side guards
+- DELETE organization endpoint uses transactions to ensure data consistency
+- All admin UI components use optimistic updates with proper error handling
+- "Last admin" protection is enforced at both UI and API levels
 
 ### For Users
 - Default configuration has **restrictive settings** for security:
@@ -59,9 +86,13 @@ This feature branch adds **superadmin role support** with **configurable authent
 - Adjust environment variables based on your use case
 
 ### Security Considerations
-- **Only grant superadmin to trusted administrators** - they have unrestricted access
+- **Only grant superadmin to trusted administrators** - they have unrestricted access to all organizations
+- **Admin area is superadmin-only** - regular admins cannot access `/admin/organizations`
+- **Organization deletion is irreversible** - deleted orgs cascade to memberships and invitations
+- Audit logs are retained when organizations are deleted for compliance
 - Review and set appropriate limits in production
 - Consider disabling `ORG_CREATION_ENABLED` in production to control org creation
+- "Last admin" protection prevents organizations from becoming orphaned
 
 ---
 
@@ -140,20 +171,45 @@ Test the following scenarios:
 4. Verify you can access organization settings and members pages
 5. Create a new organization (should bypass limits)
 
-#### b) Regular User with ORG_CREATION_ENABLED=false
+#### b) Admin Area Access
+1. Sign in as the superadmin user
+2. Open the user menu in the sidebar (collapsed or expanded)
+3. Click "Manage Organizations" link
+4. Verify redirect to `/admin/organizations`
+5. Test search functionality (search by org name or slug)
+6. Test sorting (by name and creation date, asc/desc)
+7. Test pagination (change page size to 10/20/50, navigate pages)
+8. Click "View" on an organization to see details
+
+#### c) Organization Management
+1. From organization detail page:
+   - Change a member's role from admin to member (and vice versa)
+   - Try to demote the last admin (should be disabled with tooltip)
+   - Try to remove the last admin (should be disabled with tooltip)
+   - Remove a non-admin member (confirm in dialog)
+   - Verify member is removed and page refreshes
+2. Delete organization test:
+   - Click "Delete Organization" button
+   - Try to delete without typing slug (button should be disabled)
+   - Type the organization slug correctly
+   - Confirm deletion
+   - Verify redirect to organizations list
+   - Verify organization is gone from database
+
+#### d) Regular User with ORG_CREATION_ENABLED=false
 1. Sign in as a regular user with no organizations
 2. Verify you see the "No Organizations" page
 3. Check that "Create Organization" is hidden in sidebar
 4. Verify toast shows: "Organization creation is disabled"
 
-#### c) Regular User with ORG_CREATION_ENABLED=true
+#### e) Regular User with ORG_CREATION_ENABLED=true
 1. Set `ORG_CREATION_ENABLED=true` in .env
 2. Restart dev server
 3. Sign in as regular user with no orgs
 4. Verify they can create an organization
 5. Create up to the limit, then verify blocked by `ORG_CREATION_LIMIT`
 
-#### d) Authentication Toggles
+#### f) Authentication Toggles
 1. Test `AUTH_SIGNUP_ENABLED=false`:
    - Try to request OTP for non-existent user
    - Verify error: "No account found for this email. Sign up is disabled."
@@ -207,10 +263,25 @@ Notify your team about:
 
 After deployment, monitor:
 
-1. **Audit logs** - Check for `org_create_denied`, `otp_request_blocked` actions
+1. **Audit logs** - Check for these new actions:
+   - `org_create_denied` - User blocked from creating organization
+   - `otp_request_blocked` - OTP request blocked by auth policies
+   - `org_deleted` - Organization deleted by superadmin (includes metadata)
+   - `member_role_updated` - Member role changed via admin area
+   - `member_removed` - Member removed via admin area
+
+   Query example:
+   ```sql
+   SELECT * FROM "audit_logs"
+   WHERE action IN ('org_deleted', 'member_role_updated', 'member_removed')
+   ORDER BY "createdAt" DESC
+   LIMIT 50;
+   ```
+
 2. **User feedback** - Users trying to create orgs when disabled
-3. **Superadmin activity** - Review actions taken by superadmins
-4. **Error rates** - Watch for auth-related errors
+3. **Superadmin activity** - Review all actions taken by superadmins in admin area
+4. **Error rates** - Watch for auth-related and admin area errors
+5. **Organization deletions** - Track and review any deleted organizations (check audit logs)
 
 ---
 
@@ -255,6 +326,27 @@ SELECT id, email, role FROM "User" WHERE email = 'admin@example.com';
 ### Issue: Toast notifications not showing
 **Solution**: Verify `<Toaster />` component is in root layout (already added)
 
+### Issue: Cannot access /admin/organizations (redirects to /?error=unauthorized)
+**Solution**:
+1. Verify user has `role='superadmin'` in database:
+   ```sql
+   SELECT id, email, role FROM "users" WHERE email = 'admin@example.com';
+   ```
+2. If role is correct, check middleware is protecting the path:
+   ```bash
+   # Should see /admin in protected paths in middleware.ts
+   grep -A 5 "isProtected" middleware.ts
+   ```
+3. Clear cookies and sign in again to get fresh JWT with correct role
+
+### Issue: "Manage Organizations" link not showing in sidebar
+**Solution**:
+1. Verify `isSuperadmin` prop is being passed to DashboardShell in both:
+   - `app/admin/layout.tsx` (should be `true`)
+   - `app/o/[orgSlug]/layout.tsx` (should be result of `isSuperadmin(user.id)`)
+2. Check sidebar component is receiving and using the prop
+3. Sign out and back in to refresh the sidebar state
+
 ---
 
 ## File Changes Reference
@@ -265,6 +357,13 @@ SELECT id, email, role FROM "User" WHERE email = 'admin@example.com';
 - `app/o/[orgSlug]/settings/organization/layout.tsx` - Org settings guard
 - `app/o/[orgSlug]/settings/members/layout.tsx` - Members page guard
 - `app/onboarding/create-organization/layout.tsx` - Create org guard
+- `app/admin/layout.tsx` - Admin area layout with superadmin guard
+- `app/admin/organizations/page.tsx` - Organizations list page
+- `app/admin/organizations/[orgSlug]/page.tsx` - Organization detail page
+- `components/features/admin/organizations-filters.tsx` - Search/sort/pagination controls
+- `components/features/admin/role-select.tsx` - Inline member role selector
+- `components/features/admin/remove-member-button.tsx` - Remove member with confirmation
+- `components/features/admin/delete-organization-dialog.tsx` - Delete org with slug confirmation
 
 ### Modified Files
 - `lib/env.ts` - New environment variables
@@ -273,10 +372,12 @@ SELECT id, email, role FROM "User" WHERE email = 'admin@example.com';
 - `app/api/auth/request-otp/route.ts` - Signup toggle enforcement
 - `app/api/auth/verify-otp/route.ts` - Signup toggle enforcement
 - `app/api/orgs/route.ts` - Org creation policies, superadmin sees all
+- `app/api/orgs/[orgSlug]/route.ts` - Added DELETE endpoint for org deletion
 - All org/member/invitation API routes - Admin/superadmin checks
-- `app/o/[orgSlug]/layout.tsx` - Superadmin access, canCreateOrganizations
-- `components/features/dashboard/dashboard-shell.tsx` - Pass canCreateOrganizations
-- `components/features/dashboard/sidebar.tsx` - Hide button, show superadmin role
+- `app/o/[orgSlug]/layout.tsx` - Superadmin access, canCreateOrganizations, pass isSuperadmin
+- `components/features/dashboard/dashboard-shell.tsx` - Pass canCreateOrganizations and isSuperadmin
+- `components/features/dashboard/sidebar.tsx` - Hide button, show superadmin role, "Manage Organizations" link
+- `middleware.ts` - Added /admin path protection
 - `app/(public)/login/page.tsx` - Toast notices
 - `app/page.tsx` - Root redirect logic with denial page
 - `.env.example` - New variables

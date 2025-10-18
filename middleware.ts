@@ -47,10 +47,11 @@ export async function middleware(request: NextRequest): Promise<Response> {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Protected paths: /o/, /onboarding
+  // Protected paths: /o/, /onboarding, /admin
   const isProtected =
     pathname.startsWith("/o/") ||
-    pathname.startsWith("/onboarding");
+    pathname.startsWith("/onboarding") ||
+    pathname.startsWith("/admin");
 
   if (isProtected) {
     // Get access cookie

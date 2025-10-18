@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChevronLeft, ChevronRight, User, LogOut, Building2, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, User, LogOut, Building2, Plus, Settings, Users } from "lucide-react";
 import type { Section, Page, CurrentOrg } from "./dashboard-shell";
 
 /**
@@ -195,10 +195,61 @@ export function Sidebar({
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push("/settings/profile")}>
+              <DropdownMenuItem
+                onClick={() => {
+                  const profileUrl = currentOrg
+                    ? `/o/${currentOrg.slug}/settings/profile`
+                    : "/settings/profile";
+                  router.push(profileUrl);
+                }}
+              >
                 <User className="mr-2 h-4 w-4" />
                 Profile
               </DropdownMenuItem>
+              {currentOrg && (
+                <DropdownMenuItem
+                  onClick={() => router.push(`/o/${currentOrg.slug}/settings/organization`)}
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  Organization
+                </DropdownMenuItem>
+              )}
+              {currentOrg && currentOrg.role === "admin" && (
+                <DropdownMenuItem
+                  onClick={() => router.push(`/o/${currentOrg.slug}/settings/members`)}
+                >
+                  <Users className="mr-2 h-4 w-4" />
+                  Members
+                </DropdownMenuItem>
+              )}
+              {currentOrg && organizations.length > 1 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>Switch Organization</DropdownMenuLabel>
+                  {organizations
+                    .filter((org) => org.id !== currentOrg.id)
+                    .map((org) => (
+                      <DropdownMenuItem
+                        key={org.id}
+                        onClick={() => handleSwitchOrg(org)}
+                      >
+                        <Building2 className="mr-2 h-4 w-4" />
+                        <div className="flex-1 min-w-0">
+                          <div className="truncate">{org.name}</div>
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                </>
+              )}
+              {currentOrg && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleCreateOrg}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create Organization
+                  </DropdownMenuItem>
+                </>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleSignOut}>
                 <LogOut className="mr-2 h-4 w-4" />
@@ -322,6 +373,22 @@ export function Sidebar({
               <User className="mr-2 h-4 w-4" />
               Profile
             </DropdownMenuItem>
+            {currentOrg && (
+              <DropdownMenuItem
+                onClick={() => router.push(`/o/${currentOrg.slug}/settings/organization`)}
+              >
+                <Settings className="mr-2 h-4 w-4" />
+                Organization
+              </DropdownMenuItem>
+            )}
+            {currentOrg && currentOrg.role === "admin" && (
+              <DropdownMenuItem
+                onClick={() => router.push(`/o/${currentOrg.slug}/settings/members`)}
+              >
+                <Users className="mr-2 h-4 w-4" />
+                Members
+              </DropdownMenuItem>
+            )}
             {currentOrg && organizations.length > 1 && (
               <>
                 <DropdownMenuSeparator />

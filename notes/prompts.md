@@ -4,7 +4,7 @@
 
 ```
 ./worktrees.sh setup \
-  --branches feat/multi_tenant_support \
+  --branches feat/multi_tenant_support_superadmin \
   --db-url postgresql://pi:password@localhost:5432/nextboilerplate
 ```
 
@@ -17,7 +17,7 @@
 ## merge
 
 ```
-./worktrees.sh merge --branches feat/multi_tenant_support --into main
+./worktrees.sh merge --branches feat/multi_tenant_support_superadmin --into main
 ```
 
 # create wireframes based on plan

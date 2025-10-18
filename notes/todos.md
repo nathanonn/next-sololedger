@@ -21,4 +21,11 @@ what else that can be considered:
 ======
 
 - [ ] Add an env variable to disable allowed emails check.
+- [ ] Add an env variable to enable/disable signup feature. If signup is disabled, only existing users can login. If user tries to access the signup page, redirect them to the login page with a message indicating that signup is disabled. If a non-existing user tries to login, show a message indicating that their account does not exist and they cannot sign up because signup is disabled.
 - [ ] Only admin of the organization can see the /o/[orgSlug]/settings/members and /app/o/[orgSlug]/settings/organization pages. We need to control the API routes as well to make sure only admin can perform those actions.
+- [ ] We need to add the superadmin role that can access all organizations and manage them.
+  - [ ] Only superadmin can create new organizations.
+  - [ ] Superadmin can assign other users as admin of an organization.
+- [ ] Add an env variable to enable/disable organization creation by users.
+  - [ ] We also need a env variable to limit the number of organizations a user can create. By default, only one is allowed.
+  - [ ] If organization creation is disabled, users can only be invited to existing organizations. Therefore, we need to hide the "Create Organization" button in the UI. Also, block user from accessing the organization creation page and API route.

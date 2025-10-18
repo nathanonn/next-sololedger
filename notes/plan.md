@@ -1,100 +1,127 @@
-Implement Organizations, Memberships, and Invitations with strict org-scoped data and server-side guards. Move protected app under /o/[orgSlug]/..., resolve org context from the path, add an org switcher, and provide admin member/invite management. Backfill creates a default org per existing user (admin). Invitations bypass allowlist, are expiring, require signed-in user with matching email, and enforce rate limits. Slugs are immutable, user-chosen at creation, globally unique, and auto-suggested.
+Feature Toggles, Superadmin, and Organization Policy — Implementation Plan
 
-Plan
+Summary
+We will add three server‑validated toggles (allowlist, signup, org‑creation), introduce a superadmin role with cross‑org management, and harden both UI visibility
+and API authorization so only admins or superadmins can manage organization settings and members. Client code will only mirror server policy for UX; all enforcement
+remains in Node runtime routes and server components. No DB schema changes are required.
 
-1) Database (Prisma)
-- New models:
-  - Organization: id, name, slug (unique, immutable), createdById→User, createdAt, updatedAt.
-  - Membership: id, userId→User, organizationId→Organization, role ("admin" | "member"), createdAt, @@unique([userId, organizationId]).
-  - Invitation: id, organizationId, email, role, tokenHash, expiresAt, invitedById→User, acceptedAt?, revokedAt?, createdAt.
-  - AuditLog: add optional organizationId→Organization (indexed) for org actions.
-  - User: add defaultOrganizationId→Organization (nullable, indexed).
-- DB constraints and indexes:
-  - Organization.slug: unique, kebab-case, <=50 chars, not in reserved list from env.
-  - Invitation: one active invite per (organizationId, email) via partial unique index (acceptedAt IS NULL AND revokedAt IS NULL). Implement with raw SQL migration.
-  - Add composite indexes on tenant tables: e.g., @@index([organizationId, createdAt]).
-- ENV:
-  - INVITE_EXP_MINUTES=10080 (7 days), INVITES_PER_ORG_PER_DAY=20, INVITES_PER_IP_15M=5.
-  - ORG_RESERVED_SLUGS="o,api,dashboard,settings,login,invite,_next,assets" (extendable).
-  - LAST_ORG_COOKIE_NAME="__last_org" (httpOnly, SameSite=Strict, Secure in prod, maxAge 30d).
+Decisions (approved)
 
-2) Slug and onboarding
-- Slug policy: immutable, user-provided at creation (checked for uniqueness and reserved words). Format: kebab-case, <=50 chars.
-- New-user onboarding: force “Create organization” step after OTP and before entering app.
-  - Prefill name: "{UserName}’s workspace"; slug: "{username}-workspace"; if taken, append "-{randomAlphaNum}".
-- Existing users backfill: same naming; on collision, append "-{randomAlphaNum}".
+- AUTH_ALLOWLIST_ENABLED: enabled by default (true)
+- AUTH_SIGNUP_ENABLED: enabled by default (true); when false, only existing users can sign in
+- ORG_CREATION_ENABLED: disabled by default (false)
+- ORG_CREATION_LIMIT: default 1
+- Superadmin: user.role === "superadmin" has global org access; may create orgs regardless of policy/limits
+- Seed strategy: scripts/seed-superadmin.ts using SEED_EMAIL
+- UI visibility: pass canCreateOrganizations from server layout to shell; hide buttons client‑side but always enforce server‑side
+- Members list: only admins/superadmins can access
+- Notices: toast via query params (?notice=signup_disabled | org_creation_disabled | forbidden)
+- ALLOWED_EMAILS optional when allowlist disabled
+- Superadmin bypasses allowlist and signup toggles
 
-3) Routing and org context
-- Move protected pages under /o/[orgSlug]/...
-  - /o/[org]/dashboard, /o/[org]/settings/{profile,organization,members}, etc.
-- Root redirects: “/”, “/dashboard”, “/settings/*” → resolve last_org cookie → defaultOrganizationId → first membership → /o/[slug]/dashboard.
-- middleware.ts: treat /o/ as protected (signature-only JWT check). Authorization occurs server-side (Node runtime).
-- Server helpers (Node):
-  - getOrgBySlug(slug), getUserMembership(userId, orgId), getCurrentUserAndOrg(pathname) → { user, org, membership }.
-  - requireMembership(orgId) and requireAdmin(orgId), with last-admin guard.
-  - scopeTenant(where, orgId) helper to enforce orgId filters in queries.
-- Prisma guardrail: production extension/middleware that asserts orgId is present for tenant models’ reads/writes.
+Environment Variables
 
-4) Backend APIs (Node runtime, CSRF + audit + rate limits)
-- Org management:
-  - POST /api/orgs { name, slug? } → validate, create org, add creator as admin, set defaultOrganizationId if unset; audit org_create.
-  - GET /api/orgs → list user orgs with role.
-- Members (admin only):
-  - GET /api/orgs/[orgSlug]/members
-  - PATCH /api/orgs/[orgSlug]/members/[userId] { role } (block last admin demotion); audit member_role_changed.
-  - DELETE /api/orgs/[orgSlug]/members/[userId] (allow self-leave unless last admin); audit member_removed.
-- Invitations (admin only):
-  - POST /api/orgs/[orgSlug]/invitations { email, role } (bypass allowlist; enforce org/day and IP/15m limits); audit member_invited.
-  - POST /api/orgs/[orgSlug]/invitations/[id]/resend (rotate token); audit invite_resend.
-  - DELETE /api/orgs/[orgSlug]/invitations/[id] (revoke); audit invite_revoked.
-  - POST /api/orgs/invitations/accept { token } (requires session; email must match; create membership if missing; consume invite); audit invite_accepted.
+- AUTH_ALLOWLIST_ENABLED: boolean, default true
+- AUTH_SIGNUP_ENABLED: boolean, default true
+- ORG_CREATION_ENABLED: boolean, default false
+- ORG_CREATION_LIMIT: number, default 1
+- SEED_EMAIL: string (for seed script)
 
-5) Invitations flow
-- Token: random string; store bcrypt tokenHash; expiresAt = now + INVITE_EXP_MINUTES.
-- Email (Resend) link: /invite?token=...; if not signed in, redirect to /login?next=/invite?token=...
-- Accept: verify token (hash/expiry/not revoked), ensure session email matches invite email, create membership, mark acceptedAt.
+Files To Touch
 
-6) Backfill migration (existing users)
-- For each user without any membership:
-  - Create Organization named "{UserName}’s workspace" with unique slug per rules.
-  - Create Membership as admin.
-  - Set User.defaultOrganizationId.
-- Idempotent; skip users who already have memberships.
+- lib/env.ts
+- lib/auth.ts
+- lib/org-helpers.ts (new helpers for superadmin/admin checks)
+- app/api/auth/request-otp/route.ts
+- app/api/auth/verify-otp/route.ts
+- app/api/orgs/route.ts (GET/POST)
+- app/api/orgs/[orgSlug]/route.ts (PATCH)
+- app/api/orgs/[orgSlug]/members/route.ts (GET)
+- app/api/orgs/[orgSlug]/members/[userId]/route.ts (PATCH/DELETE)
+- app/api/orgs/[orgSlug]/invitations/\*_/_ (GET/POST/DELETE/resend)
+- app/o/[orgSlug]/layout.tsx
+- app/o/[orgSlug]/settings/members/page.tsx
+- app/o/[orgSlug]/settings/organization/page.tsx
+- components/features/dashboard/dashboard-shell.tsx (prop thread)
+- components/features/dashboard/sidebar.tsx (hide Create Organization)
+- app/(public)/login/page.tsx (toast from notice)
+- app/onboarding/create-organization/page.tsx (guard/redirect)
+- app/page.tsx (root redirect tweaks)
+- scripts/seed-superadmin.ts (new)
+- .env.example, README.md, MULTI_TENANT.md, notes/skills/authentication.md (docs)
 
-7) Data isolation and security
-- All tenant queries must include organizationId; enforce via helpers and Prisma guard.
-- Add organizationId to AuditLog for org actions.
-- Prevent removing/demoting last admin; block self-leave if sole admin.
-- Invitations bypass ALLOWED_EMAILS (OTP allowlist remains for open signup).
-- Reserved slugs enforced via ORG_RESERVED_SLUGS.
+Implementation Steps
 
-8) UI/UX
-- DashboardShell (components/features/dashboard/dashboard-shell.tsx): add org switcher in profile dropdown. Opens Command dialog listing orgs (searchable) with actions: Create org, Manage members.
-- Pages:
-  - /o/[org]/dashboard (move existing dashboard content)
-  - /o/[org]/settings/organization: rename name (slug immutable), optional logo/theme later.
-  - /o/[org]/settings/members: list members (role badges), change role, remove, invite form; pending invites list with resend/revoke.
-  - /invite: accept screen (calls accept API; handles expired/invalid).
-- Redirects: ensure old routes map to /o/[org]/ equivalents using last_org/defaultOrganizationId.
+1. Env & Config
 
-9) Testing
-- Backfill correctness and initial redirects.
-- Membership/role enforcement across pages and APIs (403 for non-members).
-- Invitation lifecycle: create/resend/revoke/accept, expiry, wrong-email rejection.
-- Rate limits on invites (org/day, IP/15m).
-- Data isolation (no cross-org access) and AuditLog entries with organizationId.
-- UI switcher behavior and deep-linking.
+- Add new env keys to lib/env.ts with defaults and validation. Make ALLOWED_EMAILS optional when AUTH_ALLOWLIST_ENABLED=false.
+- Update .env.example and docs.
 
-Decisions captured from you
-- Org context: /o/[orgSlug]/... (explicit, SSR-friendly).
-- Slugs: globally unique, immutable; user-chosen; for existing users auto-generated; collision handled by appending random alphanum.
-- Onboarding: force “Create organization” step after OTP.
-- Invitations: DB partial unique index accepted; emails bypass allowlist; basic email templates.
-- Guardrails: add Prisma extension to assert orgId filters in prod; last_org cookie is httpOnly; reserved slugs list from env; rate limits via env.
+2. Allowlist Toggle
 
-Next steps (phased)
-- Phase 1: Prisma schema + migrations (+ partial index SQL), helpers (org resolve/guards), backfill script.
-- Phase 2: Routing move to /o/[org]/..., root redirects, update ProtectedLayout to resolve org context, adjust DashboardShell props.
-- Phase 3: API endpoints (orgs, members, invitations) with CSRF/rate-limit/audit.
-- Phase 4: UI (org switcher, members/invites pages, invite accept page), email templates.
-- Phase 5: Hardening (Prisma guard, last-admin protections), tests.
+- lib/auth.ts → isEmailAllowed(email): if !AUTH_ALLOWLIST_ENABLED return true; else compare against ALLOWED_EMAILS.
+- No client exposure.
+
+3. Signup Toggle (existing users only when disabled)
+
+- request-otp: if !AUTH_SIGNUP_ENABLED and user not found → 400 with explicit message; audit otp_request_blocked { reason: 'signup_disabled_no_account' }.
+- verify-otp: if !AUTH_SIGNUP_ENABLED and user not found → 401; audit otp_verify_failure { reason: 'signup_disabled_no_account' }.
+- Keep dev‑signin unchanged (requires existing user).
+
+4. Superadmin Role
+
+- lib/org-helpers.ts: add isSuperadmin(userId) and assertAdminOrSuperadmin(userId, orgId). Either update requireAdmin to include superadmin or replace callsites.
+- app/o/[orgSlug]/layout.tsx: allow superadmin access without membership; expose role='superadmin' to the shell.
+
+5. Admin‑Only Views & API Hardening
+
+- UI: In org layout, include Settings → Organization/Members only for admin or superadmin. Sidebar mirrors that state.
+- Pages: members/organization pages perform a server check and redirect with ?notice=forbidden for non‑authorized users.
+- API: switch to assertAdminOrSuperadmin for all members/invitations/org‑settings routes. Tighten GET /members to admin/superadmin only.
+
+6. Organization Creation Policy
+
+- app/api/orgs/route.ts (POST):
+  - If superadmin → allow.
+  - Else require ORG_CREATION_ENABLED=true and createdById count < ORG_CREATION_LIMIT; else 403/400.
+- app/api/orgs/route.ts (GET): if superadmin, list all orgs; include role='superadmin' for UI.
+- app/o/[orgSlug]/layout.tsx: compute canCreateOrganizations server‑side (superadmin true; else policy+limit) and pass to shell.
+- sidebar.tsx: hide Create Organization button when !canCreateOrganizations.
+- onboarding/create-organization: guard/redirect to /login or / with ?notice=org_creation_disabled.
+- app/page.tsx: no orgs → superadmin to onboarding; regular user → if ORG_CREATION_ENABLED=false redirect to /?notice=org_creation_disabled.
+
+7. Notices & Copy
+
+- Login: show toast when notice=signup_disabled or org_creation_disabled.
+- Onboarding: show toast when redirected for org creation disabled.
+- Error messages:
+  - Request OTP: "No account found for this email. Sign up is disabled."
+  - Verify OTP: "Your account does not exist and signup is disabled."
+  - Org create disabled: "Organization creation is disabled."
+  - Org limit reached: "Organization creation limit reached."
+
+8. Auditing
+
+- Add: otp_request_blocked { reason: 'signup_disabled_no_account' }, otp_verify_failure { reason: 'signup_disabled_no_account' }, org_create_denied { reason:
+  'disabled' | 'limit_exceeded' }.
+- Optionally mark actions initiated by superadmin with metadata { actingRole: 'superadmin' }.
+
+9. Superadmin Seed
+
+- scripts/seed-superadmin.ts reads SEED_EMAIL; upserts user; sets role='superadmin'; bumps sessionVersion.
+- Doc usage and cautions.
+
+10. Testing (follow‑up)
+
+- Unit: isEmailAllowed, assertAdminOrSuperadmin, org creation policy (limit logic).
+- API: request-otp/verify-otp with signup disabled; orgs POST policy; members/invitations endpoints for member vs admin vs superadmin.
+- E2E: redirects, hidden UI items, toasts.
+
+Acceptance Criteria
+
+- Allowlist disabled allows any email; signup rules still apply.
+- Signup disabled blocks non‑existing users at request‑otp and verify‑otp with clear messages.
+- Only admins/superadmins see and can open org settings & members; APIs enforce the same.
+- Only superadmin can create orgs when ORG_CREATION_ENABLED=false; when enabled, regular users observe ORG_CREATION_LIMIT.
+- "Create Organization" button hidden when user cannot create; onboarding create page is guarded.
+- Superadmin seed documented; global access verified.

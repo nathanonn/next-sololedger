@@ -13,19 +13,25 @@ datasource db {
 
 // User model: core authentication identity
 model User {
-  id                String    @id @default(cuid())
-  email             String    @unique @db.VarChar(255)
-  name              String?   @db.VarChar(255)
-  passwordHash      String?   @db.VarChar(255)
-  emailVerifiedAt   DateTime?
-  role              String    @default("user") @db.VarChar(50)
-  sessionVersion    Int       @default(1)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id                     String    @id @default(cuid())
+  email                  String    @unique @db.VarChar(255)
+  name                   String?   @db.VarChar(255)
+  passwordHash           String?   @db.VarChar(255)
+  emailVerifiedAt        DateTime?
+  role                   String    @default("user") @db.VarChar(50)
+  sessionVersion         Int       @default(1)
+  defaultOrganizationId  String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
-  auditLogs AuditLog[]
+  auditLogs              AuditLog[]
+  memberships            Membership[]
+  createdOrganizations   Organization[] @relation("OrganizationCreator")
+  sentInvitations        Invitation[]   @relation("InvitationSender")
+  defaultOrganization    Organization?  @relation("UserDefaultOrganization", fields: [defaultOrganizationId], references: [id], onDelete: SetNull)
 
   @@index([email])
+  @@index([defaultOrganizationId])
   @@map("users")
 }
 
@@ -58,18 +64,80 @@ model OtpRequest {
 
 // Audit log: track authentication and security events
 model AuditLog {
-  id        String   @id @default(cuid())
-  action    String   @db.VarChar(100)
-  userId    String?
-  email     String?  @db.VarChar(255)
-  ip        String?  @db.VarChar(100)
-  metadata  Json?
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  action         String   @db.VarChar(100)
+  userId         String?
+  email          String?  @db.VarChar(255)
+  ip             String?  @db.VarChar(100)
+  organizationId String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
 
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
 
   @@index([action, createdAt])
   @@index([userId, createdAt])
   @@index([email, createdAt])
+  @@index([organizationId, createdAt])
   @@map("audit_logs")
+}
+
+// Organization: tenant isolation boundary
+model Organization {
+  id          String   @id @default(cuid())
+  name        String   @db.VarChar(255)
+  slug        String   @unique @db.VarChar(50)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy             User           @relation("OrganizationCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  memberships           Membership[]
+  invitations           Invitation[]
+  auditLogs             AuditLog[]
+  defaultForUsers       User[]         @relation("UserDefaultOrganization")
+
+  @@index([slug])
+  @@index([createdById])
+  @@map("organizations")
+}
+
+// Membership: user-organization relationship with role
+model Membership {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  role           String   @db.VarChar(20) // "admin" | "member"
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([userId])
+  @@index([organizationId, createdAt])
+  @@map("memberships")
+}
+
+// Invitation: pending org membership invitations
+model Invitation {
+  id             String    @id @default(cuid())
+  organizationId String
+  email          String    @db.VarChar(255)
+  role           String    @db.VarChar(20) // "admin" | "member"
+  tokenHash      String    @db.VarChar(255)
+  expiresAt      DateTime
+  invitedById    String
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("InvitationSender", fields: [invitedById], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, email])
+  @@index([tokenHash])
+  @@index([email, acceptedAt, revokedAt])
+  @@map("invitations")
 }

@@ -58,6 +58,24 @@ const envSchema = z.object({
     .string()
     .transform((val) => val === "true")
     .default("false"),
+
+  // Multi-tenant
+  INVITE_EXP_MINUTES: z
+    .string()
+    .transform((val) => parseInt(val, 10))
+    .default("10080"), // 7 days
+  INVITES_PER_ORG_PER_DAY: z
+    .string()
+    .transform((val) => parseInt(val, 10))
+    .default("20"),
+  INVITES_PER_IP_15M: z
+    .string()
+    .transform((val) => parseInt(val, 10))
+    .default("5"),
+  ORG_RESERVED_SLUGS: z
+    .string()
+    .default("o,api,dashboard,settings,login,invite,onboarding,_next,assets,auth,public"),
+  LAST_ORG_COOKIE_NAME: z.string().default("__last_org"),
 });
 
 // Parse and export validated env

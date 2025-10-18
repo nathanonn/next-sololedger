@@ -12,6 +12,7 @@ import { verifyAccessJwtSignatureOnly } from "@/lib/jwt-edge";
 const PUBLIC_PATHS = [
   "/",
   "/login",
+  "/invite",
   "/api/auth/request-otp",
   "/api/auth/verify-otp",
   "/api/auth/dev-signin",
@@ -46,8 +47,12 @@ export async function middleware(request: NextRequest): Promise<Response> {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Protected paths: /dashboard, /settings
-  const isProtected = pathname.startsWith("/dashboard") || pathname.startsWith("/settings");
+  // Protected paths: /dashboard, /settings, /o/, /onboarding
+  const isProtected =
+    pathname.startsWith("/dashboard") ||
+    pathname.startsWith("/settings") ||
+    pathname.startsWith("/o/") ||
+    pathname.startsWith("/onboarding");
 
   if (isProtected) {
     // Get access cookie

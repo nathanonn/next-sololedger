@@ -32,12 +32,20 @@ export type Page = {
   sectionId: string;
 };
 
+export type CurrentOrg = {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+};
+
 export type DashboardShellProps = {
   userId: string;
   userEmail: string;
   sections: Section[];
   pages: Page[];
   children: React.ReactNode;
+  currentOrg?: CurrentOrg;
 };
 
 function useLocalStorage<T>(
@@ -89,6 +97,7 @@ export function DashboardShell({
   sections,
   pages,
   children,
+  currentOrg,
 }: DashboardShellProps): JSX.Element {
   const isMobile = useIsMobile();
   const pathname = usePathname();
@@ -123,6 +132,7 @@ export function DashboardShell({
             sections={sections}
             pages={pages}
             collapsed={false}
+            currentOrg={currentOrg}
             onNavigate={() => setMobileOpen(false)}
           />
         </SheetContent>
@@ -151,6 +161,7 @@ export function DashboardShell({
             sections={sections}
             pages={pages}
             collapsed={effectiveCollapsed}
+            currentOrg={currentOrg}
             onToggleCollapse={() => setCollapsed(!collapsed)}
           />
         </Panel>

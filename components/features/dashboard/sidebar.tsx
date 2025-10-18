@@ -15,8 +15,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChevronLeft, ChevronRight, User, LogOut } from "lucide-react";
-import type { Section, Page } from "./dashboard-shell";
+import { ChevronLeft, ChevronRight, User, LogOut, Building2, Plus } from "lucide-react";
+import type { Section, Page, CurrentOrg } from "./dashboard-shell";
 
 /**
  * Sidebar with two-level navigation (Sections → Pages)
@@ -29,6 +29,7 @@ export type SidebarProps = {
   sections: Section[];
   pages: Page[];
   collapsed: boolean;
+  currentOrg?: CurrentOrg;
   onToggleCollapse?: () => void;
   onNavigate?: () => void;
 };
@@ -39,11 +40,44 @@ export function Sidebar({
   sections,
   pages,
   collapsed,
+  currentOrg,
   onToggleCollapse,
   onNavigate,
 }: SidebarProps): JSX.Element {
   const pathname = usePathname();
   const router = useRouter();
+
+  const [organizations, setOrganizations] = React.useState<CurrentOrg[]>([]);
+  const [loadingOrgs, setLoadingOrgs] = React.useState(false);
+
+  // Fetch user's organizations when currentOrg is available
+  React.useEffect(() => {
+    if (!currentOrg) return;
+
+    async function fetchOrganizations() {
+      try {
+        setLoadingOrgs(true);
+        const response = await fetch("/api/orgs");
+        if (response.ok) {
+          const data = await response.json();
+          setOrganizations(
+            data.organizations.map((org: any) => ({
+              id: org.id,
+              name: org.name,
+              slug: org.slug,
+              role: org.role,
+            }))
+          );
+        }
+      } catch (error) {
+        console.error("Error fetching organizations:", error);
+      } finally {
+        setLoadingOrgs(false);
+      }
+    }
+
+    fetchOrganizations();
+  }, [currentOrg]);
 
   // Group pages by section
   const pagesBySection = React.useMemo(() => {
@@ -65,6 +99,18 @@ export function Sidebar({
     } catch (error) {
       console.error("Sign out error:", error);
     }
+  }
+
+  function handleSwitchOrg(org: CurrentOrg): void {
+    // Set last_org cookie and navigate
+    document.cookie = `__last_org=${org.slug}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Strict`;
+    router.push(`/o/${org.slug}/dashboard`);
+    if (onNavigate) onNavigate();
+  }
+
+  function handleCreateOrg(): void {
+    router.push("/onboarding/create-organization");
+    if (onNavigate) onNavigate();
   }
 
   const userInitial = userEmail.charAt(0).toUpperCase();
@@ -168,13 +214,26 @@ export function Sidebar({
     <div className="h-full flex flex-col border-r bg-background">
       {/* Header */}
       <div className="p-4 flex items-center justify-between border-b">
-        <h2 className="text-lg font-semibold">App</h2>
+        <div className="flex-1 min-w-0">
+          {currentOrg ? (
+            <div>
+              <h2 className="text-lg font-semibold truncate">
+                {currentOrg.name}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                {currentOrg.role === "admin" ? "Admin" : "Member"}
+              </p>
+            </div>
+          ) : (
+            <h2 className="text-lg font-semibold">App</h2>
+          )}
+        </div>
         {onToggleCollapse && (
           <Button
             variant="ghost"
             size="icon"
             onClick={onToggleCollapse}
-            className="h-8 w-8"
+            className="h-8 w-8 flex-shrink-0"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -250,10 +309,45 @@ export function Sidebar({
           <DropdownMenuContent side="top" align="end" className="w-56">
             <DropdownMenuLabel>My Account</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push("/settings/profile")}>
+            <DropdownMenuItem
+              onClick={() => {
+                const profileUrl = currentOrg
+                  ? `/o/${currentOrg.slug}/settings/profile`
+                  : "/settings/profile";
+                router.push(profileUrl);
+              }}
+            >
               <User className="mr-2 h-4 w-4" />
               Profile
             </DropdownMenuItem>
+            {currentOrg && organizations.length > 1 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Switch Organization</DropdownMenuLabel>
+                {organizations
+                  .filter((org) => org.id !== currentOrg.id)
+                  .map((org) => (
+                    <DropdownMenuItem
+                      key={org.id}
+                      onClick={() => handleSwitchOrg(org)}
+                    >
+                      <Building2 className="mr-2 h-4 w-4" />
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate">{org.name}</div>
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+              </>
+            )}
+            {currentOrg && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleCreateOrg}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Organization
+                </DropdownMenuItem>
+              </>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleSignOut}>
               <LogOut className="mr-2 h-4 w-4" />

@@ -1,176 +1,204 @@
-UX Flow Map + ASCII Wireframes
+# Admin • Manage Organizations — UX Flow & ASCII Wireframes
 
-  Flow Map (high level)
+  This document captures the superadmin-only admin area at /admin/organizations. It includes the flow map, route/query contracts, and screen-by-screen ASCII wireframes. Decisions applied: separate details page (1/a), selectable page
+  size 10/20/50 default 20 (2/c), sort by name and createdAt asc/desc (3/b), search by name/slug (4/b), hard delete with confirm by slug (5/a + 12/b), members table only (6/a), roles admin|member (7/a), disable demote/remove when last
+  admin (8/b), user-menu link label: “Manage Organizations” (9/b), /admin covered by middleware (10/a), server-first queries (11/a).
 
-  - Unauthenticated
-      - GET /login
-          - POST /api/auth/request-otp
-              - If AUTH_SIGNUP_ENABLED=false AND user does not exist → 400, toast “No account…signup is disabled”
-              - Else → 200, advance to code step
-          - POST /api/auth/verify-otp
-              - If AUTH_SIGNUP_ENABLED=false AND user does not exist → 401, toast “Account does not exist…”
-              - Else → 200, set cookies → redirect
-      - GET /invite?token=…
-          - If not authenticated → redirect to /login?next=/invite?token=…
-          - After login → POST /api/orgs/invitations/accept → on success redirect to /o/[slug]/dashboard
-  - Authenticated Root (/)
-      - last_org cookie valid? → /o/[slug]/dashboard
-      - else defaultOrganizationId valid? → /o/[slug]/dashboard
-      - else memberships > 0? → /o/[first]/dashboard
-      - else:
-          - if user.role === superadmin → /onboarding/create-organization
-          - else if ORG_CREATION_ENABLED=false → /?notice=org_creation_disabled (toast on home/login)
-          - else → /onboarding/create-organization
-  - Organization (protected)
-      - /o/[slug]/dashboard: anyone in org
-      - /o/[slug]/settings/organization: admin or superadmin only (non‑admin → redirect to dashboard?notice=forbidden)
-      - /o/[slug]/settings/members: admin or superadmin only (non‑admin → redirect to dashboard?notice=forbidden)
-  - Create Organization
-      - /onboarding/create-organization:
-          - if canCreateOrganizations=true → show form
-          - else → redirect to /?notice=org_creation_disabled (or /login if unauthenticated)
+  ## Flow Map
 
-  Toasts (Sonner, top‑right)
+  Sign in → Any protected page (e.g., /o/[slug]/dashboard)
+     │
+     └─ Open user menu in sidebar
+          │
+          └─ Click “Manage Organizations” (superadmin only)
+                │
+                └─ /admin/organizations  (List)
+                      │               │                 │
+           (Search/Sort/PageSize)   (Pagination)      (Row: View)
+                      │               │                 │
+                      └───────────────┴─────────────────┘
+                                        │
+                                        └─ /admin/organizations/[orgSlug]  (Details)
+                                              │                 │                 │
+                                       (Change Role)      (Remove Member)   (Delete Org)
+                                              │                 │                 │
+                                     PATCH /members     DELETE /members     DELETE /org
+                                     [userId] role      [userId]            [orgSlug]
 
-  - signup_disabled: “Sign up is disabled. Ask an admin to create your account.”
-  - org_creation_disabled: “Organization creation is disabled. You must be invited.”
-  - forbidden: “You don’t have permission to view that page.”
+  ## Routes & Query Contracts
 
-  Screens (ASCII)
+  - /admin/organizations
+      - page (number, default 1)
+      - pageSize (10|20|50, default 20)
+      - q (string, optional; matches name or slug, case-insensitive)
+      - sort (name|createdAt, default createdAt)
+      - dir (asc|desc, default desc when sort=createdAt, else asc)
+  - /admin/organizations/[orgSlug]
+      - page (number, default 1)
+      - pageSize (10|20|50, default 20)
+      - q (string, optional; filters members by email/name substring)
 
-  1. Login (Email → OTP)
-     +--------------------------------------------------+
-     | Welcome Back                                     |
-     | Sign in to your account                          |
-     |                                                  |
-     | [ Email ]_______________________________         |
-     |                                                  |
-     | [ Send verification code ]                       |
-     |                                                  |
-     | Note: If your email is allowed, you will         |
-     |       receive a 6‑digit code.                    |
-     |                                                  |
-     | Tabs: [ Email OTP | Password (Dev)* ]            |
-     | * Dev tab visible only in development            |
-     +--------------------------------------------------+
+  Notes
 
-  OTP Code Step
-  +--------------------------------------------------+
-  | Enter 6‑digit code sent to: you@example.com      |
-  |                                                  |
-  | [ _ ] [ _ ] [ _ ] [ _ ] [ _ ] [ _ ]              |
-  |                                                  |
-  | [ Back ]                  [ Verify & sign in ]   |
-  +--------------------------------------------------+
+  - All mutations use CSRF-validated Node runtime APIs and show Sonner toasts.
+  - UI disables demote/remove for the last admin when adminCount <= 1 (server still enforces).
 
-  Dev Password (only in dev)
-  +--------------------------------------------------+
-  | Password (Dev)                                   |
-  |                                                  |
-  | [ Email ]_______________________________         |
-  | [ Password ]____________________________         |
-  |                                                  |
-  | [ Sign in ]                                      |
-  | Dev‑only password sign‑in                        |
-  +--------------------------------------------------+
+  ———
 
-  2. Invite Accept (/invite?token=…)
-     +--------------------------------------------------+
-     | You’ve been invited!                             |
-     | You’ve been invited to join an organization      |
-     |                                                  |
-     | Organization:  Acme Inc                          |
-     | Role:          Member                            |
-     |                                                  |
-     | [ Accept & Join ]     [ Decline ]                |
-     |                                                  |
-     | Tip: If this expired, ask an admin to resend.    |
-     +--------------------------------------------------+
-  3. Dashboard Shell (Org scope)
-     +--------------------+------------------------------+
-     | Sidebar            | Top Bar       [☰]            |
-     |                    |------------------------------|
-     | Main               | Content Area                 |
-     | - Dashboard        |                              |
-     | Settings           |                              |
-     | - Profile          |                              |
-     | - Organization (*) |                              |
-     | - Members ()      |                              |
-     |                    |                              |
-     | [Create Organization] (hidden if not allowed)     |
-     | (*) Visible only for admin or superadmin          |
-     +--------------------+------------------------------+
-  4. Organization Settings (/o/[slug]/settings/organization)
-     +--------------------------------------------------+
-     | Organization Settings                            |
-     | Manage your organization details                 |
-     |                                                  |
-     | General                                          |
-     |  Label: Organization Name                        |
-     |  [ My Workspace ]_______________________         |
-     |                                                  |
-     | Slug (immutable)                                 |
-     |  [ my-workspace ] (disabled)                     |
-     |  URL: https://app.local/o/my-workspace          |
-     |                                                  |
-     | [ Save changes ]                                 |
-     +--------------------------------------------------+
-  5. Members & Invitations (/o/[slug]/settings/members)
-     Invite Form
-     +--------------------------------------------------+
-     | Invite Member                                    |
-     |                                                  |
-     | Email:  [ user@example.com ]______________       |
-     | Role:   [ Member ▼ ]                             |
-     |                                                  |
-     | [ Send Invite ]                                  |
-     +--------------------------------------------------+
+  ## Entry Point (User Menu)
 
-  Members List
-  +--------------------------------------------------+
-  | Members (3)                                      |
-  |                                                  |
-  | user1@example.com     [admin]  Joined 2025‑10‑05 |
-  |   [ Change Role ] [ Remove ]                     |
-  |                                                  |
-  | user2@example.com     [member] Joined 2025‑10‑12 |
-  |   [ Change Role ] [ Remove ]                     |
-  |                                                  |
-  | (Dialogs) Change Role: [Member|Admin] [Cancel][Save]  |
-  |           Remove: “Are you sure?” [Cancel][Remove]    |
-  +--------------------------------------------------+
+  Collapsed sidebar (icon-only) user menu shows an item for superadmins:
 
-  Pending Invitations
-  +--------------------------------------------------+
-  | Pending Invitations                              |
-  |                                                  |
-  | user3@example.com [member]  Expires in 5d        |
-  |   [ Resend ]  [ Revoke ]                         |
-  |                                                  |
-  | (Empty state): “No pending invitations”          |
-  +--------------------------------------------------+
+  [ Avatar ]  ▼
+    ├─ Profile
+    ├─ Organization (when in /o/…)
+    ├─ Members (when admin/superadmin in /o/…)
+    ├─ Manage Organizations   ← superadmin only
+    └─ Sign out
 
-  6. Create Organization (/onboarding/create-organization)
-     +--------------------------------------------------+
-     | Create your workspace                            |
-     | Get started by creating your first workspace     |
-     |                                                  |
-     | Workspace Name                                   |
-     | [ My Workspace ]________________________         |
-     |                                                  |
-     | Workspace URL                                    |
-     | [ my-workspace ]________________________         |
-     | https://app.local/o/my-workspace                 |
-     |                                                  |
-     | [ Create workspace ]                             |
-     |                                                  |
-     | (Guard) If not allowed → redirect with toast     |
-     +--------------------------------------------------+
-  7. Redirect/Guard States
+  Expanded sidebar user menu (footer):
 
-  - Non‑admin opens /settings/* → redirect to /o/[slug]/dashboard?notice=forbidden (toast)
-  - No orgs:
-      - superadmin → /onboarding/create-organization
-      - regular user:
-          - ORG_CREATION_ENABLED=false → /?notice=org_creation_disabled (toast)
-          - else → /onboarding/create-organization
+  ┌─────────────────────────────────────────────┐
+  │ My Account                                  │
+  ├─────────────────────────────────────────────┤
+  │ Profile                                     │
+  │ Organization (contextual)                   │
+  │ Members (contextual)                        │
+  │ Manage Organizations    ← superadmin only   │
+  ├─────────────────────────────────────────────┤
+  │ Sign out                                    │
+  └─────────────────────────────────────────────┘
+
+  ———
+
+  ## Screen 1 — Organizations List (/admin/organizations)
+
+  +--------------------------------------------------------------------------------+
+  | Admin • Manage Organizations                                                   |
+  |                                                                                |
+  | Search: [________________________]   Sort: [ Name ▼ ]   Dir: (• Asc ○ Desc)   |
+  | Page size: ( 10 ○ 20 • 50 ○ )       Showing rows 1–20 of 132                  |
+  |                                                                                |
+  | ┌────────────────────────────────────────────────────────────────────────────┐ |
+  | | Name                 | Slug              | Members | Created       | View | | |
+  | |───────────────────────────────────────────────────────────────────────────| | |
+  | | Acme Corp           | acme-corp         |     12  | 2025-09-17    | 🔍   | | |
+  | | Beacon Analytics    | beacon-analytics  |      7  | 2025-08-04    | 🔍   | | |
+  | | Nimbus Labs         | nimbus-labs       |     31  | 2025-07-22    | 🔍   | | |
+  | | …                                                                    …    | | |
+  | └────────────────────────────────────────────────────────────────────────────┘ |
+  |                                                                                |
+  | « Prev   1   2   3   …   7   Next »                                            |
+  +--------------------------------------------------------------------------------+
+
+  Interactions
+
+  - Search debounced (updates q, resets page=1).
+  - Sort switches between name and createdAt; dir toggles asc/desc.
+  - Page size radio updates pageSize, resets page=1.
+  - View icon (🔍) goes to /admin/organizations/[orgSlug].
+
+  Empty State
+
+  +----------------------------------------------+
+  | No organizations found                        |
+  | Try adjusting your search or filters.         |
+  +----------------------------------------------+
+
+  ———
+
+  ## Screen 2 — Organization Details (/admin/organizations/[orgSlug])
+
+  +--------------------------------------------------------------------------------+
+  | ← Back to Organizations                                                         |
+  |                                                                                 |
+  | Organization: Acme Corp   (acme-corp)                                           |
+  | Created: 2025-09-17   •   Members: 12                                           |
+  |                                                                                 |
+  | [ Delete Organization ]  (destructive)                                          |
+  |                                                                                 |
+  | Members                                                                          |
+  | Search: [__________________]    Page size: ( 10 ○ 20 • 50 ○ )                   |
+  | Showing rows 1–20 of 12                                                          |
+  |                                                                                 |
+  | ┌────────────────────────────────────────────────────────────────────────────┐  |
+  | | Name           | Email                     | Role       | Joined      | ⚙ |  |
+  | |──────────────────────────────────────────────────────────────────────────|  |
+  | | Jane Admin     | jane@acme.com             | [admin ▾]  | 2025-09-17  | ⓘ|  |
+  | | John Member    | john@acme.com             | [member ▾] | 2025-09-19  | ✖ |  |
+  | | …                                                                       … |  |
+  | └────────────────────────────────────────────────────────────────────────────┘  |
+  |                                                                                 |
+  | « Prev   1   Next »                                                              |
+  +--------------------------------------------------------------------------------+
+
+  Notes
+
+  - Role column is an inline Select with values: admin, member (no empty string).
+  - When the listed user is the last admin (adminCount <= 1 and this row is admin):
+      - Role Select is disabled; an info icon (ⓘ) shows tooltip: “Cannot demote the last admin.”
+      - Remove action (✖) is disabled with tooltip: “Cannot remove the last admin.”
+
+  Empty State (no members)
+
+  +----------------------------------------------+
+  | No members yet                                |
+  | Invite users from the organization settings.  |
+  +----------------------------------------------+
+
+  ———
+
+  ## Dialogs
+
+  Remove Member (shadcn Dialog)
+
+  +-------------------------------+
+  | Remove Member                 |
+  |                               |
+  | Are you sure you want to      |
+  | remove john@acme.com from     |
+  | “Acme Corp”?                   |
+  |                               |
+  | [ Cancel ]   [ Remove ]       |
+  +-------------------------------+
+
+  Delete Organization (requires typing slug)
+
+  +-----------------------------------------------+
+  | Delete Organization                           |
+  |                                               |
+  | This will permanently delete “Acme Corp”,     |
+  | remove all memberships and invitations.       |
+  | Audit logs will be retained.                  |
+  |                                               |
+  | Type the slug to confirm:                     |
+  |  [ acme-corp____________________________ ]    |
+  |                                               |
+  | [ Cancel ]     [ Delete ] (disabled until     |
+  |                               exact match)    |
+  +-----------------------------------------------+
+
+  Pointer Events Restoration (Dropdown → Dialog)
+
+   // When opening Dialog from a Dropdown/ContextMenu, ensure on close:
+   setTimeout(() => { document.body.style.pointerEvents = "" }, 300)
+
+  ———
+
+  ## Behaviors & Feedback
+
+  - Success: Sonner toast top-right (e.g., “Role updated”, “Member removed”, “Organization deleted”).
+  - Failure: Sonner error toast with API message. Server still enforces last-admin protection.
+  - Navigation: After delete, redirect to /admin/organizations and refresh list.
+
+  ## Permissions & Security
+
+  - /admin/* is protected by middleware and server guard; only superadmins pass.
+  - All mutations are CSRF-validated and run on Node runtime; no Edge DB operations.
+  - UI visibility (Manage Organizations link, destructive buttons) is not a security boundary.
+
+  ## Data Requirements (SSR)
+
+  - List page: organization fields { id, name, slug, createdAt }, _count.memberships for member counts.
+  - Details page: organization header + paginated membership rows with user { id, email, name, createdAt }, role, joinedAt.
+  - Precompute adminCount once per details view to drive “last admin” disables.

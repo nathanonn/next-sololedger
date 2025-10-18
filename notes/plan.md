@@ -1,127 +1,151 @@
-Feature Toggles, Superadmin, and Organization Policy — Implementation Plan
+      consistently; server layout still enforces role.
 
-Summary
-We will add three server‑validated toggles (allowlist, signup, org‑creation), introduce a superadmin role with cross‑org management, and harden both UI visibility
-and API authorization so only admins or superadmins can manage organization settings and members. Client code will only mirror server policy for UX; all enforcement
-remains in Node runtime routes and server components. No DB schema changes are required.
+Organizations List Page
 
-Decisions (approved)
+- File: app/admin/organizations/page.tsx (server component).
+- Inputs via searchParams: page (default 1), pageSize (10|20|50; default 20), q
+  (search name/slug), sort (createdAt|name), dir (asc|desc; defaults to createdAt
+  desc).
+- Query:
+  - db.organization.findMany({ where: { OR: [{ name: { contains: q, mode:
+    'insensitive' }}, { slug: { contains: q, mode: 'insensitive' }}] }, include:
+    { \_count: { select: { memberships: true } } }, orderBy, skip, take }).
+  - db.organization.count({ where }) for total.
+- UI:
+  - shadcn Table columns: Name, Slug, Members (\_count.memberships), Created,
+    Actions.
+  - Actions: “View” → /admin/organizations/[slug].
+  - Top controls: Search input (debounced), Sort Select, PageSize Select
+    (10/20/50).
+  - Footer: shadcn Pagination component; URL reflects params.
 
-- AUTH_ALLOWLIST_ENABLED: enabled by default (true)
-- AUTH_SIGNUP_ENABLED: enabled by default (true); when false, only existing users can sign in
-- ORG_CREATION_ENABLED: disabled by default (false)
-- ORG_CREATION_LIMIT: default 1
-- Superadmin: user.role === "superadmin" has global org access; may create orgs regardless of policy/limits
-- Seed strategy: scripts/seed-superadmin.ts using SEED_EMAIL
-- UI visibility: pass canCreateOrganizations from server layout to shell; hide buttons client‑side but always enforce server‑side
-- Members list: only admins/superadmins can access
-- Notices: toast via query params (?notice=signup_disabled | org_creation_disabled | forbidden)
-- ALLOWED_EMAILS optional when allowlist disabled
-- Superadmin bypasses allowlist and signup toggles
+Organization Detail Page
 
-Environment Variables
+- File: app/admin/organizations/[orgSlug]/page.tsx (server component).
+- Load org by slug; 404 if missing.
+- Fetch members with pagination:
+  - db.membership.findMany({ where: { organizationId: org.id }, include: { user:
+    { select: { id, email, name, createdAt } } }, orderBy: { createdAt: 'asc' },
+    skip, take }), plus count.
+- UI sections:
+  - Header: Name, Slug, Created, Member count.
+  - Members table: Name, Email, Role (inline change), Joined, Actions.
+- Actions (client subcomponents inside the page):
+  - Role change: PATCH /api/orgs/[slug]/members/[userId] with { role:
+    'admin'|'member' }. Use shadcn Select (values are semantic strings; no empty
+    string).
+  - Remove member: DELETE /api/orgs/[slug]/members/[userId] with confirm dialog.
+  - Delete organization: client dialog requiring typing the org slug to enable
+    the Delete button; on confirm, DELETE /api/orgs/[slug].
+- “Last admin” UX:
+  - Preload adminCount once. If adminCount <= 1, disable demote/remove for the
+    only admin with tooltip. Keep server fallback check.
 
-- AUTH_ALLOWLIST_ENABLED: boolean, default true
-- AUTH_SIGNUP_ENABLED: boolean, default true
-- ORG_CREATION_ENABLED: boolean, default false
-- ORG_CREATION_LIMIT: number, default 1
-- SEED_EMAIL: string (for seed script)
+API Changes (server-only, Node runtime)
 
-Files To Touch
+- Reuse existing endpoints:
+  - GET /api/orgs/[orgSlug]/members
+  - PATCH /api/orgs/[orgSlug]/members/[userId]
+  - DELETE /api/orgs/[orgSlug]/members/[userId]
+- New endpoint:
+  - DELETE /api/orgs/[orgSlug] in app/api/orgs/[orgSlug]/route.ts:
+    - export const runtime = 'nodejs'.
+    - CSRF validation via validateCsrf.
+    - Require isSuperadmin(user.id); 403 otherwise.
+    - In a transaction:
+      - user.updateMany to set defaultOrganizationId = null where it equals
+        the org id.
+      - Optionally compute memberCount beforehand for audit metadata.
+      - organization.delete({ where: { id } }) to cascade memberships/
+        invitations.
+      - auditLog.create({ action: 'org_deleted', userId, email,
+        organizationId: org.id, metadata: { slug, memberCount } }).
+      - Because AuditLog.organization uses onDelete: SetNull, ensure the
+        create occurs before delete or write organizationId: null with the
+        slug in metadata.
+    - Return 204 No Content or { success: true }.
 
-- lib/env.ts
-- lib/auth.ts
-- lib/org-helpers.ts (new helpers for superadmin/admin checks)
-- app/api/auth/request-otp/route.ts
-- app/api/auth/verify-otp/route.ts
-- app/api/orgs/route.ts (GET/POST)
-- app/api/orgs/[orgSlug]/route.ts (PATCH)
-- app/api/orgs/[orgSlug]/members/route.ts (GET)
-- app/api/orgs/[orgSlug]/members/[userId]/route.ts (PATCH/DELETE)
-- app/api/orgs/[orgSlug]/invitations/\*_/_ (GET/POST/DELETE/resend)
-- app/o/[orgSlug]/layout.tsx
-- app/o/[orgSlug]/settings/members/page.tsx
-- app/o/[orgSlug]/settings/organization/page.tsx
-- components/features/dashboard/dashboard-shell.tsx (prop thread)
-- components/features/dashboard/sidebar.tsx (hide Create Organization)
-- app/(public)/login/page.tsx (toast from notice)
-- app/onboarding/create-organization/page.tsx (guard/redirect)
-- app/page.tsx (root redirect tweaks)
-- scripts/seed-superadmin.ts (new)
-- .env.example, README.md, MULTI_TENANT.md, notes/skills/authentication.md (docs)
+Sidebar User Menu Link
 
-Implementation Steps
+- Modify components/features/dashboard/sidebar.tsx and dashboard-shell.tsx:
+  - Add optional prop isSuperadmin?: boolean (default false).
+  - In both expanded and collapsed user menus, conditionally render a
+    DropdownMenuItem with Lucide Building2 labeled “Manage Organizations”
+    → /admin/organizations if isSuperadmin is true OR currentOrg?.role ===
+    'superadmin'.
+- In app/o/[orgSlug]/layout.tsx, pass isSuperadmin={userIsSuperadmin} to
+  DashboardShell.
+- In app/admin/layout.tsx, pass isSuperadmin={true} and omit currentOrg.
 
-1. Env & Config
+Client Components (minimal and focused)
 
-- Add new env keys to lib/env.ts with defaults and validation. Make ALLOWED_EMAILS optional when AUTH_ALLOWLIST_ENABLED=false.
-- Update .env.example and docs.
+- components/features/admin/role-select.tsx:
+  - Client-only small select for role; PATCH to update; toast on success/error;
+    optimistic update optional.
+- components/features/admin/remove-member-button.tsx:
+  - Client-only button with shadcn Dialog confirm; DELETE member; toast on
+    success/error; refresh or mutate list.
+- components/features/admin/delete-organization-dialog.tsx:
+  - Client-only dialog with input to type slug; enforce pointer-events restore
+    on close; DELETE org and then router.replace('/admin/organizations'); success
+    toast.
 
-2. Allowlist Toggle
+UX & Validation
 
-- lib/auth.ts → isEmailAllowed(email): if !AUTH_ALLOWLIST_ENABLED return true; else compare against ALLOWED_EMAILS.
-- No client exposure.
+- Search is case-insensitive substring against name and slug.
+- Default sort: createdAt desc. Allow toggling to name asc/desc and createdAt asc.
+- Page size: 10/20/50 (default 20), persisted in URL.
+- Use Sonner toasts; handle network errors clearly.
+- Dialogs opened from dropdowns follow pointer-events restoration pattern.
 
-3. Signup Toggle (existing users only when disabled)
+Security & Guardrails
 
-- request-otp: if !AUTH_SIGNUP_ENABLED and user not found → 400 with explicit message; audit otp_request_blocked { reason: 'signup_disabled_no_account' }.
-- verify-otp: if !AUTH_SIGNUP_ENABLED and user not found → 401; audit otp_verify_failure { reason: 'signup_disabled_no_account' }.
-- Keep dev‑signin unchanged (requires existing user).
+- All DB operations in server components or Node route handlers (no Edge DB).
+- CSRF origin/referer validation on all mutating calls.
+- Superadmin-only checks server-side; never rely solely on UI visibility.
+- Preserve existing “last admin” protection on the server; UI disables actions
+  when possible.
 
-4. Superadmin Role
+Audit Logging
 
-- lib/org-helpers.ts: add isSuperadmin(userId) and assertAdminOrSuperadmin(userId, orgId). Either update requireAdmin to include superadmin or replace callsites.
-- app/o/[orgSlug]/layout.tsx: allow superadmin access without membership; expose role='superadmin' to the shell.
+- Already covered for role changes and removals in existing routes.
+- Add org_deleted entry with relevant metadata (slug, memberCount).
 
-5. Admin‑Only Views & API Hardening
+Middleware Update
 
-- UI: In org layout, include Settings → Organization/Members only for admin or superadmin. Sidebar mirrors that state.
-- Pages: members/organization pages perform a server check and redirect with ?notice=forbidden for non‑authorized users.
-- API: switch to assertAdminOrSuperadmin for all members/invitations/org‑settings routes. Tighten GET /members to admin/superadmin only.
-
-6. Organization Creation Policy
-
-- app/api/orgs/route.ts (POST):
-  - If superadmin → allow.
-  - Else require ORG_CREATION_ENABLED=true and createdById count < ORG_CREATION_LIMIT; else 403/400.
-- app/api/orgs/route.ts (GET): if superadmin, list all orgs; include role='superadmin' for UI.
-- app/o/[orgSlug]/layout.tsx: compute canCreateOrganizations server‑side (superadmin true; else policy+limit) and pass to shell.
-- sidebar.tsx: hide Create Organization button when !canCreateOrganizations.
-- onboarding/create-organization: guard/redirect to /login or / with ?notice=org_creation_disabled.
-- app/page.tsx: no orgs → superadmin to onboarding; regular user → if ORG_CREATION_ENABLED=false redirect to /?notice=org_creation_disabled.
-
-7. Notices & Copy
-
-- Login: show toast when notice=signup_disabled or org_creation_disabled.
-- Onboarding: show toast when redirected for org creation disabled.
-- Error messages:
-  - Request OTP: "No account found for this email. Sign up is disabled."
-  - Verify OTP: "Your account does not exist and signup is disabled."
-  - Org create disabled: "Organization creation is disabled."
-  - Org limit reached: "Organization creation limit reached."
-
-8. Auditing
-
-- Add: otp_request_blocked { reason: 'signup_disabled_no_account' }, otp_verify_failure { reason: 'signup_disabled_no_account' }, org_create_denied { reason:
-  'disabled' | 'limit_exceeded' }.
-- Optionally mark actions initiated by superadmin with metadata { actingRole: 'superadmin' }.
-
-9. Superadmin Seed
-
-- scripts/seed-superadmin.ts reads SEED_EMAIL; upserts user; sets role='superadmin'; bumps sessionVersion.
-- Doc usage and cautions.
-
-10. Testing (follow‑up)
-
-- Unit: isEmailAllowed, assertAdminOrSuperadmin, org creation policy (limit logic).
-- API: request-otp/verify-otp with signup disabled; orgs POST policy; members/invitations endpoints for member vs admin vs superadmin.
-- E2E: redirects, hidden UI items, toasts.
+- Update middleware.ts to treat /admin as protected (like /o/ and /onboarding) to
+  benefit from token auto-rotation and consistent redirects.
 
 Acceptance Criteria
 
-- Allowlist disabled allows any email; signup rules still apply.
-- Signup disabled blocks non‑existing users at request‑otp and verify‑otp with clear messages.
-- Only admins/superadmins see and can open org settings & members; APIs enforce the same.
-- Only superadmin can create orgs when ORG_CREATION_ENABLED=false; when enabled, regular users observe ORG_CREATION_LIMIT.
-- "Create Organization" button hidden when user cannot create; onboarding create page is guarded.
-- Superadmin seed documented; global access verified.
+- Only superadmins can load /admin/organizations and /admin/organizations/[slug].
+- List supports search, sort, pagination; shows member counts.
+- Detail page lists members with role change and removal; “last admin” cannot be
+  demoted/removed (disabled UI + server guard).
+- “Manage Organizations” appears in the user menu only for superadmins (both
+  collapsed and expanded).
+- Deleting an organization requires typing its slug; cascades members/invitations;
+  users’ defaultOrganizationId cleared; audit log written.
+- Middleware protects /admin paths.
+
+Work Steps (implementation order)
+
+- Add app/admin/layout.tsx with superadmin guard; render DashboardShell passing
+  isSuperadmin.
+- Add app/admin/organizations/page.tsx with server-side Prisma queries for list;
+  wire search/sort/pagination.
+- Add app/admin/organizations/[orgSlug]/page.tsx with member list, adminCount, and
+  place small client action components.
+- Add client components: role select, remove member, delete org dialog.
+- Add DELETE /api/orgs/[orgSlug] (Node runtime, CSRF, audit, transaction).
+- Update components/features/dashboard/{dashboard-shell,sidebar}.tsx to accept/use
+  isSuperadmin; render “Manage Organizations”.
+- Update app/o/[orgSlug]/layout.tsx to pass isSuperadmin; keep existing
+  currentOrg.role = 'superadmin' behavior.
+- Update middleware.ts to include /admin in protected paths.
+- Manual QA against Acceptance Criteria.
+
+No more questions from me—your 12 choices cover the key decisions and I’m confident
+to implement with this plan. If you want any additional UI touches (e.g., show
+createdBy, quick stats on the list, or an Overview tab), I can fold them in after
+the core is done.

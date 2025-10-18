@@ -29,3 +29,11 @@ what else that can be considered:
 - [ ] Add an env variable to enable/disable organization creation by users.
   - [ ] We also need a env variable to limit the number of organizations a user can create. By default, only one is allowed.
   - [ ] If organization creation is disabled, users can only be invited to existing organizations. Therefore, we need to hide the "Create Organization" button in the UI. Also, block user from accessing the organization creation page and API route.
+
+- [ ] We need to create a specific page for superadmin to manage all organizations and their members.
+  - [ ] The page should list all organizations with pagination.
+  - [ ] Superadmin can click on an organization to view its details, including members.
+  - [ ] Superadmin can remove users from an organization or change their roles.
+  - [ ] Superadmin can delete an organization if needed.
+  - [ ] Put the page at /admin/organizations. Protect the route so that only superadmin can access it.
+  - [ ] Put a link to the page in the sidebar under the user menu, visible only to superadmin users.

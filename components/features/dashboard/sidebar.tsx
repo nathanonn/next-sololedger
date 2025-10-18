@@ -24,6 +24,7 @@ import {
   Plus,
   Settings,
   Users,
+  LayoutDashboard,
 } from "lucide-react";
 import type { Section, Page, CurrentOrg } from "./dashboard-shell";
 
@@ -62,6 +63,24 @@ export function Sidebar({
   const router = useRouter();
 
   const [organizations, setOrganizations] = React.useState<CurrentOrg[]>([]);
+  const [lastOrgSlug, setLastOrgSlug] = React.useState<string | null>(null);
+
+  // Read last org cookie for "Back to Organization Dashboard" link
+  React.useEffect(() => {
+    if (isSuperadmin && pathname?.startsWith('/admin') && lastOrgCookieName) {
+      // Read cookie client-side
+      const cookies = document.cookie.split('; ');
+      const lastOrgCookie = cookies.find(c => c.startsWith(`${lastOrgCookieName}=`));
+      if (lastOrgCookie) {
+        const slug = lastOrgCookie.split('=')[1];
+        setLastOrgSlug(slug || null);
+      } else {
+        setLastOrgSlug(null);
+      }
+    } else {
+      setLastOrgSlug(null);
+    }
+  }, [isSuperadmin, pathname, lastOrgCookieName]);
 
   // Fetch user's organizations when currentOrg is available
   React.useEffect(() => {
@@ -239,6 +258,17 @@ export function Sidebar({
                     Members
                   </DropdownMenuItem>
                 )}
+              {isSuperadmin && pathname?.startsWith('/admin') && lastOrgSlug && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => router.push(`/o/${lastOrgSlug}/dashboard`)}
+                  >
+                    <LayoutDashboard className="mr-2 h-4 w-4" />
+                    Back to Organization Dashboard
+                  </DropdownMenuItem>
+                </>
+              )}
               {(isSuperadmin || currentOrg?.role === "superadmin") && (
                 <>
                   <DropdownMenuSeparator />

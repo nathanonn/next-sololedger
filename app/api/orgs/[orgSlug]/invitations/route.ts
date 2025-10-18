@@ -11,6 +11,7 @@ import {
   checkIpInviteRateLimit,
   getClientIp,
 } from "@/lib/invitation-helpers";
+import { sendInvitationEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
 
@@ -70,6 +71,7 @@ export async function GET(
     const formattedInvitations = invitations.map((inv) => ({
       id: inv.id,
       email: inv.email,
+      name: inv.name,
       role: inv.role,
       expiresAt: inv.expiresAt,
       invitedBy: inv.invitedBy.email,
@@ -133,6 +135,8 @@ export async function POST(
     const inviteSchema = z.object({
       email: z.string().email("Invalid email address"),
       role: z.enum(["admin", "member"]),
+      name: z.string().max(255, "Name too long").optional(),
+      sendEmail: z.boolean().optional(),
     });
 
     const body = await request.json();
@@ -145,7 +149,7 @@ export async function POST(
       );
     }
 
-    const { email, role } = validation.data;
+    const { email, role, name, sendEmail } = validation.data;
 
     // Check if user is already a member
     const existingUser = await db.user.findUnique({
@@ -212,6 +216,7 @@ export async function POST(
           organizationId: org.id,
           email,
           role,
+          ...(name && { name }),
           tokenHash,
           expiresAt,
           invitedById: user.id,
@@ -229,6 +234,7 @@ export async function POST(
           metadata: {
             invitedEmail: email,
             role,
+            ...(name && { name }),
           },
         },
       });
@@ -240,9 +246,24 @@ export async function POST(
     const appUrl = env.APP_URL;
     const inviteUrl = `${appUrl}/invite?token=${token}`;
 
-    // TODO: Send email via Resend
-    // For now, just return the URL in the response
-    console.log(`Invitation URL: ${inviteUrl}`);
+    // Send email if requested and configured
+    let emailSent = false;
+    if (sendEmail === true) {
+      try {
+        await sendInvitationEmail({
+          to: email,
+          orgName: org.name,
+          inviteUrl,
+          role,
+          invitedBy: user.email,
+        });
+        emailSent = true;
+      } catch (error) {
+        // Log error but don't fail the request
+        // In development without Resend, this will log to console
+        console.error("Failed to send invitation email:", error);
+      }
+    }
 
     return NextResponse.json(
       {
@@ -250,8 +271,10 @@ export async function POST(
           id: invitation.id,
           email: invitation.email,
           role: invitation.role,
+          name: invitation.name,
           expiresAt: invitation.expiresAt,
           inviteUrl,
+          sent: emailSent,
         },
       },
       { status: 201 }

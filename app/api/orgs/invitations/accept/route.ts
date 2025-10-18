@@ -109,16 +109,23 @@ export async function POST(request: Request): Promise<Response> {
         data: { acceptedAt: new Date() },
       });
 
-      // Set as default org if user has none
+      // Get current user details
       const currentUser = await tx.user.findUnique({
         where: { id: user.id },
-        select: { defaultOrganizationId: true },
+        select: { defaultOrganizationId: true, name: true },
       });
 
-      if (!currentUser?.defaultOrganizationId) {
+      // Apply invited name if user has no name and invitation has one
+      const shouldSetName = invitation.name && (!currentUser?.name || currentUser.name.trim() === "");
+
+      // Update user: set default org and/or name
+      if (!currentUser?.defaultOrganizationId || shouldSetName) {
         await tx.user.update({
           where: { id: user.id },
-          data: { defaultOrganizationId: invitation.organizationId },
+          data: {
+            ...((!currentUser?.defaultOrganizationId) && { defaultOrganizationId: invitation.organizationId }),
+            ...(shouldSetName && { name: invitation.name }),
+          },
         });
       }
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getOrgBySlug, requireAdminOrSuperadmin, isSuperadmin } from "@/lib/org-helpers";
+import { getOrgBySlug, requireAdminOrSuperadmin, isSuperadmin, validateSlug, isReservedSlug } from "@/lib/org-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
@@ -55,6 +55,7 @@ export async function PATCH(
         .min(1, "Name is required")
         .max(255, "Name too long")
         .optional(),
+      slug: z.string().optional(),
     });
 
     const body = await request.json();
@@ -67,17 +68,63 @@ export async function PATCH(
       );
     }
 
-    const { name } = validation.data;
+    const { name, slug: requestedSlug } = validation.data;
+
+    // Validate slug if provided
+    if (requestedSlug !== undefined) {
+      // Validate format
+      const slugValidation = validateSlug(requestedSlug);
+      if (!slugValidation.valid) {
+        return NextResponse.json(
+          { error: slugValidation.error },
+          { status: 400 }
+        );
+      }
+
+      // Check if reserved
+      if (isReservedSlug(requestedSlug)) {
+        return NextResponse.json(
+          { error: "This slug is reserved. Choose another." },
+          { status: 400 }
+        );
+      }
+
+      // Check if taken by another organization
+      if (requestedSlug !== org.slug) {
+        const existing = await db.organization.findUnique({
+          where: { slug: requestedSlug },
+        });
+
+        if (existing) {
+          return NextResponse.json(
+            { error: "This slug is already taken" },
+            { status: 400 }
+          );
+        }
+      }
+    }
 
     // Update organization
     const updatedOrg = await db.$transaction(async (tx) => {
       const updated = await tx.organization.update({
         where: { id: org.id },
         data: {
-          name: name || org.name,
+          ...(name !== undefined && { name }),
+          ...(requestedSlug !== undefined && { slug: requestedSlug }),
           updatedAt: new Date(),
         },
       });
+
+      // Build audit metadata
+      const metadata: Record<string, unknown> = {};
+      if (name !== undefined && name !== org.name) {
+        metadata.oldName = org.name;
+        metadata.newName = name;
+      }
+      if (requestedSlug !== undefined && requestedSlug !== org.slug) {
+        metadata.oldSlug = org.slug;
+        metadata.newSlug = requestedSlug;
+      }
 
       // Audit log
       await tx.auditLog.create({
@@ -86,10 +133,7 @@ export async function PATCH(
           userId: user.id,
           email: user.email,
           organizationId: org.id,
-          metadata: {
-            oldName: org.name,
-            newName: name || org.name,
-          },
+          metadata,
         },
       });
 

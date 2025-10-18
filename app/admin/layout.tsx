@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { isSuperadmin } from "@/lib/org-helpers";
 import { DashboardShell } from "@/components/features/dashboard/dashboard-shell";
 import { Building2, Settings } from "lucide-react";
+import { env } from "@/lib/env";
 
 /**
  * Admin layout - Superadmin-only access
@@ -54,6 +55,7 @@ export default async function AdminLayout({
       pages={pages}
       isSuperadmin={true}
       canCreateOrganizations={true}
+      lastOrgCookieName={env.LAST_ORG_COOKIE_NAME}
     >
       {children}
     </DashboardShell>

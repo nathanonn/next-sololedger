@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { env } from "@/lib/env";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -13,7 +14,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DeleteOrganizationDialog } from "@/components/features/admin/delete-organization-dialog";
-import { RoleSelect } from "@/components/features/admin/role-select";
+import { EditOrganizationButton } from "@/components/features/admin/edit-organization-button";
+import { InviteMemberDialog } from "@/components/features/admin/invite-member-dialog";
+import { EditMemberDialog } from "@/components/features/admin/edit-member-dialog";
 import { RemoveMemberButton } from "@/components/features/admin/remove-member-button";
 
 /**
@@ -105,7 +108,15 @@ export default async function OrganizationDetailPage({
               {org.slug}
             </p>
           </div>
-          <DeleteOrganizationDialog orgSlug={org.slug} orgName={org.name} />
+          <div className="flex gap-2">
+            <EditOrganizationButton
+              orgName={org.name}
+              orgSlug={org.slug}
+              appUrl={env.APP_URL}
+              lastOrgCookieName={env.LAST_ORG_COOKIE_NAME}
+            />
+            <DeleteOrganizationDialog orgSlug={org.slug} orgName={org.name} />
+          </div>
         </div>
 
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
@@ -118,7 +129,10 @@ export default async function OrganizationDetailPage({
       {/* Members Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-semibold">Members</h2>
+          <div className="flex items-baseline gap-4">
+            <h2 className="text-2xl font-semibold">Members</h2>
+            <InviteMemberDialog orgSlug={orgSlug} />
+          </div>
           <div className="text-sm text-muted-foreground">
             Showing {memberships.length === 0 ? 0 : (page - 1) * effectivePageSize + 1}–
             {Math.min(page * effectivePageSize, total)} of {total}
@@ -160,24 +174,29 @@ export default async function OrganizationDetailPage({
                       </TableCell>
                       <TableCell>{membership.user.email}</TableCell>
                       <TableCell>
-                        <RoleSelect
-                          orgSlug={orgSlug}
-                          userId={membership.user.id}
-                          currentRole={membership.role}
-                          isLastAdmin={isLastAdmin}
-                        />
+                        <span className="capitalize">{membership.role}</span>
                       </TableCell>
                       <TableCell>
                         {new Date(membership.createdAt).toLocaleDateString()}
                       </TableCell>
                       <TableCell className="text-right">
-                        <RemoveMemberButton
-                          orgSlug={orgSlug}
-                          orgName={org.name}
-                          userId={membership.user.id}
-                          userEmail={membership.user.email}
-                          isLastAdmin={isLastAdmin}
-                        />
+                        <div className="flex items-center justify-end gap-2">
+                          <EditMemberDialog
+                            orgSlug={orgSlug}
+                            userId={membership.user.id}
+                            email={membership.user.email}
+                            initialName={membership.user.name}
+                            initialRole={membership.role}
+                            isLastAdmin={isLastAdmin}
+                          />
+                          <RemoveMemberButton
+                            orgSlug={orgSlug}
+                            orgName={org.name}
+                            userId={membership.user.id}
+                            userEmail={membership.user.email}
+                            isLastAdmin={isLastAdmin}
+                          />
+                        </div>
                       </TableCell>
                     </TableRow>
                   );

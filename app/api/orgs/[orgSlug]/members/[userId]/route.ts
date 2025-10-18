@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 
 /**
  * PATCH /api/orgs/[orgSlug]/members/[userId]
- * Update member role
+ * Update member role and/or name
  * Requires: Admin or Superadmin role
  */
 export async function PATCH(
@@ -49,21 +49,30 @@ export async function PATCH(
     }
 
     // Validate request body
-    const updateRoleSchema = z.object({
-      role: z.enum(["admin", "member"]),
+    const updateMemberSchema = z.object({
+      role: z.enum(["admin", "member"]).optional(),
+      name: z.string().max(255, "Name too long").optional(),
     });
 
     const body = await request.json();
-    const validation = updateRoleSchema.safeParse(body);
+    const validation = updateMemberSchema.safeParse(body);
 
     if (!validation.success) {
       return NextResponse.json(
-        { error: "Invalid role. Must be 'admin' or 'member'" },
+        { error: validation.error.errors[0].message },
         { status: 400 }
       );
     }
 
-    const { role } = validation.data;
+    const { role, name } = validation.data;
+
+    // At least one field must be provided
+    if (role === undefined && name === undefined) {
+      return NextResponse.json(
+        { error: "No fields to update" },
+        { status: 400 }
+      );
+    }
 
     // Check if target user is a member
     const targetMembership = await db.membership.findUnique({
@@ -82,8 +91,8 @@ export async function PATCH(
       );
     }
 
-    // Prevent demoting last admin
-    if (targetMembership.role === "admin" && role === "member") {
+    // Prevent demoting last admin (only if role is being changed)
+    if (role !== undefined && targetMembership.role === "admin" && role === "member") {
       const isLast = await isLastAdmin(targetUserId, org.id);
       if (isLast) {
         return NextResponse.json(
@@ -93,46 +102,50 @@ export async function PATCH(
       }
     }
 
-    // Update role
-    const updatedMembership = await db.$transaction(async (tx) => {
-      const updated = await tx.membership.update({
-        where: {
-          userId_organizationId: {
-            userId: targetUserId,
+    // Update member and/or user
+    await db.$transaction(async (tx) => {
+      // Update membership role if provided
+      if (role !== undefined) {
+        await tx.membership.update({
+          where: {
+            userId_organizationId: {
+              userId: targetUserId,
+              organizationId: org.id,
+            },
+          },
+          data: { role },
+        });
+
+        // Audit log for role change
+        await tx.auditLog.create({
+          data: {
+            action: "member_role_changed",
+            userId: user.id,
+            email: user.email,
             organizationId: org.id,
+            metadata: {
+              targetUserId,
+              newRole: role,
+              oldRole: targetMembership.role,
+            },
           },
-        },
-        data: { role },
-      });
+        });
+      }
 
-      // Audit log
-      await tx.auditLog.create({
-        data: {
-          action: "member_role_changed",
-          userId: user.id,
-          email: user.email,
-          organizationId: org.id,
-          metadata: {
-            targetUserId,
-            newRole: role,
-            oldRole: targetMembership.role,
-          },
-        },
-      });
-
-      return updated;
+      // Update user name if provided (no audit per plan)
+      if (name !== undefined) {
+        await tx.user.update({
+          where: { id: targetUserId },
+          data: { name },
+        });
+      }
     });
 
-    return NextResponse.json({
-      membership: {
-        userId: updatedMembership.userId,
-        role: updatedMembership.role,
-      },
-    });
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Error updating member role:", error);
+    console.error("Error updating member:", error);
     return NextResponse.json(
-      { error: "Failed to update member role" },
+      { error: "Failed to update member" },
       { status: 500 }
     );
   }

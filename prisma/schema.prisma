@@ -125,6 +125,7 @@ model Invitation {
   id             String    @id @default(cuid())
   organizationId String
   email          String    @db.VarChar(255)
+  name           String?   @db.VarChar(255)
   role           String    @db.VarChar(20) // "admin" | "member"
   tokenHash      String    @db.VarChar(255)
   expiresAt      DateTime

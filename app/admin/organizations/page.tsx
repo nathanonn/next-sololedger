@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { env } from "@/lib/env";
 import Link from "next/link";
 import { Eye } from "lucide-react";
 import {
@@ -19,6 +20,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { OrganizationsFilters } from "@/components/features/admin/organizations-filters";
+import { CreateOrganizationButton } from "@/components/features/admin/create-organization-button";
 
 /**
  * Admin Organizations List Page
@@ -104,11 +106,14 @@ export default async function OrganizationsPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Manage Organizations</h1>
-        <p className="text-muted-foreground">
-          View and manage all organizations in the system
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Manage Organizations</h1>
+          <p className="text-muted-foreground">
+            View and manage all organizations in the system
+          </p>
+        </div>
+        <CreateOrganizationButton appUrl={env.APP_URL} />
       </div>
 
       {/* Search and Filters */}

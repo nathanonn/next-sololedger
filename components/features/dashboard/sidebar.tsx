@@ -15,7 +15,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChevronLeft, ChevronRight, User, LogOut, Building2, Plus, Settings, Users } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  User,
+  LogOut,
+  Building2,
+  Plus,
+  Settings,
+  Users,
+} from "lucide-react";
 import type { Section, Page, CurrentOrg } from "./dashboard-shell";
 
 /**
@@ -62,12 +71,19 @@ export function Sidebar({
         if (response.ok) {
           const data = await response.json();
           setOrganizations(
-            data.organizations.map((org: { id: string; name: string; slug: string; role: string }) => ({
-              id: org.id,
-              name: org.name,
-              slug: org.slug,
-              role: org.role,
-            }))
+            data.organizations.map(
+              (org: {
+                id: string;
+                name: string;
+                slug: string;
+                role: string;
+              }) => ({
+                id: org.id,
+                name: org.name,
+                slug: org.slug,
+                role: org.role,
+              })
+            )
           );
         }
       } catch (error) {
@@ -140,11 +156,7 @@ export function Sidebar({
                   {sectionPages.map((page) => {
                     const isActive = pathname === page.href;
                     return (
-                      <Link
-                        key={page.id}
-                        href={page.href}
-                        onClick={onNavigate}
-                      >
+                      <Link key={page.id} href={page.href} onClick={onNavigate}>
                         <Button
                           variant={isActive ? "secondary" : "ghost"}
                           size="icon"
@@ -205,20 +217,26 @@ export function Sidebar({
               </DropdownMenuItem>
               {currentOrg && (
                 <DropdownMenuItem
-                  onClick={() => router.push(`/o/${currentOrg.slug}/settings/organization`)}
+                  onClick={() =>
+                    router.push(`/o/${currentOrg.slug}/settings/organization`)
+                  }
                 >
                   <Settings className="mr-2 h-4 w-4" />
                   Organization
                 </DropdownMenuItem>
               )}
-              {currentOrg && (currentOrg.role === "admin" || currentOrg.role === "superadmin") && (
-                <DropdownMenuItem
-                  onClick={() => router.push(`/o/${currentOrg.slug}/settings/members`)}
-                >
-                  <Users className="mr-2 h-4 w-4" />
-                  Members
-                </DropdownMenuItem>
-              )}
+              {currentOrg &&
+                (currentOrg.role === "admin" ||
+                  currentOrg.role === "superadmin") && (
+                  <DropdownMenuItem
+                    onClick={() =>
+                      router.push(`/o/${currentOrg.slug}/settings/members`)
+                    }
+                  >
+                    <Users className="mr-2 h-4 w-4" />
+                    Members
+                  </DropdownMenuItem>
+                )}
               {currentOrg && organizations.length > 1 && (
                 <>
                   <DropdownMenuSeparator />
@@ -274,8 +292,8 @@ export function Sidebar({
                 {currentOrg.role === "superadmin"
                   ? "Superadmin"
                   : currentOrg.role === "admin"
-                  ? "Admin"
-                  : "Member"}
+                    ? "Admin"
+                    : "Member"}
               </p>
             </div>
           ) : (
@@ -311,11 +329,7 @@ export function Sidebar({
                 {sectionPages.map((page) => {
                   const isActive = pathname === page.href;
                   return (
-                    <Link
-                      key={page.id}
-                      href={page.href}
-                      onClick={onNavigate}
-                    >
+                    <Link key={page.id} href={page.href} onClick={onNavigate}>
                       <Button
                         variant={isActive ? "secondary" : "ghost"}
                         className={cn(
@@ -374,22 +388,28 @@ export function Sidebar({
               <User className="mr-2 h-4 w-4" />
               Profile
             </DropdownMenuItem>
-            {currentOrg && (
-              <DropdownMenuItem
-                onClick={() => router.push(`/o/${currentOrg.slug}/settings/organization`)}
-              >
-                <Settings className="mr-2 h-4 w-4" />
-                Organization
-              </DropdownMenuItem>
-            )}
-            {currentOrg && (currentOrg.role === "admin" || currentOrg.role === "superadmin") && (
-              <DropdownMenuItem
-                onClick={() => router.push(`/o/${currentOrg.slug}/settings/members`)}
-              >
-                <Users className="mr-2 h-4 w-4" />
-                Members
-              </DropdownMenuItem>
-            )}
+            {currentOrg &&
+              (currentOrg.role === "admin" ||
+                currentOrg.role === "superadmin") && (
+                <>
+                  <DropdownMenuItem
+                    onClick={() =>
+                      router.push(`/o/${currentOrg.slug}/settings/organization`)
+                    }
+                  >
+                    <Settings className="mr-2 h-4 w-4" />
+                    Organization
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() =>
+                      router.push(`/o/${currentOrg.slug}/settings/members`)
+                    }
+                  >
+                    <Users className="mr-2 h-4 w-4" />
+                    Members
+                  </DropdownMenuItem>
+                </>
+              )}
             {currentOrg && organizations.length > 1 && (
               <>
                 <DropdownMenuSeparator />

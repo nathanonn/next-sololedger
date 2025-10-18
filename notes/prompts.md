@@ -35,3 +35,7 @@ Read the plan at @notes/plan.md and @notes/wireframes.md, and implement the plan
 # Review
 
 Please read the git diff, and review the code changes to see if the implementation is correct and follows the plan @notes/plan.md and wireframes @notes/wireframes.md, correctly.
+
+# docs to merge back to main
+
+The current directory is a worktree. We will be merging the changes made here back to main. Please create documentation that includes the summary of changes, new features added, and any important notes for users or developers, the summary should be short and consice. And then outline the steps that needs to be taken AFTER merging back to main has been done to ensure that the main branch is fully functional and up-to-date. Include any database migrations, environment variable updates, or other necessary configurations. Put the documentation at @notes/post_merge_instructions.md.

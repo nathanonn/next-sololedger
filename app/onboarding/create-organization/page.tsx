@@ -39,7 +39,7 @@ const createOrgSchema = z.object({
 
 type CreateOrgFormData = z.infer<typeof createOrgSchema>;
 
-export default function CreateOrganizationPage(): JSX.Element {
+export default function CreateOrganizationPage(): React.JSX.Element {
   const router = useRouter();
   const [isLoading, setIsLoading] = React.useState(false);
 

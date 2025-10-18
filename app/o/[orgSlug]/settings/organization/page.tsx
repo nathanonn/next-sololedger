@@ -28,7 +28,7 @@ const updateOrgSchema = z.object({
 
 type UpdateOrgFormData = z.infer<typeof updateOrgSchema>;
 
-export default function OrganizationSettingsPage(): JSX.Element {
+export default function OrganizationSettingsPage(): React.JSX.Element {
   const params = useParams();
   const orgSlug = params.orgSlug as string;
 

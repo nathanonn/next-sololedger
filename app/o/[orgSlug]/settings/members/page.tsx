@@ -62,7 +62,7 @@ interface Invitation {
   createdAt: string;
 }
 
-export default function MembersPage(): JSX.Element {
+export default function MembersPage(): React.JSX.Element {
   const params = useParams();
   const router = useRouter();
   const orgSlug = params.orgSlug as string;

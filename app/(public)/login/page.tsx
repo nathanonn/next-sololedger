@@ -41,7 +41,7 @@ type EmailFormData = z.infer<typeof emailSchema>;
 type OtpFormData = z.infer<typeof otpSchema>;
 type DevSigninFormData = z.infer<typeof devSigninSchema>;
 
-export default function LoginPage(): JSX.Element {
+export default function LoginPage(): React.JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextParam = searchParams.get("next") || undefined;
@@ -130,8 +130,8 @@ export default function LoginPage(): JSX.Element {
         return;
       }
 
-      // Success - redirect
-      router.replace(result.redirect || "/dashboard");
+      // Success - redirect to root (triggers org selection logic)
+      router.replace(result.redirect || "/");
     } catch (err) {
       toast.error("Network error. Please try again.");
     } finally {
@@ -165,8 +165,8 @@ export default function LoginPage(): JSX.Element {
         return;
       }
 
-      // Success - redirect
-      router.replace(result.redirect || "/dashboard");
+      // Success - redirect to root (triggers org selection logic)
+      router.replace(result.redirect || "/");
     } catch (err) {
       toast.error("Network error. Please try again.");
     } finally {

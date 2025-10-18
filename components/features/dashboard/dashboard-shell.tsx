@@ -46,6 +46,7 @@ export type DashboardShellProps = {
   pages: Page[];
   children: React.ReactNode;
   currentOrg?: CurrentOrg;
+  lastOrgCookieName?: string;
 };
 
 function useLocalStorage<T>(
@@ -98,7 +99,8 @@ export function DashboardShell({
   pages,
   children,
   currentOrg,
-}: DashboardShellProps): JSX.Element {
+  lastOrgCookieName = "__last_org",
+}: DashboardShellProps): React.JSX.Element {
   const isMobile = useIsMobile();
   const pathname = usePathname();
 
@@ -133,6 +135,7 @@ export function DashboardShell({
             pages={pages}
             collapsed={false}
             currentOrg={currentOrg}
+            lastOrgCookieName={lastOrgCookieName}
             onNavigate={() => setMobileOpen(false)}
           />
         </SheetContent>
@@ -162,6 +165,7 @@ export function DashboardShell({
             pages={pages}
             collapsed={effectiveCollapsed}
             currentOrg={currentOrg}
+            lastOrgCookieName={lastOrgCookieName}
             onToggleCollapse={() => setCollapsed(!collapsed)}
           />
         </Panel>

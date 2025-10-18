@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { getOrgBySlug, getUserMembership } from "@/lib/org-helpers";
 import { DashboardShell } from "@/components/features/dashboard/dashboard-shell";
+import { env } from "@/lib/env";
 import { Home, Settings, Users } from "lucide-react";
 
 /**
@@ -15,7 +16,7 @@ export default async function OrgLayout({
 }: {
   children: React.ReactNode;
   params: Promise<{ orgSlug: string }>;
-}): Promise<JSX.Element> {
+}): Promise<React.JSX.Element> {
   const { orgSlug } = await params;
 
   // Validate session
@@ -94,6 +95,7 @@ export default async function OrgLayout({
         slug: org.slug,
         role: membership.role,
       }}
+      lastOrgCookieName={env.LAST_ORG_COOKIE_NAME}
     >
       {children}
     </DashboardShell>

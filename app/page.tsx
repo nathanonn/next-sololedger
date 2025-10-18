@@ -14,7 +14,7 @@ import { env } from "@/lib/env";
  * 4. Redirect to onboarding if no organizations
  */
 
-export default async function Home(): Promise<JSX.Element> {
+export default async function Home(): Promise<React.JSX.Element> {
   const user = await getCurrentUser();
 
   // Not authenticated - redirect to login

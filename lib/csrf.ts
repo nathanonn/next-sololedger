@@ -45,3 +45,14 @@ export function isRequestOriginValid(request: Request): boolean {
 
   return allowedOrigins.has(requestOrigin);
 }
+
+/**
+ * Validate CSRF and return error message if invalid
+ * Returns null if valid, error string if invalid
+ */
+export async function validateCsrf(request: Request): Promise<string | null> {
+  if (!isRequestOriginValid(request)) {
+    return "Invalid origin";
+  }
+  return null;
+}

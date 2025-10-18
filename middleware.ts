@@ -47,10 +47,8 @@ export async function middleware(request: NextRequest): Promise<Response> {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Protected paths: /dashboard, /settings, /o/, /onboarding
+  // Protected paths: /o/, /onboarding
   const isProtected =
-    pathname.startsWith("/dashboard") ||
-    pathname.startsWith("/settings") ||
     pathname.startsWith("/o/") ||
     pathname.startsWith("/onboarding");
 

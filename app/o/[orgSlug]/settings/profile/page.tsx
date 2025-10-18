@@ -35,7 +35,7 @@ const changePasswordSchema = z.object({
 type SetPasswordFormData = z.infer<typeof setPasswordSchema>;
 type ChangePasswordFormData = z.infer<typeof changePasswordSchema>;
 
-export default function ProfilePage(): JSX.Element {
+export default function ProfilePage(): React.JSX.Element {
   const router = useRouter();
   const [user, setUser] = React.useState<{
     email: string;

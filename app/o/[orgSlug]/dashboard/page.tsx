@@ -18,7 +18,7 @@ export default async function OrgDashboardPage({
   params,
 }: {
   params: Promise<{ orgSlug: string }>;
-}): Promise<JSX.Element> {
+}): Promise<React.JSX.Element> {
   const { orgSlug } = await params;
   const user = await getCurrentUser();
 

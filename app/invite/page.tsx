@@ -3,6 +3,9 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
+
+// Force dynamic rendering since we use searchParams
+export const dynamic = "force-dynamic";
 import {
   Card,
   CardContent,
@@ -28,7 +31,7 @@ interface InvitationInfo {
   };
 }
 
-export default function InvitePage(): JSX.Element {
+export default function InvitePage(): React.JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token");

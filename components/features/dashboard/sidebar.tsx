@@ -30,6 +30,7 @@ export type SidebarProps = {
   pages: Page[];
   collapsed: boolean;
   currentOrg?: CurrentOrg;
+  lastOrgCookieName?: string;
   onToggleCollapse?: () => void;
   onNavigate?: () => void;
 };
@@ -41,9 +42,10 @@ export function Sidebar({
   pages,
   collapsed,
   currentOrg,
+  lastOrgCookieName = "__last_org",
   onToggleCollapse,
   onNavigate,
-}: SidebarProps): JSX.Element {
+}: SidebarProps): React.JSX.Element {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -102,8 +104,8 @@ export function Sidebar({
   }
 
   function handleSwitchOrg(org: CurrentOrg): void {
-    // Set last_org cookie and navigate
-    document.cookie = `__last_org=${org.slug}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Strict`;
+    // Set last_org cookie and navigate (using configured cookie name)
+    document.cookie = `${lastOrgCookieName}=${org.slug}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Strict`;
     router.push(`/o/${org.slug}/dashboard`);
     if (onNavigate) onNavigate();
   }

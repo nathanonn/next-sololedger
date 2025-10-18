@@ -192,13 +192,17 @@ const response = await fetch('/api/orgs/invitations/accept', {
 
 ### 4. Switching Organizations
 
-The organization switcher is available in the sidebar user menu:
+The organization switcher is available in the sidebar user menu. The cookie name is configurable via `LAST_ORG_COOKIE_NAME` environment variable:
 
 ```typescript
-// Set cookie and redirect
-document.cookie = `__last_org=new-org-slug; path=/; max-age=${30 * 24 * 60 * 60}`;
+// The cookie name is automatically plumbed from env.LAST_ORG_COOKIE_NAME
+// through the component chain to ensure client/server consistency
+// Default: __last_org
+document.cookie = `${lastOrgCookieName}=new-org-slug; path=/; max-age=${30 * 24 * 60 * 60}`;
 router.push(`/o/new-org-slug/dashboard`);
 ```
+
+**Important**: The cookie name is read from the server environment and passed through to the client component to ensure the client writes to the same cookie that the server reads. This prevents issues where changing `LAST_ORG_COOKIE_NAME` would break organization switching.
 
 ### 5. Protected Routes with Org Context
 

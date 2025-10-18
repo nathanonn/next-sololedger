@@ -4,8 +4,8 @@
  */
 
 import { db } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth-helpers";
-import type { User, Organization, Membership } from "@prisma/client";
+import { getCurrentUser, type CurrentUser } from "@/lib/auth-helpers";
+import type { Organization, Membership } from "@prisma/client";
 
 /**
  * Get organization by slug
@@ -43,7 +43,7 @@ export async function getUserMembership(
  * @returns Object with user, org, and membership, or null
  */
 export async function getCurrentUserAndOrg(pathname: string): Promise<{
-  user: User;
+  user: CurrentUser;
   org: Organization;
   membership: Membership;
 } | null> {

@@ -24,6 +24,7 @@ export type CurrentUser = {
   emailVerifiedAt: Date | null;
   passwordHash: string | null;
   sessionVersion: number;
+  defaultOrganizationId: string | null;
 };
 
 /**
@@ -58,6 +59,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       emailVerifiedAt: user.emailVerifiedAt,
       passwordHash: user.passwordHash,
       sessionVersion: user.sessionVersion,
+      defaultOrganizationId: user.defaultOrganizationId,
     };
   } catch {
     return null;
@@ -117,6 +119,7 @@ export async function refreshFromRefreshToken(): Promise<{
         emailVerifiedAt: user.emailVerifiedAt,
         passwordHash: user.passwordHash,
         sessionVersion: user.sessionVersion,
+        defaultOrganizationId: user.defaultOrganizationId,
       },
     };
   } catch {
@@ -126,11 +129,11 @@ export async function refreshFromRefreshToken(): Promise<{
 
 /**
  * Safe redirect: ensure path is internal
- * Returns provided path if valid, otherwise /dashboard
+ * Returns provided path if valid, otherwise / (which triggers org redirect logic)
  */
 export function safeRedirect(next?: string | null): string {
-  if (!next) return "/dashboard";
-  if (!next.startsWith("/") || next.startsWith("//")) return "/dashboard";
+  if (!next) return "/";
+  if (!next.startsWith("/") || next.startsWith("//")) return "/";
   return next;
 }
 

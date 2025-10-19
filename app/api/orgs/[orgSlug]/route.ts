@@ -8,6 +8,57 @@ import { z } from "zod";
 export const runtime = "nodejs";
 
 /**
+ * GET /api/orgs/[orgSlug]
+ * Fetch organization details
+ * Requires: Admin or Superadmin role
+ */
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ orgSlug: string }> }
+): Promise<Response> {
+  try {
+    const { orgSlug } = await params;
+    const user = await getCurrentUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json(
+        { error: "Organization not found" },
+        { status: 404 }
+      );
+    }
+
+    // Verify user is admin or superadmin
+    try {
+      await requireAdminOrSuperadmin(user.id, org.id);
+    } catch {
+      return NextResponse.json(
+        { error: "Admin or superadmin access required" },
+        { status: 403 }
+      );
+    }
+
+    return NextResponse.json({
+      id: org.id,
+      name: org.name,
+      slug: org.slug,
+      createdAt: org.createdAt,
+      updatedAt: org.updatedAt,
+    });
+  } catch (error) {
+    console.error("Error fetching organization:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch organization" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
  * PATCH /api/orgs/[orgSlug]
  * Update organization details
  * Requires: Admin or Superadmin role
@@ -133,7 +184,8 @@ export async function PATCH(
           userId: user.id,
           email: user.email,
           organizationId: org.id,
-          metadata,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          metadata: metadata as any,
         },
       });
 

@@ -7,8 +7,9 @@ export const runtime = "nodejs";
 
 /**
  * GET /api/orgs/[orgSlug]/members
- * List all members of an organization
+ * List all members of an organization with pagination
  * Requires: Admin or Superadmin role
+ * Query params: page (default 1), pageSize (default 20)
  */
 export async function GET(
   request: Request,
@@ -40,21 +41,43 @@ export async function GET(
       );
     }
 
-    // Get all members
-    const memberships = await db.membership.findMany({
-      where: { organizationId: org.id },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            createdAt: true,
+    // Parse pagination params
+    const { searchParams } = new URL(request.url);
+    const parsedPage = parseInt(searchParams.get("page") || "1", 10);
+    const page = parsedPage > 0 && !isNaN(parsedPage) ? parsedPage : 1;
+
+    const parsedPageSize = parseInt(searchParams.get("pageSize") || "20", 10);
+    const validPageSizes = [10, 20, 50];
+    const pageSize = validPageSizes.includes(parsedPageSize) ? parsedPageSize : 20;
+
+    // Get members with pagination
+    const [memberships, total, adminCount] = await Promise.all([
+      db.membership.findMany({
+        where: { organizationId: org.id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              createdAt: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: "asc" },
-    });
+        orderBy: { createdAt: "asc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      db.membership.count({
+        where: { organizationId: org.id },
+      }),
+      db.membership.count({
+        where: {
+          organizationId: org.id,
+          role: "admin",
+        },
+      }),
+    ]);
 
     const members = memberships.map((m) => ({
       id: m.user.id,
@@ -64,7 +87,14 @@ export async function GET(
       joinedAt: m.createdAt,
     }));
 
-    return NextResponse.json({ members });
+    return NextResponse.json({
+      members,
+      total,
+      adminCount,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    });
   } catch (error) {
     console.error("Error fetching members:", error);
     return NextResponse.json(

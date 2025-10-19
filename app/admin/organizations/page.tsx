@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import Link from "next/link";
-import { Eye } from "lucide-react";
+import { Eye, Users } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -157,12 +157,20 @@ export default async function OrganizationsPage({
                     {new Date(org.createdAt).toLocaleDateString()}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Link href={`/admin/organizations/${org.slug}`}>
-                      <Button variant="ghost" size="sm">
-                        <Eye className="h-4 w-4 mr-2" />
-                        View
-                      </Button>
-                    </Link>
+                    <div className="flex items-center justify-end gap-2">
+                      <Link href={`/admin/organizations/${org.slug}`}>
+                        <Button variant="ghost" size="sm">
+                          <Eye className="h-4 w-4 mr-2" />
+                          View
+                        </Button>
+                      </Link>
+                      <Link href={`/admin/organizations/${org.slug}/members`}>
+                        <Button variant="ghost" size="sm">
+                          <Users className="h-4 w-4 mr-2" />
+                          View members
+                        </Button>
+                      </Link>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

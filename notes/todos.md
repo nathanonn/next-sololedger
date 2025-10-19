@@ -19,3 +19,9 @@ We want to refactor the organization settings page for super admin users to use 
 2. **Members**: This tab will list all members of the organization with their roles and permissions.
 
 The idea is to improve the user experience for super admin users by organizing the settings into clear and distinct sections. And also, to make sure that we can easily add more tabs in the future as needed.
+
+- The "Danger Zone" section for deleting the organization should only be available at the /admin/organizations/[orgSlug]/settings/general tab.
+- Organization slug should not be editable directly in the settings page. It should be read-only in the view. Only at /admin/organizations/[orgSlug]/settings/general tab, where super admin can edit it. We need to do a check on the backend to ensure that the new slug is unique across all organizations before allowing the change.
+- The table in the Members tab wasn't updated after performing actions like inviting a member, editing a member's details, or removing a member. Please ensure that the table reflects the latest data after such actions. Same for the "Pending Invitations" list.
+- For the "Pending Invitations", add a "Copy Invitation Link" button. This button should copy the invitation link to the clipboard when clicked, making it easier for super admins to share the link with potential members.
+- If user is just a member, they should not see the "Organization" option in the sidebar and user menu at all.

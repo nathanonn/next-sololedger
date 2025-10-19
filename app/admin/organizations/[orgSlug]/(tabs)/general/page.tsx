@@ -1,20 +1,21 @@
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { notFound } from "next/navigation";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { EditOrganizationButton } from "@/components/features/admin/edit-organization-button";
-import { DeleteOrganizationDialog } from "@/components/features/admin/delete-organization-dialog";
+import { getCurrentUser } from "@/lib/auth-helpers";
+import { isSuperadmin } from "@/lib/org-helpers";
+import { OrganizationGeneralCard } from "@/components/features/organization/organization-general-card";
+import { OrganizationDangerZone } from "@/components/features/organization/organization-danger-zone";
 
 /**
- * Organization General Tab
- * Server component showing organization metadata and danger zone
+ * Admin Organization General Tab
+ * Server component showing organization metadata and danger zone (superadmin only)
  */
 
 type PageProps = {
   params: Promise<{ orgSlug: string }>;
 };
 
-export default async function OrganizationGeneralPage({
+export default async function AdminOrganizationGeneralPage({
   params,
 }: PageProps): Promise<React.JSX.Element> {
   const { orgSlug } = await params;
@@ -28,67 +29,24 @@ export default async function OrganizationGeneralPage({
     notFound();
   }
 
+  // Check if current user is superadmin
+  const user = await getCurrentUser();
+  const userIsSuperadmin = user ? await isSuperadmin(user.id) : false;
+
   return (
     <div className="space-y-6">
-      {/* Organization Details */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Organization Details</CardTitle>
-          <CardDescription>
-            View and manage organization information
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4">
-            <div className="grid grid-cols-[120px_1fr] items-center gap-4">
-              <span className="text-sm font-medium">Name</span>
-              <span className="text-sm">{org.name}</span>
-            </div>
-            <div className="grid grid-cols-[120px_1fr] items-center gap-4">
-              <span className="text-sm font-medium">Slug</span>
-              <span className="text-sm font-mono text-muted-foreground">
-                {org.slug}
-              </span>
-            </div>
-            <div className="grid grid-cols-[120px_1fr] items-center gap-4">
-              <span className="text-sm font-medium">Created</span>
-              <span className="text-sm">
-                {new Date(org.createdAt).toLocaleDateString()}
-              </span>
-            </div>
-          </div>
+      <OrganizationGeneralCard
+        org={org}
+        showEdit={true}
+        appUrl={env.APP_URL}
+        lastOrgCookieName={env.LAST_ORG_COOKIE_NAME}
+      />
 
-          <div className="pt-4">
-            <EditOrganizationButton
-              orgName={org.name}
-              orgSlug={org.slug}
-              appUrl={env.APP_URL}
-              lastOrgCookieName={env.LAST_ORG_COOKIE_NAME}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Danger Zone */}
-      <Card className="border-destructive/50 bg-destructive/5">
-        <CardHeader>
-          <CardTitle className="text-destructive">Danger Zone</CardTitle>
-          <CardDescription>
-            Irreversible actions that affect this organization
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              Deleting this organization is irreversible. It will remove all
-              memberships and invitations. Audit logs will be retained for
-              compliance purposes.
-            </p>
-          </div>
-
-          <DeleteOrganizationDialog orgSlug={org.slug} orgName={org.name} />
-        </CardContent>
-      </Card>
+      <OrganizationDangerZone
+        orgSlug={org.slug}
+        orgName={org.name}
+        show={userIsSuperadmin}
+      />
     </div>
   );
 }

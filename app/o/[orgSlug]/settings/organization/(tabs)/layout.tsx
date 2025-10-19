@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { getOrgBySlug, isSuperadmin, getUserMembership } from "@/lib/org-helpers";
-import { OrganizationTabs as GenericOrganizationTabs } from "@/components/features/shared/organization-tabs";
+import { OrganizationSettingsLayout } from "@/components/features/organization/organization-settings-layout";
 
 /**
  * Organization Settings Tabs Layout
@@ -52,25 +52,14 @@ export default async function OrganizationSettingsTabsLayout({
   });
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">
-          Organization Settings
-        </h1>
-        <p className="text-muted-foreground">
-          Manage your organization details and members
-        </p>
-      </div>
-
-      {/* Tabs */}
-      <GenericOrganizationTabs
-        baseHref={`/o/${orgSlug}/settings/organization`}
-        membersCount={membersCount}
-      />
-
-      {/* Tab content */}
-      <div>{children}</div>
-    </div>
+    <OrganizationSettingsLayout
+      title="Organization Settings"
+      description="Manage your organization details and members"
+      orgSlug={orgSlug}
+      membersCount={membersCount}
+      baseHref={`/o/${orgSlug}/settings/organization`}
+    >
+      {children}
+    </OrganizationSettingsLayout>
   );
 }

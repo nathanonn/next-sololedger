@@ -1,13 +1,10 @@
 import { db } from "@/lib/db";
 import { notFound } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { OrganizationTabs } from "@/components/features/admin/organization-tabs";
+import { OrganizationSettingsLayout } from "@/components/features/organization/organization-settings-layout";
 
 /**
- * Organization Tabs Layout
- * Server layout that renders header and tabs for org detail pages
+ * Admin Organization Tabs Layout
+ * Server layout that renders header and tabs for admin org detail pages
  */
 
 type LayoutProps = {
@@ -15,7 +12,7 @@ type LayoutProps = {
   params: Promise<{ orgSlug: string }>;
 };
 
-export default async function OrganizationTabsLayout({
+export default async function AdminOrganizationTabsLayout({
   children,
   params,
 }: LayoutProps): Promise<React.JSX.Element> {
@@ -36,26 +33,19 @@ export default async function OrganizationTabsLayout({
   }
 
   return (
-    <div className="space-y-6">
-      {/* Back link */}
-      <Link href="/admin/organizations">
-        <Button variant="ghost" size="sm">
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Organizations
-        </Button>
-      </Link>
-
-      {/* Header */}
-      <div className="space-y-1">
-        <h1 className="text-3xl font-bold">{org.name}</h1>
-        <p className="text-muted-foreground font-mono text-sm">{org.slug}</p>
-      </div>
-
-      {/* Tabs */}
-      <OrganizationTabs orgSlug={orgSlug} membersCount={org._count.memberships} />
-
-      {/* Tab content */}
-      <div>{children}</div>
-    </div>
+    <OrganizationSettingsLayout
+      title={org.name}
+      description={org.slug}
+      backLink={{
+        href: "/admin/organizations",
+        label: "Back to Organizations",
+      }}
+      orgSlug={orgSlug}
+      membersCount={org._count.memberships}
+      baseHref={`/admin/organizations/${orgSlug}`}
+      maxWidth=""
+    >
+      {children}
+    </OrganizationSettingsLayout>
   );
 }

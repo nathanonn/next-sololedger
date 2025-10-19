@@ -2,9 +2,6 @@
 
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { toast } from "sonner";
 import {
   Table,
@@ -16,8 +13,6 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -28,18 +23,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { EditMemberDialog } from "@/components/features/admin/edit-member-dialog";
 import { RemoveMemberButton } from "@/components/features/admin/remove-member-button";
+import { InviteMemberDialog } from "@/components/features/admin/invite-member-dialog";
 
 /**
  * Organization Members Tab
  * Client component with members table, pagination, and invitations
  */
-
-const inviteSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  role: z.enum(["admin", "member"]),
-});
-
-type InviteFormData = z.infer<typeof inviteSchema>;
 
 type Member = {
   id: string;
@@ -82,15 +71,6 @@ export default function OrganizationMembersPage(): React.JSX.Element {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [orgName, setOrgName] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
-  const [isInviting, setIsInviting] = useState(false);
-
-  const inviteForm = useForm<InviteFormData>({
-    resolver: zodResolver(inviteSchema),
-    defaultValues: {
-      email: "",
-      role: "member",
-    },
-  });
 
   // Fetch members
   useEffect(() => {
@@ -160,40 +140,6 @@ export default function OrganizationMembersPage(): React.JSX.Element {
       `/o/${orgSlug}/settings/organization/members${search ? `?${search}` : ""}`,
       { scroll: false }
     );
-  }
-
-  // Invite member
-  async function onInvite(formData: InviteFormData): Promise<void> {
-    try {
-      setIsInviting(true);
-
-      const response = await fetch(`/api/orgs/${orgSlug}/invitations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        toast.error(result.error || "Failed to send invitation");
-        return;
-      }
-
-      toast.success(`Invitation sent to ${formData.email}`);
-      inviteForm.reset();
-
-      // Refresh invitations
-      const invitationsRes = await fetch(`/api/orgs/${orgSlug}/invitations`);
-      if (invitationsRes.ok) {
-        const invitationsData = await invitationsRes.json();
-        setInvitations(invitationsData.invitations || []);
-      }
-    } catch {
-      toast.error("Network error. Please try again.");
-    } finally {
-      setIsInviting(false);
-    }
   }
 
   // Resend invitation
@@ -269,60 +215,10 @@ export default function OrganizationMembersPage(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      {/* Invite Form */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Invite Member</CardTitle>
-          <CardDescription>
-            Send an invitation to join this organization
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={inviteForm.handleSubmit(onInvite)} className="space-y-4">
-            <div className="flex gap-4">
-              <div className="flex-1 space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="user@example.com"
-                  {...inviteForm.register("email")}
-                  disabled={isInviting}
-                />
-                {inviteForm.formState.errors.email && (
-                  <p className="text-sm text-destructive">
-                    {inviteForm.formState.errors.email.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="w-32 space-y-2">
-                <Label htmlFor="role">Role</Label>
-                <Select
-                  value={inviteForm.watch("role")}
-                  onValueChange={(value) =>
-                    inviteForm.setValue("role", value as "admin" | "member")
-                  }
-                >
-                  <SelectTrigger id="role" disabled={isInviting}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="member">Member</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-end">
-                <Button type="submit" disabled={isInviting}>
-                  {isInviting ? "Sending..." : "Send Invite"}
-                </Button>
-              </div>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+      {/* Invite Member Dialog */}
+      <div>
+        <InviteMemberDialog orgSlug={orgSlug} />
+      </div>
 
       {/* Members Table */}
       <Card>

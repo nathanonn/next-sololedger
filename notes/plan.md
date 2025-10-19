@@ -1,115 +1,159 @@
-# Superadmin Organization Settings Tabs — Implementation Plan
+## Summary
 
-Short description: We will refactor the superadmin organization detail view into subrouted tabs under `app/admin/organizations/[orgSlug]/(tabs)`. A shared tabs layout will render the header and a TabsList with General and Members. The General tab will SSR org metadata and include a clearly marked Danger zone with delete. The Members tab will fetch its list client‑side via the existing API and support client‑driven pagination that updates the URL. The root `[orgSlug]` page will redirect to `/general`. This approach improves clarity, performance, and extensibility to add future tabs with minimal churn.
+This plan delivers reusable, responsive organization settings components and tightens permissions/edge cases while ensuring the Members and Pending Invitations lists always reflect the latest data after actions. We’ll keep Danger Zone only on the admin’s General tab, prevent admins from demoting/removing themselves, optionally filter superadmins out of the org-level member view, and hide “Organization” from member-only users in the sidebar/user menu. Data refresh will be explicit via hooks and success callbacks rather than relying on page-level reloads.
 
-## Scope
+## Scope & Deliverables
 
-- Phase 1: Superadmin area only (`/admin/organizations/[orgSlug]`) converted to tabs using subroutes: `/general` and `/members`.
-- Phase 2 (optional): Mirror this pattern for org‑scoped settings under `/o/[orgSlug]/settings` later, without changing feature behavior.
+- Reuse and enhance Organization Details block across admin and org-level settings
+- Show Danger Zone only on admin/general tab
+- Extract a reusable Members List component with Invite button, pagination, and actions
+- Extract a reusable Pending Invitations List component with resend/revoke + confirmations
+- Explicit client-side refetch strategy for both lists on successful actions
+- API hardening:
+  - Superadmin-only slug updates
+  - Optional `excludeSuperadmins` for members index
+  - Prevent org admin self-demote/self-remove; always-1-admin invariant
+- Sidebar/user menu visibility: hide Organization for member-only roles
 
-## Finalized decisions (confirmed)
+## Components and Files
 
-- Do both admin and org‑scoped in phases (admin first).
-- Use subroutes for tabs: `/general`, `/members` (SSR friendly, sharable URLs).
-- SSR org + members count in layout; fetch members list client‑side when on Members tab.
-- Client‑driven pagination in Members; update URL `page`/`pageSize` without full reload.
-- Default tab: General.
-- Danger zone: dedicated Card with destructive styling and slug confirmation.
-- Members table shows Role only (Admin/Member); no capability matrix.
-- Admin list may include a “View members” action deep‑linking to `/members`; default “View” links to `/general`.
-- After delete: redirect to `/admin/organizations` with success toast.
-- Tabs below header (title + slug), above content.
-- Members tab shows count badge; Invite button placed above the table; after slug change, auto‑navigate to new slug route; default pageSize=20.
+Existing:
 
-## Routing and files
+- `components/features/organization/organization-general-card.tsx`
+- `components/features/organization/organization-danger-zone.tsx`
+- `components/features/organization/organization-settings-layout.tsx`
+- `components/features/organization/organization-tabs.tsx`
+- `components/features/admin/*` (dialogs/buttons already implemented)
 
-- app/admin/organizations/[orgSlug]/(tabs)/layout.tsx — Server layout
-  - Loads: organization by slug; members count for badge.
-  - Renders: header (Back, org name, slug), TabsList, active styling based on segment, and `children`.
-- app/admin/organizations/[orgSlug]/(tabs)/general/page.tsx — Server page
-  - Shows org metadata and edit controls; Danger zone Card with `DeleteOrganizationDialog`.
-- app/admin/organizations/[orgSlug]/(tabs)/members/page.tsx — Client page
-  - Fetches members via `GET /api/orgs/[orgSlug]/members`; renders table, Invite, edit role, remove; client pagination synced to URL.
-- app/admin/organizations/[orgSlug]/page.tsx — Redirect
-  - Redirects to `/admin/organizations/[orgSlug]/general` to maintain compatibility.
+New (reusable):
 
-## Components and reuse
+- `components/features/organization/members-list.tsx`
+- `components/features/organization/pending-invitations-list.tsx`
+- `hooks/use-members.ts` and `hooks/use-invitations.ts` (lightweight fetch + refetch)
 
-- Use `components/ui/tabs.tsx` for TabsList and content triggers.
-- Reuse existing admin feature components:
-  - `EditOrganizationButton`
-  - `DeleteOrganizationDialog`
-  - `InviteMemberDialog`
-  - `EditMemberDialog` (or role select) and `RemoveMemberButton`
-- Continue using shadcn/ui primitives (`Table`, `Button`, `Badge`, `Card`, `Dialog`).
-- Use Sonner for toasts; no additional Toaster.
+Pages to wire:
 
-## Data fetching and state
+- Admin: `app/admin/organizations/[orgSlug]/(tabs)/general/page.tsx`, `.../(tabs)/members/page.tsx`
+- Org-level: `app/o/[orgSlug]/settings/organization/(tabs)/general/page.tsx`, `.../(tabs)/members/page.tsx`
 
-- Layout SSR: `db.organization.findUnique` for org; `db.membership.count` for count badge.
-- Members tab: client fetch list from `/api/orgs/[orgSlug]/members?page=…&pageSize=…`.
-- URL is source of truth for pagination; update via router without full page reload.
-- Error handling via Sonner; empty states preserved.
+API touched:
 
-## Tabs behavior and deep links
+- `app/api/orgs/[orgSlug]/route.ts` (PATCH)
+- `app/api/orgs/[orgSlug]/members/route.ts` (GET)
+- `app/api/orgs/[orgSlug]/members/[userId]/route.ts` (PATCH, DELETE)
 
-- Tabs values: `general`, `members`.
-- Links use Next `Link` to `/admin/organizations/[orgSlug]/general` and `/members`.
-- Active state based on selected layout segment.
-- Deep links supported: e.g., `/admin/organizations/acme-inc/members?page=2`.
+Sidebar/user menu:
 
-## General tab specifics
+- `components/features/dashboard/sidebar.tsx`
 
-- Show org name and slug; editing via `EditOrganizationButton`.
-- Danger zone Card:
-  - Title “Danger zone”, destructive border/background accents.
-  - Clear text: irreversible deletion; removes memberships and invitations.
-  - `DeleteOrganizationDialog` with slug confirmation.
-  - On success: redirect to `/admin/organizations` with success toast.
+## Implementation Details
 
-## Members tab specifics
+### 1) Organization Details: reuse and enhance
 
-- Primary “Invite member” button above table.
-- Table: Name, Email, Role, Joined, Actions.
-- Role edit and remove actions with last‑admin protection preserved.
-- Pagination controls update URL and re‑fetch; defaults pageSize=20.
+- Keep `OrganizationGeneralCard` with `EditOrganizationButton`/`EditOrganizationDialog`.
+- Add a `canEditSlug` prop to `EditOrganizationDialog` to hide/disable the slug input for non-superadmins.
+- Pass `canEditSlug` from server pages based on `isSuperadmin(user.id)`.
+- Keep existing cookie/redirect logic when slug changes.
 
-## Access control and security
+API (PATCH /api/orgs/[orgSlug]):
 
-- Superadmin guard remains enforced by `app/admin/layout.tsx`.
-- All mutations continue via Node runtime API; no client secrets or DB calls exposed.
-- CSRF and rate limiting remain in effect for API routes.
+- Allow name updates for admin/superadmin.
+- Only allow slug updates for superadmin; otherwise return 403.
+- Keep slug format/reserved/uniqueness validation.
 
-## Phase 2 (optional) — org‑scoped settings
+### 2) Danger Zone placement
 
-- Introduce `app/o/[orgSlug]/settings/(tabs)/layout.tsx` and subroutes `/general` and `/members`.
-- Enforce admin/superadmin via existing settings layouts.
-- Migrate existing `organization` and `members` pages into tabs without behavior change.
+- Render `OrganizationDangerZone` only in admin general tab page.
+- Remove from org-level general tab page.
 
-## Edge cases and empty states
+### 3) MembersList (reusable)
 
-- No members: show informative empty state with invite prompt.
-- Slug change: auto‑navigate to new route; ensure links update seamlessly.
-- Last admin cannot be demoted/removed; preserve messaging.
-- 404 if org not found; handle gracefully with notFound/redirect.
+- Props: `{ orgSlug: string; context: 'admin' | 'org'; excludeSuperadmins?: boolean }`.
+- Renders:
+  - Header with right-aligned `InviteMemberDialog`.
+  - Table: Name, Email, Role, Joined, Actions (Edit, Remove).
+  - Pagination with 10/20/50 page sizes.
+- Behavior differences:
+  - When `context==='org'`, pass `excludeSuperadmins=true` to the API query.
 
-## QA checklist
+### 4) PendingInvitationsList (reusable)
 
-- `/admin/organizations/[slug]/general` renders org details and Danger zone.
-- `/admin/organizations/[slug]/members?page=2` renders Members with page 2; pagination doesn’t cause full reload.
-- Members count badge appears on the Members tab.
-- Edit org name/slug flows work; route updates on slug change.
-- Delete organization redirects to `/admin/organizations` with success toast.
-- Last admin protection enforced; messaging visible.
-- Tabs appear below header; mobile usability acceptable.
+- Props: `{ orgSlug: string }`.
+- Fetch from `GET /api/orgs/[orgSlug]/invitations`.
+- Each item shows: email, role badge, invited by, created date, days to expiry.
+- Actions: Resend (POST) and Revoke (DELETE) with confirmation dialogs.
 
-## Risks and mitigations
+### 5) Data Refresh Strategy
 
-- Route churn: Add redirect from root `[orgSlug]` to `/general` to avoid broken links.
-- Data duplication: Keep SSR minimal (org + count), defer lists to client to avoid over‑fetching.
-- Slug update: Ensure UI navigates to new slug to prevent 404 on refresh.
+- Add hooks:
+  - `useMembers(orgSlug, { page, pageSize, excludeSuperadmins }) -> { data, isLoading, error, refetch, setPage, setPageSize }`
+  - `useInvitations(orgSlug) -> { items, isLoading, error, refetch }`
+- Update existing dialogs/buttons to accept callbacks:
+  - `InviteMemberDialog({ onInvited })`
+  - `EditMemberDialog({ onEdited })`
+  - `RemoveMemberButton({ onRemoved })`
+- On success, invoke callbacks to refetch without relying on `router.refresh()`.
 
-## Effort estimate
+### 6) API Changes and Constraints
 
-- Implementation: ~0.5–1 day
-- QA and polish: ~0.5 day
+- `PATCH /api/orgs/[orgSlug]`:
+  - If `slug` is present and user is not superadmin: return 403.
+- `GET /api/orgs/[orgSlug]/members`:
+  - Support `excludeSuperadmins=true` to filter out users with `user.role==='superadmin'`.
+- `PATCH /api/orgs/[orgSlug]/members/[userId]`:
+  - If requester is org admin (not superadmin) and `userId===requesterId`, block changing own role to member.
+  - Keep last-admin guard.
+- `DELETE /api/orgs/[orgSlug]/members/[userId]`:
+  - If requester is org admin (not superadmin) and `userId===requesterId`, block self-removal.
+  - Keep last-admin guard.
+
+### 7) Sidebar/User Menu Visibility
+
+- In `sidebar.tsx`, hide the “Organization” menu item when `currentOrg.role==='member'`.
+- Keep “Members” entry for admin/superadmin only (already in place).
+
+### 8) Responsiveness
+
+- Ensure full-width cards/tables; wrap long content; preserve mobile usability.
+- Keep “Invite Member” right-aligned above the table in both contexts.
+
+## Acceptance Criteria
+
+Functional:
+
+- Editing org name works for admin/superadmin; slug editing only for superadmin, with validation and redirect.
+- Danger Zone shown only in admin general tab; not visible in org-level settings.
+- Members list shows correct data with pagination; org-level excludes superadmins.
+- Invite/Edit/Remove actions update the Members list immediately.
+- Resend/Revoke actions show confirmation dialogs and update the Pending Invitations list immediately.
+- Admin cannot demote/remove self; last-admin cannot be demoted/removed; clear error toasts/messages.
+- “Organization” option hidden for member-only users in the user menu.
+
+Non-functional:
+
+- Components reusable across admin and org contexts.
+- No client-side exposure of secrets; Node runtime for API routes.
+- Typescript strict; follow project conventions.
+
+## Rollout (PRs)
+
+1. API hardening
+   - Superadmin-only slug updates; self-demote/self-remove guards; `excludeSuperadmins` query.
+2. Reusable UI + hooks
+   - `MembersList`, `PendingInvitationsList`, `useMembers`, `useInvitations`; add callbacks to dialogs/buttons; wire refetch.
+3. Pages wiring + visibility
+   - Replace inline tables with reusable components; adjust Danger Zone placement; hide Organization in user menu for members.
+4. QA & polish
+   - Copy and micro-UX; edge cases; accessibility sweep.
+
+## Test Matrix (manual)
+
+- Edit org (admin): name-only; slug hidden.
+- Edit org (superadmin): slug change; slug taken/reserved/invalid; redirect and cookie update.
+- Members: invite -> appears in invitations; after acceptance path out-of-scope; list refresh works.
+- Members: edit role/name -> list refresh; cannot demote last admin; admin self-demotion blocked.
+- Members: remove -> list refresh; cannot remove last admin; admin self-removal blocked.
+- Pending invitations: resend/revoke with confirm; list refresh.
+- Org-level members exclude superadmins.
+- Danger Zone only on admin general tab.
+- User menu: Organization hidden for members.

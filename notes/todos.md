@@ -21,7 +21,17 @@ We want to refactor the organization settings page for super admin users to use 
 The idea is to improve the user experience for super admin users by organizing the settings into clear and distinct sections. And also, to make sure that we can easily add more tabs in the future as needed.
 
 - The "Danger Zone" section for deleting the organization should only be available at the /admin/organizations/[orgSlug]/settings/general tab.
-- Organization slug should not be editable directly in the settings page. It should be read-only in the view. Only at /admin/organizations/[orgSlug]/settings/general tab, where super admin can edit it. We need to do a check on the backend to ensure that the new slug is unique across all organizations before allowing the change.
 - The table in the Members tab wasn't updated after performing actions like inviting a member, editing a member's details, or removing a member. Please ensure that the table reflects the latest data after such actions. Same for the "Pending Invitations" list.
-- For the "Pending Invitations", add a "Copy Invitation Link" button. This button should copy the invitation link to the clipboard when clicked, making it easier for super admins to share the link with potential members.
+- Create a reusable component for the following components that are used in the following places:
+  - /admin/organizations/{orgId}/general & /o/{orgId}/settings/organization/general
+    - create (or use existing if exists) the reusable component for "Organization Details" section that display organization name, slug, created date, and button to edit organization details. The button should open a modal to edit the organization details. Organization admin can only edit the organization name. Super admin can edit both name and slug.
+      - When super admin edits the organization slug, make sure to validate that the new slug is unique and not already taken by another organization. If it's taken, show an error message and prevent the update.
+  - /admin/organizations/{orgId}/settings/members & /o/{orgId}/settings/organization/members
+    - create (or use existing if exists) the reusable component for "Members List" table that display list of members with their roles and Join date, and actions to edit or remove members.
+      - In /o/{orgId}/settings/organization/members, super admin should not be in the members list. Only organization admins and members should be listed here.
+      - If the logged in user is an organization admin, they should not be able to change their own role to "Member" or remove themselves from the organization. There must always be at least one organization admin in the organization.
+      - The Invite Member button should be above the "Members List" table, aligned to the right side.
+    - create (or use existing if exists) the reusable component for "Pending Invitations" list that display list of pending invitations with email, invited date, invited by who, expired at, and actions to resend or revoke invitations.
+      - When you resend or revoke an invitation, there should be a confirmation dialog to prevent accidental clicks.
+  - All the components should be full width and responsive.
 - If user is just a member, they should not see the "Organization" option in the sidebar and user menu at all.

@@ -1,0 +1,22 @@
+# Multi-Tenant Environment Variables
+# Add these to your .env file
+
+# Organization Creation
+ORG_CREATION_ENABLED=false          # Allow regular users to create orgs (true|false)
+ORG_CREATION_LIMIT=3                 # Max orgs a user can create (superadmin bypasses)
+
+# Invitation Settings
+INVITE_EXP_MINUTES=10080             # Invite expiry in minutes (10080 = 7 days)
+INVITES_PER_ORG_PER_DAY=50          # Max invites per org per 24 hours
+INVITES_PER_IP_15M=5                 # Max invites per IP per 15 minutes
+
+# Organization Slug Configuration
+ORG_RESERVED_SLUGS=api,admin,login,signup,dashboard,settings,o,org,organization,organizations,help,support,docs,blog,about,contact,terms,privacy
+
+# Session Management
+LAST_ORG_COOKIE_NAME=__last_org      # Cookie name for remembering last visited org
+
+# Notes:
+# - Superadmin bypasses ORG_CREATION_ENABLED and ORG_CREATION_LIMIT
+# - Reserved slugs prevent route collisions
+# - All limits help prevent abuse; adjust based on your needs

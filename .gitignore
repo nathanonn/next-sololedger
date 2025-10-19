@@ -47,6 +47,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# prisma
 /lib/generated/prisma
 worktrees
 backup_*.sql
+
+# claude skills
+.claude/skills/skill-creator/scripts/__pycache__

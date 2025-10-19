@@ -145,7 +145,7 @@ export function MembersList({
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Members</CardTitle>
-            <InviteMemberDialog orgSlug={orgSlug} />
+            <InviteMemberDialog orgSlug={orgSlug} onInvited={handleInvited} />
           </div>
         </CardHeader>
         <CardContent>
@@ -164,7 +164,7 @@ export function MembersList({
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Members ({data.total})</CardTitle>
-            <InviteMemberDialog orgSlug={orgSlug} />
+            <InviteMemberDialog orgSlug={orgSlug} onInvited={handleInvited} />
           </div>
           <CardDescription>
             {excludeSuperadmins
@@ -193,7 +193,7 @@ export function MembersList({
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>Members ({data.total})</CardTitle>
-          <InviteMemberDialog orgSlug={orgSlug} />
+          <InviteMemberDialog orgSlug={orgSlug} onInvited={handleInvited} />
         </div>
         <CardDescription>
           {excludeSuperadmins
@@ -248,6 +248,7 @@ export function MembersList({
                           initialName={member.name}
                           initialRole={member.role}
                           isLastAdmin={isLastAdmin}
+                          onEdited={handleEdited}
                         />
                         <RemoveMemberButton
                           orgSlug={orgSlug}
@@ -255,6 +256,7 @@ export function MembersList({
                           userId={member.id}
                           userEmail={member.email}
                           isLastAdmin={isLastAdmin}
+                          onRemoved={handleRemoved}
                         />
                       </div>
                     </TableCell>

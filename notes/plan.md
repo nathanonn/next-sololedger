@@ -1,138 +1,115 @@
-Here’s a focused implementation plan to support organization‑wide AI provider keys, org‑scoped usage logging, and admin/superadmin management. We’ll add Prisma models for encrypted org keys and model allowlists, Node‑runtime API routes that resolve org configuration and call the Vercel AI SDK server‑side (with SSE streaming), and UIs under each organization for admins plus a “My AI Usage” view for members (linked from the user menu). Superadmins will manage/view an org’s AI from an “AI” tab on Admin → Organizations → [org].
+# Superadmin Organization Settings Tabs — Implementation Plan
 
-**Prisma Models**
+Short description: We will refactor the superadmin organization detail view into subrouted tabs under `app/admin/organizations/[orgSlug]/(tabs)`. A shared tabs layout will render the header and a TabsList with General and Members. The General tab will SSR org metadata and include a clearly marked Danger zone with delete. The Members tab will fetch its list client‑side via the existing API and support client‑driven pagination that updates the URL. The root `[orgSlug]` page will redirect to `/general`. This approach improves clarity, performance, and extensibility to add future tabs with minimal churn.
 
-- OrganizationAiProviderKey (one key per org+provider)
-  - Columns: id, organizationId, provider ("openai" | "gemini" | "anthropic"), keyEnvelope JSON { v, iv, ct, tag }, lastVerifiedAt, createdById, createdAt, updatedAt.
-  - Constraints: unique(organizationId,provider). Indexes: (organizationId,provider), (organizationId,lastVerifiedAt).
-- OrganizationAiModel (org allowlist for models)
-  - Columns: id, organizationId, provider, name, label, maxOutputTokens, isDefault boolean, createdById, timestamps.
-  - Constraints: unique(organizationId,provider,name); partial unique one isDefault=true per (organizationId,provider).
-- OrgAiFeaturePreference (org feature defaults; initial feature: "generic-text")
-  - Columns: id, organizationId, feature, provider, modelId?, maxOutputTokens?.
-  - Constraints: unique(organizationId,feature).
-- AiGenerationLog (org‑scoped usage)
-  - Columns: id, organizationId, userId, provider, model, feature, status ("ok" | "error" | "canceled"), tokensIn?, tokensOut?, latencyMs, correlationId, rawInputTruncated, rawOutputTruncated, errorCode?, errorMessage?, createdAt.
-  - Indexes: (organizationId,createdAt desc), (organizationId,provider,model), (correlationId).
-- AiRequestEvent (rate limit ledger; lightweight)
-  - Columns: id, organizationId, userId, ip, createdAt.
-  - Indexes: (userId,createdAt), (ip,createdAt), (organizationId,createdAt).
+## Scope
 
-**Environment & Config**
+- Phase 1: Superadmin area only (`/admin/organizations/[orgSlug]`) converted to tabs using subroutes: `/general` and `/members`.
+- Phase 2 (optional): Mirror this pattern for org‑scoped settings under `/o/[orgSlug]/settings` later, without changing feature behavior.
 
-- Add env to .env.example and validate in :
-  lib/env.ts
-  - APP_ENCRYPTION_KEY (base64, 32‑byte) for AES‑GCM.
-  - AI_RL_PER_USER_PER_MIN=30, AI_RL_PER_IP_PER_MIN=60.
-  - AI_LOG_TRUNCATE_MAX_BYTES=8192.
-- Provider caps map in code (safe token limits per provider).
-- No client exposure; Node runtime only.
+## Finalized decisions (confirmed)
 
-**Server Libraries (Node‑only)**
+- Do both admin and org‑scoped in phases (admin first).
+- Use subroutes for tabs: `/general`, `/members` (SSR friendly, sharable URLs).
+- SSR org + members count in layout; fetch members list client‑side when on Members tab.
+- Client‑driven pagination in Members; update URL `page`/`pageSize` without full reload.
+- Default tab: General.
+- Danger zone: dedicated Card with destructive styling and slug confirmation.
+- Members table shows Role only (Admin/Member); no capability matrix.
+- Admin list may include a “View members” action deep‑linking to `/members`; default “View” links to `/general`.
+- After delete: redirect to `/admin/organizations` with success toast.
+- Tabs below header (title + slug), above content.
+- Members tab shows count badge; Invite button placed above the table; after slug change, auto‑navigate to new slug route; default pageSize=20.
 
-- lib/crypto-secrets.ts
-  - encryptSecret(plaintext) → envelope, decryptSecret(envelope) → plaintext (AES‑256‑GCM, versioned envelopes).
-- lib/ai-providers.ts
-  - getOrgProviderClient(orgId, provider) → loads key, decrypts, returns AI SDK client + model(name) helper.
-  - verifyProviderApiKey(provider, keyPlain) → minimal call per provider to confirm validity.
-- lib/ai-config.ts
-  - requireOrgAiConfigForFeature(orgId, feature, opts?) → resolve provider/model/defaults, clamp maxOutputTokens, throw AiConfigError (AI*CONFIG*\*).
-- lib/ai-logging.ts
-  - startLog(meta) → logId; finishLog(logId, result|error); sanitize + truncate to AI_LOG_TRUNCATE_MAX_BYTES; store tokens/latency/correlationId.
-- lib/ai-rate-limit.ts
-  - checkAndRecord(orgId, userId, ip) enforcing 30/min per user & 60/min per IP; returns 429 + Retry‑After when exceeded.
+## Routing and files
 
-**API Routes (Node runtime; CSRF + AuthZ + Rate Limits)**
+- app/admin/organizations/[orgSlug]/(tabs)/layout.tsx — Server layout
+  - Loads: organization by slug; members count for badge.
+  - Renders: header (Back, org name, slug), TabsList, active styling based on segment, and `children`.
+- app/admin/organizations/[orgSlug]/(tabs)/general/page.tsx — Server page
+  - Shows org metadata and edit controls; Danger zone Card with `DeleteOrganizationDialog`.
+- app/admin/organizations/[orgSlug]/(tabs)/members/page.tsx — Client page
+  - Fetches members via `GET /api/orgs/[orgSlug]/members`; renders table, Invite, edit role, remove; client pagination synced to URL.
+- app/admin/organizations/[orgSlug]/page.tsx — Redirect
+  - Redirects to `/admin/organizations/[orgSlug]/general` to maintain compatibility.
 
-- Base: /api/orgs/[orgSlug]/ai
-- Providers
-  - GET /providers/status → [{ provider, verified, lastVerifiedAt, defaultModel? }]; AuthZ: admin or superadmin.
-  - POST /providers/verify → { provider, apiKey }; verify only; RL small (5/min/user).
-  - POST /providers/upsert → verify then encrypt+persist; update lastVerifiedAt; AuditLog: ai_provider_upsert.
-  - DELETE /providers/:provider → remove key + cascade unset defaults/models for that provider; AuditLog: ai_provider_delete.
-- Models
-  - GET /models → grouped by provider [{ id, name, label, maxOutputTokens, isDefault }]; AuthZ: admin/superadmin.
-  - POST /models → add/update { provider, name, label?, maxOutputTokens } with clamping; AuditLog: ai_model_add.
-  - POST /models/set-default → { provider, modelId } ensure single default; AuditLog: ai_model_set_default.
-  - DELETE /models/:id → guard if default (require reselection); AuditLog: ai_model_remove.
-- Generate (streaming and non‑stream)
-  - POST /generate → { feature, prompt, resourceId?, maxOutputTokens?, stream?: boolean, correlationId? }.
-  - Behavior: getCurrentUserAndOrg(path) → ai-rate-limit.checkAndRecord → requireOrgAiConfigForFeature → startLog → AI SDK call → finishLog → return; headers echo x-correlation-id.
-  - AuthZ: any org member (12/a).
-  - Streaming (17/a): SSE (text/event-stream) events: token, usage, error, done.
-- Logs
-  - GET /logs → filters { provider, model, feature, status, date range, correlationId, search }, pagination + totals { requests, tokensIn, tokensOut, avgLatencyMs }. AuthZ: admin/superadmin.
-  - GET /logs/:id → sanitized detail view. AuthZ: admin/superadmin.
-  - DELETE /logs/purge → { retentionDays? } (default 60 days per org; 16/b). AuditLog: ai_logs_purge.
+## Components and reuse
 
-**Admin Integration (3/b)**
+- Use `components/ui/tabs.tsx` for TabsList and content triggers.
+- Reuse existing admin feature components:
+  - `EditOrganizationButton`
+  - `DeleteOrganizationDialog`
+  - `InviteMemberDialog`
+  - `EditMemberDialog` (or role select) and `RemoveMemberButton`
+- Continue using shadcn/ui primitives (`Table`, `Button`, `Badge`, `Card`, `Dialog`).
+- Use Sonner for toasts; no additional Toaster.
 
-- Under /admin/organizations/[orgSlug] add an “AI” tab:
-  - Providers sub‑section: same provider status/verify/upsert/delete UI; superadmin has full manage rights (21/a).
-  - Usage sub‑section: logs table with same filters/totals for that org.
-  - Reuse org‑scoped APIs; superadmin bypasses membership requirement.
+## Data fetching and state
 
-**UI In Organization**
+- Layout SSR: `db.organization.findUnique` for org; `db.membership.count` for count badge.
+- Members tab: client fetch list from `/api/orgs/[orgSlug]/members?page=…&pageSize=…`.
+- URL is source of truth for pagination; update via router without full page reload.
+- Error handling via Sonner; empty states preserved.
 
-- New settings section: /o/[orgSlug]/settings/ai
-  - providers page:
-    - Table: Provider, Status, Default Model, Actions [Manage].
-    - Manage dialog: masked key input field (never re‑shown), Verify button, Models table (Add/Remove, Set Default), clamped maxOutputTokens. Toasts via Sonner; CSRF on mutations.
-  - usage page (admin‑only):
-    - Filters: Provider, Model, Feature, Status, Date Range, Search (correlationId/text).
-    - Totals bar; paginated table; row detail drawer (sanitized input/output); “Purge older than N days” with confirm.
-- Member “My Usage” (20/b)
-  - Route: /o/[orgSlug]/ai/my-usage (outside settings so members can access).
-  - Shows only the current user’s logs (filter by userId), same filters minus org‑wide actions; no purge.
-  - Add menu link in DashboardShell user menu: “My AI Usage” → /o/${currentOrg.slug}/ai/my-usage.
+## Tabs behavior and deep links
 
-**Provider Verification & Defaults**
+- Tabs values: `general`, `members`.
+- Links use Next `Link` to `/admin/organizations/[orgSlug]/general` and `/members`.
+- Active state based on selected layout segment.
+- Deep links supported: e.g., `/admin/organizations/acme-inc/members?page=2`.
 
-- Providers supported at launch (1/a): OpenAI, Google Gemini, Anthropic.
-- Verification (11/a): verify on save; re‑verify on use if lastVerifiedAt > 7 days (soft failure → return config error if invalid).
-- No fallback when missing key (4/a): generation returns AI_CONFIG_MISSING_API_KEY with guidance link to Providers.
-- Default provider per org must be explicitly set (14/a) via models/default; no implicit Gemini default.
+## General tab specifics
 
-**Security & Compliance**
+- Show org name and slug; editing via `EditOrganizationButton`.
+- Danger zone Card:
+  - Title “Danger zone”, destructive border/background accents.
+  - Clear text: irreversible deletion; removes memberships and invitations.
+  - `DeleteOrganizationDialog` with slug confirmation.
+  - On success: redirect to `/admin/organizations` with success toast.
 
-- Node runtime for all AI routes; never Edge for DB/secrets.
-- CSRF: Origin/Referer allowlist via existing  on state‑changing routes.
-  lib/csrf.ts
-- AuthZ: reuse requireAdminOrSuperadmin for manage/logs; membership for generate; superadmin bypass membership.
-- Rate limits (9/a): 30/min per user, 60/min per IP; include Retry-After.
-- Logging redaction (19/a): basic patterns (emails, URLs, obvious secrets, long numeric IDs); truncate to 8 KB fields; never store API keys.
+## Members tab specifics
 
-**DX Notes (Files To Add/Touch; not editing now)**
+- Primary “Invite member” button above table.
+- Table: Name, Email, Role, Joined, Actions.
+- Role edit and remove actions with last‑admin protection preserved.
+- Pagination controls update URL and re‑fetch; defaults pageSize=20.
 
-- Prisma:  new models + indexes, migration.
-  prisma/schema.prisma
-- Env: .env.example,  schema additions.
-  lib/env.ts
-- Lib: , , , , .
-  lib/crypto-secrets.ts
-  lib/ai-providers.ts
-  lib/ai-config.ts
-  lib/ai-logging.ts
-  lib/ai-rate-limit.ts
-- API: app/api/orgs/[orgSlug]/ai/providers/_, .../models/_, , .../logs/\*.
-  .../generate/route.ts
-- UI: , , ; add user‑menu link in components/features/dashboard/\*.
-  app/o/[orgSlug]/settings/ai/providers/page.tsx
-  .../usage/page.tsx
-  app/o/[orgSlug]/ai/my-usage/page.tsx
-- Admin: add “AI” tab content under app/admin/organizations/[orgSlug]/\*.
+## Access control and security
 
-**Testing Plan**
+- Superadmin guard remains enforced by `app/admin/layout.tsx`.
+- All mutations continue via Node runtime API; no client secrets or DB calls exposed.
+- CSRF and rate limiting remain in effect for API routes.
 
-- Unit: crypto envelopes (roundtrip), provider verification adapters (mock SDK), config clamping, redaction+truncation, correlation ID propagation.
-- API: providers upsert/verify/delete (CSRF/AuthZ/RL), models add/remove/default, generate (JSON+SSE; RL; logs written), logs filtering/purge.
-- UI: providers manage flow, models default guard, usage filters and pagination, my‑usage visibility from user menu.
-- Perf: index scans on logs by (organizationId,createdAt) and (organizationId,provider,model).
+## Phase 2 (optional) — org‑scoped settings
 
-**Rollout Steps**
+- Introduce `app/o/[orgSlug]/settings/(tabs)/layout.tsx` and subroutes `/general` and `/members`.
+- Enforce admin/superadmin via existing settings layouts.
+- Migrate existing `organization` and `members` pages into tabs without behavior change.
 
-- Add env vars; npx prisma generate → npx prisma migrate dev --name org_ai_features.
-- Seed optional OrgAiFeaturePreference for "generic-text" with no defaults selected (admin must choose).
-- Deploy; superadmin validates Admin → Organizations → [org] → AI.
-- Org admins add provider keys, add models, choose defaults; verify generation (JSON & SSE).
-- Monitor logs and rate limits; tune caps/limits as needed.
+## Edge cases and empty states
+
+- No members: show informative empty state with invite prompt.
+- Slug change: auto‑navigate to new route; ensure links update seamlessly.
+- Last admin cannot be demoted/removed; preserve messaging.
+- 404 if org not found; handle gracefully with notFound/redirect.
+
+## QA checklist
+
+- `/admin/organizations/[slug]/general` renders org details and Danger zone.
+- `/admin/organizations/[slug]/members?page=2` renders Members with page 2; pagination doesn’t cause full reload.
+- Members count badge appears on the Members tab.
+- Edit org name/slug flows work; route updates on slug change.
+- Delete organization redirects to `/admin/organizations` with success toast.
+- Last admin protection enforced; messaging visible.
+- Tabs appear below header; mobile usability acceptable.
+
+## Risks and mitigations
+
+- Route churn: Add redirect from root `[orgSlug]` to `/general` to avoid broken links.
+- Data duplication: Keep SSR minimal (org + count), defer lists to client to avoid over‑fetching.
+- Slug update: Ensure UI navigates to new slug to prevent 404 on refresh.
+
+## Effort estimate
+
+- Implementation: ~0.5–1 day
+- QA and polish: ~0.5 day

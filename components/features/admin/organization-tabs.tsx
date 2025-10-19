@@ -1,13 +1,10 @@
 "use client";
 
-import { useSelectedLayoutSegment } from "next/navigation";
-import Link from "next/link";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
+import { OrganizationTabs as GenericOrganizationTabs } from "@/components/features/shared/organization-tabs";
 
 /**
- * Organization tabs navigation
- * Client component that highlights active tab based on route segment
+ * Admin organization tabs navigation
+ * Wrapper around generic OrganizationTabs with admin-specific base href
  */
 
 type OrganizationTabsProps = {
@@ -19,24 +16,10 @@ export function OrganizationTabs({
   orgSlug,
   membersCount,
 }: OrganizationTabsProps): React.JSX.Element {
-  const segment = useSelectedLayoutSegment();
-  const activeTab = segment || "general";
-
   return (
-    <Tabs value={activeTab} className="w-full">
-      <TabsList>
-        <Link href={`/admin/organizations/${orgSlug}/general`}>
-          <TabsTrigger value="general">General</TabsTrigger>
-        </Link>
-        <Link href={`/admin/organizations/${orgSlug}/members`}>
-          <TabsTrigger value="members" className="gap-2">
-            Members
-            <Badge variant="secondary" className="ml-1">
-              {membersCount}
-            </Badge>
-          </TabsTrigger>
-        </Link>
-      </TabsList>
-    </Tabs>
+    <GenericOrganizationTabs
+      baseHref={`/admin/organizations/${orgSlug}`}
+      membersCount={membersCount}
+    />
   );
 }

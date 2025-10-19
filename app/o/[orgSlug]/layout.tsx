@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { getOrgBySlug, getUserMembership, isSuperadmin } from "@/lib/org-helpers";
 import { DashboardShell } from "@/components/features/dashboard/dashboard-shell";
 import { env } from "@/lib/env";
-import { Home, Settings, Users } from "lucide-react";
+import { Home, Settings } from "lucide-react";
 import { db } from "@/lib/db";
 
 /**
@@ -90,16 +90,8 @@ export default async function OrgLayout({
     {
       id: "organization",
       label: "Organization",
-      href: `/o/${orgSlug}/settings/organization`,
+      href: `/o/${orgSlug}/settings/organization/general`,
       sectionId: "settings",
-      adminOnly: true, // Only visible to admins/superadmins
-    },
-    {
-      id: "members",
-      label: "Members",
-      href: `/o/${orgSlug}/settings/members`,
-      sectionId: "settings",
-      icon: <Users className="h-4 w-4" />,
       adminOnly: true, // Only visible to admins/superadmins
     },
   ];

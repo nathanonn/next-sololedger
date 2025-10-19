@@ -90,7 +90,7 @@ function UserMenuContent({
       {currentOrg && (
         <DropdownMenuItem
           onClick={() =>
-            router.push(`/o/${currentOrg.slug}/settings/organization`)
+            router.push(`/o/${currentOrg.slug}/settings/organization/general`)
           }
         >
           <Settings className="mr-2 h-4 w-4" />
@@ -101,7 +101,7 @@ function UserMenuContent({
         (currentOrg.role === "admin" || currentOrg.role === "superadmin") && (
           <DropdownMenuItem
             onClick={() =>
-              router.push(`/o/${currentOrg.slug}/settings/members`)
+              router.push(`/o/${currentOrg.slug}/settings/organization/members`)
             }
           >
             <Users className="mr-2 h-4 w-4" />

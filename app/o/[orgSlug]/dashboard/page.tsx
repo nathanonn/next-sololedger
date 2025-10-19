@@ -105,7 +105,7 @@ export default async function OrgDashboardPage({
             <div className="space-y-2">
               {membership.role === "admin" && (
                 <a
-                  href={`/o/${orgSlug}/settings/members`}
+                  href={`/o/${orgSlug}/settings/organization/members`}
                   className="block text-sm text-primary hover:underline"
                 >
                   Manage Members
@@ -119,7 +119,7 @@ export default async function OrgDashboardPage({
               </a>
               {membership.role === "admin" && (
                 <a
-                  href={`/o/${orgSlug}/settings/organization`}
+                  href={`/o/${orgSlug}/settings/organization/general`}
                   className="block text-sm text-primary hover:underline"
                 >
                   Organization Settings
@@ -154,7 +154,7 @@ export default async function OrgDashboardPage({
               <p>
                 As an admin, you can{" "}
                 <a
-                  href={`/o/${orgSlug}/settings/members`}
+                  href={`/o/${orgSlug}/settings/organization/members`}
                   className="text-primary hover:underline"
                 >
                   manage members and invitations

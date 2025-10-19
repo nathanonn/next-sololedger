@@ -1,7 +1,11 @@
 import { db } from "@/lib/db";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getOrgBySlug, isSuperadmin, getUserMembership } from "@/lib/org-helpers";
+import {
+  getOrgBySlug,
+  isSuperadmin,
+  getUserMembership,
+} from "@/lib/org-helpers";
 import { OrganizationSettingsLayout } from "@/components/features/organization/organization-settings-layout";
 
 /**
@@ -48,7 +52,14 @@ export default async function OrganizationSettingsTabsLayout({
 
   // Load members count for badge
   const membersCount = await db.membership.count({
-    where: { organizationId: org.id },
+    where: {
+      organizationId: org.id,
+      user: {
+        role: {
+          not: "superadmin",
+        },
+      },
+    },
   });
 
   return (

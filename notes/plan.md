@@ -1,161 +1,138 @@
-• Here’s the implementation plan to add superadmin organization management while keeping changes small and consistent with the existing patterns. We’ll add four
-focused dialogs (create org, edit org, edit member, invite member), wire them to existing APIs where possible, and extend a few APIs and schema to support
-slug updates and optional member display names on invites. We’ll also add a “Back to Organization Dashboard” link in the sidebar user menu for superadmins when
-browsing /admin pages, targeting the last-used organization via cookie.
+Here’s a focused implementation plan to support organization‑wide AI provider keys, org‑scoped usage logging, and admin/superadmin management. We’ll add Prisma models for encrypted org keys and model allowlists, Node‑runtime API routes that resolve org configuration and call the Vercel AI SDK server‑side (with SSE streaming), and UIs under each organization for admins plus a “My AI Usage” view for members (linked from the user menu). Superadmins will manage/view an org’s AI from an “AI” tab on Admin → Organizations → [org].
 
-Key Decisions Applied
+**Prisma Models**
 
-- Redirect after create: go to /admin/organizations/{slug}.
-- “Back to Dashboard” link: use last-org cookie.
-- Allow slug editing for orgs.
-- Allow editing global user.name when editing a member.
-- Invite flow: show invite URL and optionally “Send Email” (admin’s choice).
-- Capture optional name in invite and set it on acceptance.
-- Button placements: create (list header), edit org (detail header), invite (members header).
-- Members table: show plain text role; edit icon opens dialog.
-- On slug change: update last-org cookie if it matched the old slug.
-- No audit log for name changes (keep existing audits for other actions).
+- OrganizationAiProviderKey (one key per org+provider)
+  - Columns: id, organizationId, provider ("openai" | "gemini" | "anthropic"), keyEnvelope JSON { v, iv, ct, tag }, lastVerifiedAt, createdById, createdAt, updatedAt.
+  - Constraints: unique(organizationId,provider). Indexes: (organizationId,provider), (organizationId,lastVerifiedAt).
+- OrganizationAiModel (org allowlist for models)
+  - Columns: id, organizationId, provider, name, label, maxOutputTokens, isDefault boolean, createdById, timestamps.
+  - Constraints: unique(organizationId,provider,name); partial unique one isDefault=true per (organizationId,provider).
+- OrgAiFeaturePreference (org feature defaults; initial feature: "generic-text")
+  - Columns: id, organizationId, feature, provider, modelId?, maxOutputTokens?.
+  - Constraints: unique(organizationId,feature).
+- AiGenerationLog (org‑scoped usage)
+  - Columns: id, organizationId, userId, provider, model, feature, status ("ok" | "error" | "canceled"), tokensIn?, tokensOut?, latencyMs, correlationId, rawInputTruncated, rawOutputTruncated, errorCode?, errorMessage?, createdAt.
+  - Indexes: (organizationId,createdAt desc), (organizationId,provider,model), (correlationId).
+- AiRequestEvent (rate limit ledger; lightweight)
+  - Columns: id, organizationId, userId, ip, createdAt.
+  - Indexes: (userId,createdAt), (ip,createdAt), (organizationId,createdAt).
 
-Implementation Order
+**Environment & Config**
 
-- Prisma migration + small server helpers
-- API extensions (org update, member update, invitations)
-- Email helper for invitations
-- Sidebar user menu link and admin layout prop
-- Admin pages + dialogs
-- Manual QA
+- Add env to .env.example and validate in :
+  lib/env.ts
+  - APP_ENCRYPTION_KEY (base64, 32‑byte) for AES‑GCM.
+  - AI_RL_PER_USER_PER_MIN=30, AI_RL_PER_IP_PER_MIN=60.
+  - AI_LOG_TRUNCATE_MAX_BYTES=8192.
+- Provider caps map in code (safe token limits per provider).
+- No client exposure; Node runtime only.
 
-Data & API Changes
+**Server Libraries (Node‑only)**
 
-- Prisma
-  - Add optional invitation display name:
-    - prisma/schema.prisma: model Invitation { name String? @db.VarChar(255) }
-    - Run npx prisma migrate dev --name add-invitation-name
-- Email helper
-  - lib/email.ts: add sendInvitationEmail({ to, orgName, inviteUrl, role, invitedBy }).
-  - Behavior: if Resend configured, send; in development with no config, log to console (mirrors OTP logic). Do not expose secrets to client.
-- Edit organization details (allow slug changes)
-  - app/api/orgs/[orgSlug]/route.ts (PATCH):
-    - Extend Zod schema to allow { name?: string; slug?: string }.
-    - For slug, reuse validateSlug, isReservedSlug, uniqueness check (as in POST /api/orgs).
-    - Update organization.slug when provided.
-    - Audit log metadata: include oldSlug/newSlug and oldName/newName if changed (keep existing log line, add slug keys).
-    - Response: return updated name, slug.
-- Edit member (name + role)
-  - app/api/orgs/[orgSlug]/members/[userId]/route.ts (PATCH):
-    - Extend Zod schema to accept { role?: 'admin' | 'member'; name?: string } with max length 255.
-    - If role present → keep existing last-admin protections and audit.
-    - If name present → db.user.update({ where: { id }, data: { name } }) (no new audit per 10/b).
-    - Return { success: true } or refreshed minimal data.
-- Invite member (optional name + optional send email)
-  - app/api/orgs/[orgSlug]/invitations/route.ts (POST):
-    - Extend Zod schema: { email: string; role: 'admin' | 'member'; name?: string; sendEmail?: boolean }.
-    - Store name in Invitation.
-    - Keep existing rate limits and unique checks.
-    - Generate token + inviteUrl as today.
-    - If sendEmail === true and Resend configured → call sendInvitationEmail(...); otherwise, just return inviteUrl.
-    - Response unchanged plus include name and a sent: boolean flag.
-- Accept invitation (apply invited name)
-  - app/api/orgs/invitations/accept/route.ts:
-    - After creating membership, if invitation.name exists and the current user.name is null/empty, set user.name = invitation.name in the existing
-      transaction.
-    - Keep audits as-is.
+- lib/crypto-secrets.ts
+  - encryptSecret(plaintext) → envelope, decryptSecret(envelope) → plaintext (AES‑256‑GCM, versioned envelopes).
+- lib/ai-providers.ts
+  - getOrgProviderClient(orgId, provider) → loads key, decrypts, returns AI SDK client + model(name) helper.
+  - verifyProviderApiKey(provider, keyPlain) → minimal call per provider to confirm validity.
+- lib/ai-config.ts
+  - requireOrgAiConfigForFeature(orgId, feature, opts?) → resolve provider/model/defaults, clamp maxOutputTokens, throw AiConfigError (AI*CONFIG*\*).
+- lib/ai-logging.ts
+  - startLog(meta) → logId; finishLog(logId, result|error); sanitize + truncate to AI_LOG_TRUNCATE_MAX_BYTES; store tokens/latency/correlationId.
+- lib/ai-rate-limit.ts
+  - checkAndRecord(orgId, userId, ip) enforcing 30/min per user & 60/min per IP; returns 429 + Retry‑After when exceeded.
 
-Sidebar User Menu: Back To Dashboard
+**API Routes (Node runtime; CSRF + AuthZ + Rate Limits)**
 
-- app/admin/layout.tsx
-  - Pass lastOrgCookieName={env.LAST_ORG_COOKIE_NAME} to DashboardShell (parity with org layout).
-- components/features/dashboard/sidebar.tsx
-  - When isSuperadmin === true and pathname.startsWith('/admin'), read the lastOrgCookieName cookie client-side.
-  - If a slug is found, render a DropdownMenuItem (icon: LayoutDashboard or Home) labeled “Back to Organization Dashboard” that navigates to /o/{slug}/dashboard.
-  - Only show when a valid slug cookie exists.
-  - No server-only imports in client.
+- Base: /api/orgs/[orgSlug]/ai
+- Providers
+  - GET /providers/status → [{ provider, verified, lastVerifiedAt, defaultModel? }]; AuthZ: admin or superadmin.
+  - POST /providers/verify → { provider, apiKey }; verify only; RL small (5/min/user).
+  - POST /providers/upsert → verify then encrypt+persist; update lastVerifiedAt; AuditLog: ai_provider_upsert.
+  - DELETE /providers/:provider → remove key + cascade unset defaults/models for that provider; AuditLog: ai_provider_delete.
+- Models
+  - GET /models → grouped by provider [{ id, name, label, maxOutputTokens, isDefault }]; AuthZ: admin/superadmin.
+  - POST /models → add/update { provider, name, label?, maxOutputTokens } with clamping; AuditLog: ai_model_add.
+  - POST /models/set-default → { provider, modelId } ensure single default; AuditLog: ai_model_set_default.
+  - DELETE /models/:id → guard if default (require reselection); AuditLog: ai_model_remove.
+- Generate (streaming and non‑stream)
+  - POST /generate → { feature, prompt, resourceId?, maxOutputTokens?, stream?: boolean, correlationId? }.
+  - Behavior: getCurrentUserAndOrg(path) → ai-rate-limit.checkAndRecord → requireOrgAiConfigForFeature → startLog → AI SDK call → finishLog → return; headers echo x-correlation-id.
+  - AuthZ: any org member (12/a).
+  - Streaming (17/a): SSE (text/event-stream) events: token, usage, error, done.
+- Logs
+  - GET /logs → filters { provider, model, feature, status, date range, correlationId, search }, pagination + totals { requests, tokensIn, tokensOut, avgLatencyMs }. AuthZ: admin/superadmin.
+  - GET /logs/:id → sanitized detail view. AuthZ: admin/superadmin.
+  - DELETE /logs/purge → { retentionDays? } (default 60 days per org; 16/b). AuditLog: ai_logs_purge.
 
-Admin Pages & Dialogs
+**Admin Integration (3/b)**
 
-- Create Organization
-  - New: components/features/admin/create-organization-dialog.tsx (client)
-    - RHF + Zod: name (required), slug (optional, kebab-case validate).
-    - Preview full URL under slug input.
-    - Submit: POST /api/orgs with JSON.
-    - Success: toast, router.replace('/admin/organizations/{slug}').
-    - Pointer-events restore on close.
-  - app/admin/organizations/page.tsx
-    - Add “Create Organization” Button in the header that triggers the dialog.
-- Edit Organization
-  - New: components/features/admin/edit-organization-dialog.tsx (client)
-    - Props: orgName, orgSlug, lastOrgCookieName.
-    - RHF + Zod same as create; prefill inputs.
-    - Submit: PATCH /api/orgs/{orgSlug} with { name?, slug? }.
-    - On success:
-      - If slug changed, update last-org cookie when it matches the old slug (per 9/b) and router.replace('/admin/organizations/{newSlug}').
-      - Else router.refresh().
-    - Pointer-events restore on close.
-  - app/admin/organizations/[orgSlug]/page.tsx
-    - Import and render the edit dialog next to DeleteOrganizationDialog.
-- Members Table Changes
-  - app/admin/organizations/[orgSlug]/page.tsx
-    - Replace RoleSelect cell with plain text “Admin”/“Member”.
-    - Add an “Edit” icon button (Lucide Pencil) in the Actions column.
-    - Keep RemoveMemberButton as-is.
-  - New: components/features/admin/edit-member-dialog.tsx (client)
-    - Props: orgSlug, userId, email, initialName, initialRole, isLastAdmin.
-    - Fields: name (text), role (Select: admin|member). Disable demote if isLastAdmin.
-    - Submit: PATCH /api/orgs/{orgSlug}/members/{userId} with optional fields.
-    - Success: toast, close, router.refresh().
-- Invite Member
-  - New: components/features/admin/invite-member-dialog.tsx (client)
-    - Props: orgSlug.
-    - Fields: name?, email (required), role (admin|member), sendEmail (checkbox).
-    - Submit: POST /api/orgs/{orgSlug}/invitations.
-    - Success: show toast and returned inviteUrl with Copy button; if sent === true, show “Email sent”.
-  - app/admin/organizations/[orgSlug]/page.tsx
-    - Add “Invite Member” button to the Members section header to open the dialog.
+- Under /admin/organizations/[orgSlug] add an “AI” tab:
+  - Providers sub‑section: same provider status/verify/upsert/delete UI; superadmin has full manage rights (21/a).
+  - Usage sub‑section: logs table with same filters/totals for that org.
+  - Reuse org‑scoped APIs; superadmin bypasses membership requirement.
 
-Validation & UX Guardrails
+**UI In Organization**
 
-- Zod validation mirrors server checks; no empty SelectItem values.
-- Dialog close restores document.body.style.pointerEvents (per required pattern).
-- Toasts via Sonner for all outcomes; do not add another <Toaster />.
-- Icons: Lucide only (Plus, Pencil, LayoutDashboard/Home, Mail, Eye, Users).
-- All client fetches rely on same-origin; CSRF Origin/Referer validation remains effective.
+- New settings section: /o/[orgSlug]/settings/ai
+  - providers page:
+    - Table: Provider, Status, Default Model, Actions [Manage].
+    - Manage dialog: masked key input field (never re‑shown), Verify button, Models table (Add/Remove, Set Default), clamped maxOutputTokens. Toasts via Sonner; CSRF on mutations.
+  - usage page (admin‑only):
+    - Filters: Provider, Model, Feature, Status, Date Range, Search (correlationId/text).
+    - Totals bar; paginated table; row detail drawer (sanitized input/output); “Purge older than N days” with confirm.
+- Member “My Usage” (20/b)
+  - Route: /o/[orgSlug]/ai/my-usage (outside settings so members can access).
+  - Shows only the current user’s logs (filter by userId), same filters minus org‑wide actions; no purge.
+  - Add menu link in DashboardShell user menu: “My AI Usage” → /o/${currentOrg.slug}/ai/my-usage.
 
-Testing Checklist
+**Provider Verification & Defaults**
 
-- Create org: creating with and without slug; reserved/duplicate slug errors; redirect to detail page.
-- Back link: on /admin/\* with cookie set → visible; click navigates to /o/{slug}/dashboard.
-- Edit org: change only name; change slug (cookie updated if it matched); redirect to new slug detail; old URL 404s.
-- Members: role displayed as text; Edit dialog updates name, role; cannot demote last admin (API error → toast).
-- Invite: with and without sendEmail; name included; accept flow sets user.name when previously null.
-- CSRF: requests from the app origin pass; direct cURL from a different origin rejected.
-- Regression: org settings pages still work; existing members management under org scope unaffected.
+- Providers supported at launch (1/a): OpenAI, Google Gemini, Anthropic.
+- Verification (11/a): verify on save; re‑verify on use if lastVerifiedAt > 7 days (soft failure → return config error if invalid).
+- No fallback when missing key (4/a): generation returns AI_CONFIG_MISSING_API_KEY with guidance link to Providers.
+- Default provider per org must be explicitly set (14/a) via models/default; no implicit Gemini default.
 
-Files To Touch (no edits yet; for reference)
+**Security & Compliance**
 
-- API
-  - app/api/orgs/[orgSlug]/route.ts (PATCH slug support)
-  - app/api/orgs/[orgSlug]/members/[userId]/route.ts (PATCH name support)
-  - app/api/orgs/[orgSlug]/invitations/route.ts (POST accept name, sendEmail)
-  - app/api/orgs/invitations/accept/route.ts (apply invited name)
-- Lib
-  - lib/email.ts (add sendInvitationEmail)
-  - lib/invitation-helpers.ts (no change unless you want helper for composing invite email HTML)
-- Prisma
-  - prisma/schema.prisma (+ migration adding Invitation.name String?)
-- Layout/Shell
-  - app/admin/layout.tsx (pass lastOrgCookieName)
-  - components/features/dashboard/sidebar.tsx (add “Back to Organization Dashboard” when in /admin)
-- Admin UI
-  - app/admin/organizations/page.tsx (+ create dialog trigger)
-  - app/admin/organizations/[orgSlug]/page.tsx (header buttons, members table tweaks)
-  - New components in components/features/admin/:
-    - create-organization-dialog.tsx
-    - edit-organization-dialog.tsx
-    - edit-member-dialog.tsx
-    - invite-member-dialog.tsx
+- Node runtime for all AI routes; never Edge for DB/secrets.
+- CSRF: Origin/Referer allowlist via existing  on state‑changing routes.
+  lib/csrf.ts
+- AuthZ: reuse requireAdminOrSuperadmin for manage/logs; membership for generate; superadmin bypass membership.
+- Rate limits (9/a): 30/min per user, 60/min per IP; include Retry-After.
+- Logging redaction (19/a): basic patterns (emails, URLs, obvious secrets, long numeric IDs); truncate to 8 KB fields; never store API keys.
 
-Risks & Mitigations
+**DX Notes (Files To Add/Touch; not editing now)**
 
-- Slug change breaks bookmarked admin URL: mitigate with redirect to new slug after save; last-org cookie updated if it matched old slug.
-- Token email content: keep in server; do not expose secrets; include only inviteUrl.
-- Accepting invite name override: only set when user.name is null/empty to avoid clobbering.
+- Prisma:  new models + indexes, migration.
+  prisma/schema.prisma
+- Env: .env.example,  schema additions.
+  lib/env.ts
+- Lib: , , , , .
+  lib/crypto-secrets.ts
+  lib/ai-providers.ts
+  lib/ai-config.ts
+  lib/ai-logging.ts
+  lib/ai-rate-limit.ts
+- API: app/api/orgs/[orgSlug]/ai/providers/_, .../models/_, , .../logs/\*.
+  .../generate/route.ts
+- UI: , , ; add user‑menu link in components/features/dashboard/\*.
+  app/o/[orgSlug]/settings/ai/providers/page.tsx
+  .../usage/page.tsx
+  app/o/[orgSlug]/ai/my-usage/page.tsx
+- Admin: add “AI” tab content under app/admin/organizations/[orgSlug]/\*.
+
+**Testing Plan**
+
+- Unit: crypto envelopes (roundtrip), provider verification adapters (mock SDK), config clamping, redaction+truncation, correlation ID propagation.
+- API: providers upsert/verify/delete (CSRF/AuthZ/RL), models add/remove/default, generate (JSON+SSE; RL; logs written), logs filtering/purge.
+- UI: providers manage flow, models default guard, usage filters and pagination, my‑usage visibility from user menu.
+- Perf: index scans on logs by (organizationId,createdAt) and (organizationId,provider,model).
+
+**Rollout Steps**
+
+- Add env vars; npx prisma generate → npx prisma migrate dev --name org_ai_features.
+- Seed optional OrgAiFeaturePreference for "generic-text" with no defaults selected (admin must choose).
+- Deploy; superadmin validates Admin → Organizations → [org] → AI.
+- Org admins add provider keys, add models, choose defaults; verify generation (JSON & SSE).
+- Monitor logs and rate limits; tune caps/limits as needed.

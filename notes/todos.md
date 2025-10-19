@@ -1,7 +1,10 @@
-# Manage Organizations for super admin
+# AI API keys and providers for organizations
 
-1/ In /admin/organizations, add a button for super admin to create new organization. When clicked, it should show a dialog model with a form to enter organization details (name and slug).
-2/ When the super admin is in the /admin related pages, there should be a link for the super admin to go back to the organization dashboard (/o/{org-slug}/dashboard). Put this link at the user menu dropdown at the sidebar. Make sure this link is only visible to super admin users and when they are in the /admin related pages.
-3/ In /admin/organizations/{o-slug} page, we need to add a button to edit the organization details (name and slug). When clicked, it should show a dialog model with a form pre-filled with the current organization details, allowing the super admin to update them.
-4/ In /admin/organizations/{o-slug} page, the members table, replace the "Role" selector to just show the role as text (Admin or Member) without the ability to change it. Then, add a "Edit" icon button in the "Actions" column. When clicked, it should show a dialog model with a form to change the member's details, such as name, role (Admin or Member).
-5/ In /admin/organizations/{o-slug} page, add a button for super admin to invite new members to the organization. When clicked, it should show a dialog model with a form to enter the new member's name, email and role (Admin or Member).
+Here outlined the documentations on how to implement AI features to app:
+
+- @notes/skills/ai_features.md
+- @notes/skills/ai_features_wireframes.md
+
+I want to implement this into the app. However, instead of per-user API keys, I want to implement organization-wide API keys that can be managed by organization admins. The usage logs should also reflect organization-wide usage, only accessible to organization admins.
+
+Super admin users should be able to manage API keys and view usage logs for all organizations.

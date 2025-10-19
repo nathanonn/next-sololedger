@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getOrgBySlug, requireAdminOrSuperadmin, isLastAdmin } from "@/lib/org-helpers";
+import { getOrgBySlug, requireAdminOrSuperadmin, isLastAdmin, isSuperadmin } from "@/lib/org-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
@@ -88,6 +88,23 @@ export async function PATCH(
       return NextResponse.json(
         { error: "User is not a member of this organization" },
         { status: 404 }
+      );
+    }
+
+    // Check if requester is superadmin
+    const userIsSuperadmin = await isSuperadmin(user.id);
+
+    // Prevent admin self-demotion (if not superadmin)
+    if (
+      !userIsSuperadmin &&
+      role !== undefined &&
+      user.id === targetUserId &&
+      targetMembership.role === "admin" &&
+      role === "member"
+    ) {
+      return NextResponse.json(
+        { error: "Cannot demote yourself. Ask another admin to change your role." },
+        { status: 400 }
       );
     }
 
@@ -211,6 +228,21 @@ export async function DELETE(
       return NextResponse.json(
         { error: "User is not a member of this organization" },
         { status: 404 }
+      );
+    }
+
+    // Check if requester is superadmin
+    const userIsSuperadmin = await isSuperadmin(user.id);
+
+    // Prevent admin self-removal (if not superadmin)
+    if (
+      !userIsSuperadmin &&
+      isSelfLeave &&
+      targetMembership.role === "admin"
+    ) {
+      return NextResponse.json(
+        { error: "Cannot remove yourself as admin. Ask another admin to remove you." },
+        { status: 400 }
       );
     }
 

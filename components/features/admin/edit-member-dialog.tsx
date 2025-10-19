@@ -49,6 +49,7 @@ export type EditMemberDialogProps = {
   initialName: string | null;
   initialRole: string;
   isLastAdmin: boolean;
+  onEdited?: () => void;
 };
 
 /**
@@ -61,6 +62,7 @@ export function EditMemberDialog({
   initialName,
   initialRole,
   isLastAdmin,
+  onEdited,
 }: EditMemberDialogProps): React.JSX.Element {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
@@ -112,6 +114,11 @@ export function EditMemberDialog({
       setIsSubmitting(false);
       setOpen(false);
       router.refresh();
+
+      // Call onEdited callback
+      if (onEdited) {
+        onEdited();
+      }
     } catch (error) {
       console.error("Error updating member:", error);
       toast.error("Network error. Please try again.");

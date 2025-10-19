@@ -50,10 +50,24 @@ export async function GET(
     const validPageSizes = [10, 20, 50];
     const pageSize = validPageSizes.includes(parsedPageSize) ? parsedPageSize : 20;
 
+    const excludeSuperadmins = searchParams.get("excludeSuperadmins") === "true";
+
+    // Build where clause for memberships
+    const whereClause = excludeSuperadmins
+      ? {
+          organizationId: org.id,
+          user: {
+            role: {
+              not: "superadmin",
+            },
+          },
+        }
+      : { organizationId: org.id };
+
     // Get members with pagination
     const [memberships, total, adminCount] = await Promise.all([
       db.membership.findMany({
-        where: { organizationId: org.id },
+        where: whereClause,
         include: {
           user: {
             select: {
@@ -69,7 +83,7 @@ export async function GET(
         take: pageSize,
       }),
       db.membership.count({
-        where: { organizationId: org.id },
+        where: whereClause,
       }),
       db.membership.count({
         where: {

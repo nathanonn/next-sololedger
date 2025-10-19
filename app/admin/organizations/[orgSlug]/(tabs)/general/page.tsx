@@ -40,6 +40,7 @@ export default async function AdminOrganizationGeneralPage({
         showEdit={true}
         appUrl={env.APP_URL}
         lastOrgCookieName={env.LAST_ORG_COOKIE_NAME}
+        canEditSlug={userIsSuperadmin}
       />
 
       <OrganizationDangerZone

@@ -10,6 +10,7 @@ export type EditOrganizationButtonProps = {
   orgSlug: string;
   appUrl: string;
   lastOrgCookieName: string;
+  canEditSlug?: boolean;
 };
 
 /**
@@ -20,6 +21,7 @@ export function EditOrganizationButton({
   orgSlug,
   appUrl,
   lastOrgCookieName,
+  canEditSlug = true,
 }: EditOrganizationButtonProps): React.JSX.Element {
   const [open, setOpen] = React.useState(false);
 
@@ -36,6 +38,7 @@ export function EditOrganizationButton({
         orgSlug={orgSlug}
         appUrl={appUrl}
         lastOrgCookieName={lastOrgCookieName}
+        canEditSlug={canEditSlug}
       />
     </>
   );

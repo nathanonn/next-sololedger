@@ -123,6 +123,15 @@ export async function PATCH(
 
     // Validate slug if provided
     if (requestedSlug !== undefined) {
+      // Only superadmins can edit slugs
+      const userIsSuperadmin = await isSuperadmin(user.id);
+      if (!userIsSuperadmin) {
+        return NextResponse.json(
+          { error: "Only superadmins can change organization slugs" },
+          { status: 403 }
+        );
+      }
+
       // Validate format
       const slugValidation = validateSlug(requestedSlug);
       if (!slugValidation.valid) {

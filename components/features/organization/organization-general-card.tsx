@@ -19,6 +19,7 @@ type OrganizationGeneralCardProps = {
   showEdit?: boolean;
   appUrl?: string;
   lastOrgCookieName?: string;
+  canEditSlug?: boolean;
 };
 
 export function OrganizationGeneralCard({
@@ -26,6 +27,7 @@ export function OrganizationGeneralCard({
   showEdit = true,
   appUrl,
   lastOrgCookieName,
+  canEditSlug = true,
 }: OrganizationGeneralCardProps): React.JSX.Element {
   return (
     <Card>
@@ -62,6 +64,7 @@ export function OrganizationGeneralCard({
               orgSlug={org.slug}
               appUrl={appUrl}
               lastOrgCookieName={lastOrgCookieName}
+              canEditSlug={canEditSlug}
             />
           </div>
         )}

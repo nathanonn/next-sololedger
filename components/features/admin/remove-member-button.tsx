@@ -31,6 +31,7 @@ type RemoveMemberButtonProps = {
   userId: string;
   userEmail: string;
   isLastAdmin: boolean;
+  onRemoved?: () => void;
 };
 
 export function RemoveMemberButton({
@@ -39,6 +40,7 @@ export function RemoveMemberButton({
   userId,
   userEmail,
   isLastAdmin,
+  onRemoved,
 }: RemoveMemberButtonProps): React.JSX.Element {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -61,6 +63,11 @@ export function RemoveMemberButton({
       toast.success("Member removed successfully");
       setOpen(false);
       router.refresh();
+
+      // Call onRemoved callback
+      if (onRemoved) {
+        onRemoved();
+      }
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to remove member"

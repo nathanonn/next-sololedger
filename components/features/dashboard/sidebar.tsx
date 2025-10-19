@@ -87,16 +87,17 @@ function UserMenuContent({
         <User className="mr-2 h-4 w-4" />
         Profile
       </DropdownMenuItem>
-      {currentOrg && (
-        <DropdownMenuItem
-          onClick={() =>
-            router.push(`/o/${currentOrg.slug}/settings/organization/general`)
-          }
-        >
-          <Settings className="mr-2 h-4 w-4" />
-          Organization
-        </DropdownMenuItem>
-      )}
+      {currentOrg &&
+        (currentOrg.role === "admin" || currentOrg.role === "superadmin") && (
+          <DropdownMenuItem
+            onClick={() =>
+              router.push(`/o/${currentOrg.slug}/settings/organization/general`)
+            }
+          >
+            <Settings className="mr-2 h-4 w-4" />
+            Organization
+          </DropdownMenuItem>
+        )}
       {currentOrg &&
         (currentOrg.role === "admin" || currentOrg.role === "superadmin") && (
           <DropdownMenuItem

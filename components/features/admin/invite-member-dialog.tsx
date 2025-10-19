@@ -48,6 +48,7 @@ type InviteMemberFormData = z.infer<typeof inviteMemberSchema>;
 
 export type InviteMemberDialogProps = {
   orgSlug: string;
+  onInvited?: () => void;
 };
 
 /**
@@ -55,6 +56,7 @@ export type InviteMemberDialogProps = {
  */
 export function InviteMemberDialog({
   orgSlug,
+  onInvited,
 }: InviteMemberDialogProps): React.JSX.Element {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
@@ -102,6 +104,11 @@ export function InviteMemberDialog({
       toast.success("Invitation created successfully");
       router.refresh();
       setIsSubmitting(false);
+
+      // Call onInvited callback
+      if (onInvited) {
+        onInvited();
+      }
     } catch (error) {
       console.error("Error creating invitation:", error);
       toast.error("Network error. Please try again.");

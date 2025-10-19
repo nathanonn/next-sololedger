@@ -52,6 +52,7 @@ export type EditOrganizationDialogProps = {
   orgSlug: string;
   appUrl: string;
   lastOrgCookieName: string;
+  canEditSlug?: boolean;
 };
 
 /**
@@ -64,6 +65,7 @@ export function EditOrganizationDialog({
   orgSlug,
   appUrl,
   lastOrgCookieName,
+  canEditSlug = true,
 }: EditOrganizationDialogProps): React.JSX.Element {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -95,7 +97,7 @@ export function EditOrganizationDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: data.name !== orgName ? data.name : undefined,
-          slug: data.slug !== orgSlug ? data.slug : undefined,
+          ...(canEditSlug && data.slug !== orgSlug && { slug: data.slug }),
         }),
       });
 
@@ -112,7 +114,7 @@ export function EditOrganizationDialog({
       onOpenChange(false);
 
       // If slug changed, update cookie and redirect
-      if (data.slug !== orgSlug) {
+      if (canEditSlug && data.slug !== orgSlug) {
         // Update last-org cookie if it matched the old slug
         const cookies = document.cookie.split("; ");
         const lastOrgCookie = cookies.find((c) =>
@@ -172,26 +174,28 @@ export function EditOrganizationDialog({
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="slug"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Slug (kebab-case)</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      placeholder="acme"
-                      disabled={isSubmitting}
-                    />
-                  </FormControl>
-                  <FormDescription className="text-xs">
-                    URL Preview: {appUrl}/o/{slugValue}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {canEditSlug && (
+              <FormField
+                control={form.control}
+                name="slug"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Slug (kebab-case)</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        placeholder="acme"
+                        disabled={isSubmitting}
+                      />
+                    </FormControl>
+                    <FormDescription className="text-xs">
+                      URL Preview: {appUrl}/o/{slugValue}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
             <DialogFooter>
               <Button
                 type="button"

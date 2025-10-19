@@ -4,11 +4,10 @@ import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { isSuperadmin } from "@/lib/org-helpers";
 import { OrganizationGeneralCard } from "@/components/features/organization/organization-general-card";
-import { OrganizationDangerZone } from "@/components/features/organization/organization-danger-zone";
 
 /**
  * Organization General Settings Tab
- * Server component showing organization metadata and danger zone (superadmin only)
+ * Server component showing organization metadata (no Danger Zone)
  */
 
 type PageProps = {
@@ -29,7 +28,7 @@ export default async function OrganizationGeneralPage({
     notFound();
   }
 
-  // Check if current user is superadmin
+  // Check if current user is superadmin (for slug editing)
   const user = await getCurrentUser();
   const userIsSuperadmin = user ? await isSuperadmin(user.id) : false;
 
@@ -40,12 +39,7 @@ export default async function OrganizationGeneralPage({
         showEdit={true}
         appUrl={env.APP_URL}
         lastOrgCookieName={env.LAST_ORG_COOKIE_NAME}
-      />
-
-      <OrganizationDangerZone
-        orgSlug={org.slug}
-        orgName={org.name}
-        show={userIsSuperadmin}
+        canEditSlug={userIsSuperadmin}
       />
     </div>
   );

@@ -1,298 +1,143 @@
-# UX Flow Map and Wireframes
+Title: Invitations UX — Flow & Wireframes
 
-## Flow Map (High-level)
+Legend
 
-```
-[Dashboard]
-   |
-   |-- User Menu (dropdown)
-   |     |-- Profile
-   |     |-- Organization (only if role: admin|superadmin)
-   |           |
-   |           `-> /o/{orgSlug}/settings/organization
-   |                 |-- Tabs
-   |                 |    |-- General
-   |                 |    `-- Members
-   |                 |
-   |                 |-- General (org-level)
-   |                 |     |-- Organization Details card
-   |                 |     `-- (No Danger Zone)
-   |                 |
-   |                 `-- Members (org-level)
-   |                       |-- Invite Member (button)
-   |                       |-- Members List (table)
-   |                       `-- Pending Invitations
-   |
-   `-- Admin -> /admin/organizations
-	   |
-	   `-- /admin/organizations/{orgSlug}
-		   |-- Tabs
-		   |    |-- General
-		   |    `-- Members
-		   |
-		   |-- General (admin)
-		   |     |-- Organization Details card
-		   |     `-- Danger Zone (delete organization)
-		   |
-		   `-- Members (admin)
-			   |-- Invite Member (button)
-			   |-- Members List (table)
-			   `-- Pending Invitations
-```
+- [S] Server call
+- [C] Client action
+- [UI] Screen/card state
 
-Notes:
+UX Flow Map
 
-- “Organization” entry is hidden in user menu for member-only users.
-- Org-level Members excludes superadmins from the list.
-- After actions (invite/edit/remove/resend/revoke), lists refetch to stay fresh.
+1. Admin invites a member
+   [UI] Admin Members tab
+   └─ InviteMemberDialog → Submit
+   [S] POST /api/orgs/:slug/invitations
+   [C] On success: toast + show invite URL (optional), dispatch `org:invitations:changed` → PendingInvitationsList refetches
 
----
+2. Admin resends or revokes invite
+   [UI] PendingInvitationsList → Resend/Revoke
+   [S] POST /api/orgs/:slug/invitations/:id/resend
+   [S] DELETE /api/orgs/:slug/invitations/:id
+   [C] On success: toast + (resend) optional copy link, dispatch event, list refetches
 
-## Screens & ASCII Wireframes
+3. Invitee opens invite link
+   [C] /invite?token=...
+   If not authenticated → redirect to /login?next=/invite?token=...
+   If authenticated → [S] GET /api/orgs/invitations/validate?token=... - valid + access (member or superadmin) → show Already Member card with button to /o/:slug - valid + no access → show Accept/Decline card
+   Accept → [S] POST /api/orgs/invitations/accept → redirect /o/:slug - invalid/expired → show Invalid Invite card + guidance to request resend
 
-### 1) Admin: Organization Settings – General
+Screen Wireframes (ASCII)
 
-Route: `/admin/organizations/{orgSlug}/general`
+Admin — Members Tab (header area)
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│ ← Back to Organizations                                              │
-├──────────────────────────────────────────────────────────────────────┤
-│ {Organization Name}                                                  │
-│ {organization-slug}                                                 │
-├──────────────────────────────────────────────────────────────────────┤
-│ Tabs: [ General ]  [ Members ]                                       │
-├──────────────────────────────────────────────────────────────────────┤
-│ Card: Organization Details                                           │
-│ ┌──────────────────────────────────────────────────────────────────┐ │
-│ │ Name:  Acme Inc                                                 │ │
-│ │ Slug:  acme                                                     │ │
-│ │ Created:  2025-01-01                                            │ │
-│ │                                                                │ │
-│ │ [ Edit Organization ]  (superadmin can edit slug; admin name)  │ │
-│ └──────────────────────────────────────────────────────────────────┘ │
-│                                                                      │
-│ Card: Danger Zone                                                    │
-│ ┌──────────────────────────────────────────────────────────────────┐ │
-│ │ Delete Organization                                              │ │
-│ │ - Irreversible. Removes memberships and invitations.            │ │
-│ │ [ Delete Organization ] (confirmation dialog)                    │ │
-│ └──────────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────────┘
-```
+┌───────────────────────────────────────────────────────────────┐
+│ Members [Invite Member] │
+└───────────────────────────────────────────────────────────────┘
 
-Key Behaviors:
+Invite Member Dialog
 
-- Edit dialog validates slug (superadmin only). Redirect on slug change.
-- Danger Zone visible only here (admin-general).
+┌──────────────── Invite Member ────────────────┐
+│ Name (optional): [ ] │
+│ Email*: [ ] │
+│ Role*: [ Admin ▼ ][ Member ] │
+│ [ ] Send email │
+│ │
+│ [Cancel] [Send Invitation] │
+└─────────────────────────────────────────────────┘
 
----
+On success (inline success view inside dialog):
 
-### 2) Admin: Organization Settings – Members
+┌────────────── Invitation Sent ────────────────┐
+│ Invitation link: │
+│ https://app.example.com/invite?token=... │
+│ ✓ Email sent to user@example.com │
+│ │
+│ [Copy link] [Open invite] [Done] │
+└───────────────────────────────────────────────┘
 
-Route: `/admin/organizations/{orgSlug}/members`
+Pending Invitations List
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│ {Organization Name}                                                  │
-│ {organization-slug}                                                 │
-├──────────────────────────────────────────────────────────────────────┤
-│ Tabs: [ Members ]  [ General ]                                       │
-├──────────────────────────────────────────────────────────────────────┤
-│                 [ Invite Member ]                                    │
-│                                                                      │
-│ Card: Members (Total: N)                                            │
-│ ┌──────────────────────────────────────────────────────────────────┐ │
-│ │ Showing X–Y of Z                                                │ │
-│ │ ┌──────────────────────────────────────────────────────────────┐ │ │
-│ │ │ Name | Email | Role | Joined | Actions                      │ │ │
-│ │ │─────┼───────┼──────┼────────┼──────────────────────────────│ │ │
-│ │ │ John | j@.. | admin| 2025…  | [Edit] [Remove]              │ │ │
-│ │ │ ...                                                      … │ │ │
-│ │ └──────────────────────────────────────────────────────────────┘ │ │
-│ │ Pagination: [Prev]  Page P of T  [Next]  Page size: (10/20/50) │ │
-│ └──────────────────────────────────────────────────────────────────┘ │
-│                                                                      │
-│ Card: Pending Invitations (M)                                        │
-│ ┌──────────────────────────────────────────────────────────────────┐ │
-│ │ email@example.com  [role]  Invited by admin@..  Expires in 5d   │ │
-│ │   [Resend] [Revoke] (both with confirm dialogs)                 │ │
-│ │ ...                                                            │ │
-│ └──────────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────────┘
-```
+┌──────────────── Pending Invitations ──────────┐
+│ Invitations waiting to be accepted │
+├───────────────────────────────────────────────┤
+│ • user@example.com (Member) │
+│ Invited by admin@acme.com · Expires: 2025‑11‑01
+│ [Resend] [Revoke] │
+│ │
+│ • jane@example.com (Admin) │
+│ Invited by admin@acme.com · Expires: 2025‑11‑04
+│ [Resend] [Revoke] │
+└───────────────────────────────────────────────┘
 
-Key Behaviors:
+Resend Confirmation Dialog
 
-- Invite/Edit/Remove -> refetch members.
-- Resend/Revoke -> confirm then refetch invitations.
-- Prevent last-admin demote/remove; admin cannot demote/remove self.
+┌────────────── Resend Invitation ──────────────┐
+│ Resend invitation to user@example.com? │
+│ │
+│ [Cancel] [Resend Invite]│
+└───────────────────────────────────────────────┘
 
----
+Revoke Confirmation Dialog
 
-### 3) Org-level: Organization Settings – General
+┌────────────── Revoke Invitation ──────────────┐
+│ Revoke invitation for user@example.com? │
+│ │
+│ [Cancel] [Revoke] │
+└───────────────────────────────────────────────┘
 
-Route: `/o/{orgSlug}/settings/organization/general`
+Invite Page — Loading
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│ Organization Settings                                                 │
-├──────────────────────────────────────────────────────────────────────┤
-│ Tabs: [ General ]  [ Members ]                                        │
-├──────────────────────────────────────────────────────────────────────┤
-│ Card: Organization Details                                            │
-│ ┌──────────────────────────────────────────────────────────────────┐ │
-│ │ Name:  Acme Inc                                                 │ │
-│ │ Slug:  acme                                                     │ │
-│ │ Created:  2025-01-01                                            │ │
-│ │                                                                │ │
-│ │ [ Edit Organization ]  (slug input hidden/disabled for admin)  │ │
-│ └──────────────────────────────────────────────────────────────────┘ │
-│                                                                      │
-│ (No Danger Zone here)                                                │
-└──────────────────────────────────────────────────────────────────────┘
-```
+┌───────────────────────────────────────────────┐
+│ ⟳ Validating invitation... │
+└───────────────────────────────────────────────┘
 
-Key Behaviors:
+Invite Page — Invalid/Expired
 
-- Admin can edit name only; superadmin can edit slug if accessing org-level (but we keep Danger Zone in admin area only).
+┌──────────────── Invalid Invitation ───────────┐
+│ This invitation link is invalid or expired. │
+│ │
+│ [Go to Dashboard] [Sign In] │
+└───────────────────────────────────────────────┘
 
----
+Invite Page — Already a Member (or Superadmin)
 
-### 4) Org-level: Organization Settings – Members
+┌────────────── You’re already a member ────────┐
+│ You already have access to this organization. │
+│ │
+│ [Go to Dashboard] │
+└───────────────────────────────────────────────┘
 
-Route: `/o/{orgSlug}/settings/organization/members`
+Invite Page — Valid Invite (Accept/Decline)
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│ Organization Settings                                                 │
-├──────────────────────────────────────────────────────────────────────┤
-│ Tabs: [ Members ]  [ General ]                                        │
-├──────────────────────────────────────────────────────────────────────┤
-│                 [ Invite Member ]                                    │
-│                                                                      │
-│ Card: Members (Total: N)                                            │
-│ ┌──────────────────────────────────────────────────────────────────┐ │
-│ │ Showing X–Y of Z (excluding superadmins)                        │ │
-│ │ ┌──────────────────────────────────────────────────────────────┐ │ │
-│ │ │ Name | Email | Role | Joined | Actions                      │ │ │
-│ │ │─────┼───────┼──────┼────────┼──────────────────────────────│ │ │
-│ │ │ Jane | j@.. | admin| 2025…  | [Edit] [Remove]              │ │ │
-│ │ │ ...                                                      … │ │ │
-│ │ └──────────────────────────────────────────────────────────────┘ │ │
-│ │ Pagination: [Prev]  Page P of T  [Next]  Page size: (10/20/50) │ │
-│ └──────────────────────────────────────────────────────────────────┘ │
-│                                                                      │
-│ Card: Pending Invitations (M)                                        │
-│ ┌──────────────────────────────────────────────────────────────────┐ │
-│ │ email@example.com  [role]  Invited by admin@..  Expires in 5d   │ │
-│ │   [Resend] [Revoke] (with confirmation)                         │ │
-│ └──────────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────────┘
-```
+┌──────────────── You’ve been invited! ─────────┐
+│ You’ve been invited to join: │
+│ │
+│ Organization: ACME, Inc. │
+│ Role: Member │
+│ │
+│ [Accept & Join] [Decline] │
+│ │
+│ Having trouble? Ask an admin to resend. │
+└───────────────────────────────────────────────┘
 
-Key Behaviors:
+Toast Examples
 
-- Exclude superadmins from list.
-- Same refresh/guard logic as admin members page.
+- “Invitation created” (after POST create)
+- “Invitation email resent” (resend)
+- “Invitation revoked” (revoke)
+- “Link copied” (copy inviteUrl)
 
----
+Empty States
 
-## Dialogs (shared patterns)
+- Pending Invitations (none)
 
-### Edit Organization Dialog
+┌──────────────── Pending Invitations ──────────┐
+│ No pending invitations │
+│ Invite users to get started. │
+└───────────────────────────────────────────────┘
 
-```
-┌───────────────────────────────────────┐
-│ Edit Organization                     │
-├───────────────────────────────────────┤
-│ Name: [               ]               │
-│ Slug: [               ]  (hidden/ro if !canEditSlug)
-│ URL Preview: https://app/o/{slug}     │
-├───────────────────────────────────────┤
-│ [ Cancel ]      [ Save Changes ]      │
-└───────────────────────────────────────┘
-```
+Notes
 
-### Invite Member Dialog
-
-```
-┌───────────────────────────────────────┐
-│ Invite Member                         │
-├───────────────────────────────────────┤
-│ Name (optional)                       |
-│ Email *                               |
-│ Role *   (admin | member)             |
-│ [ ] Send email invitation             |
-├───────────────────────────────────────┤
-│ [ Cancel ]      [ Send Invite ]       │
-└───────────────────────────────────────┘
-```
-
-### Edit Member Dialog
-
-```
-┌───────────────────────────────────────┐
-│ Edit Member                           │
-├───────────────────────────────────────┤
-│ Email: (read-only)                    │
-│ Name: [               ]               │
-│ Role: [admin|member] (blocked if last admin or self-demote) |
-├───────────────────────────────────────┤
-│ [ Cancel ]      [ Save Changes ]      │
-└───────────────────────────────────────┘
-```
-
-### Remove Member Confirm
-
-```
-┌──────────────────────────────────────────────┐
-│ Remove Member                                │
-├──────────────────────────────────────────────┤
-│ Are you sure you want to remove {email}?     │
-│ This cannot be undone.                       │
-├──────────────────────────────────────────────┤
-│ [ Cancel ]         [ Remove ] (destructive)  │
-└──────────────────────────────────────────────┘
-```
-
-### Invitation Resend/Revoke Confirm
-
-```
-┌──────────────────────────────────────────────┐
-│ Confirm Action                               │
-├──────────────────────────────────────────────┤
-│ Resend/Revoke invitation for {email}?        │
-├──────────────────────────────────────────────┤
-│ [ Cancel ]         [ Continue ]              │
-└──────────────────────────────────────────────┘
-```
-
----
-
-## Empty/Loading States
-
-Members Loading:
-
-```
-┌──────────────────────────┐
-│ Loading members...       │
-└──────────────────────────┘
-```
-
-No Members:
-
-```
-┌──────────────────────────┐
-│ No members yet           │
-│ Invite users to start    │
-└──────────────────────────┘
-```
-
-No Pending Invitations:
-
-```
-┌──────────────────────────┐
-│ No pending invitations   │
-└──────────────────────────┘
-```
+- The pending list auto‑refreshes via a global `org:invitations:changed` event.
+- The Invite page derives org name, role, and access state from the validation endpoint.
+- Superadmins never accept on behalf; they see the direct dashboard CTA.

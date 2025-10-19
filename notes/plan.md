@@ -1,159 +1,90 @@
-## Summary
+Title: Invitations UX and Auth Plan
 
-This plan delivers reusable, responsive organization settings components and tightens permissions/edge cases while ensuring the Members and Pending Invitations lists always reflect the latest data after actions. We’ll keep Danger Zone only on the admin’s General tab, prevent admins from demoting/removing themselves, optionally filter superadmins out of the org-level member view, and hide “Organization” from member-only users in the sidebar/user menu. Data refresh will be explicit via hooks and success callbacks rather than relying on page-level reloads.
+Summary
 
-## Scope & Deliverables
+We will make invitation operations reliable, responsive, and clear. On the backend, we’ll ensure resending actually emails the invite link and that invited users can sign up even when general signup is disabled (without weakening allowlist controls for non‑invited emails). On the frontend, pending invitations will update instantly after create/resend/revoke, and the Invite page will show the correct organization name and smarter states: if a user is already a member or is a superadmin, we show a direct path to the dashboard instead of the “Accept & Join” action.
 
-- Reuse and enhance Organization Details block across admin and org-level settings
-- Show Danger Zone only on admin/general tab
-- Extract a reusable Members List component with Invite button, pagination, and actions
-- Extract a reusable Pending Invitations List component with resend/revoke + confirmations
-- Explicit client-side refetch strategy for both lists on successful actions
-- API hardening:
-  - Superadmin-only slug updates
-  - Optional `excludeSuperadmins` for members index
-  - Prevent org admin self-demote/self-remove; always-1-admin invariant
-- Sidebar/user menu visibility: hide Organization for member-only roles
+Decisions (locked)
 
-## Components and Files
+1. Invited emails bypass allowlist when an active invite exists.
+2. Use a custom DOM event to refresh “Pending Invitations”.
+3. Personalize emails with invitee name if present.
+4. Superadmins opening invite links see an access message and a dashboard button; no accept‑on‑behalf.
+5. Copy for already‑member state: “You’re already a member” with “Go to Dashboard”.
+6. Redirect after accept: `/o/[orgSlug]`.
+7. If Resend is not configured in non‑dev, fail loudly (500) to avoid masking production misconfigurations.
+8. Invited signups also bypass allowlist when signup is disabled.
 
-Existing:
+Scope of Work
 
-- `components/features/organization/organization-general-card.tsx`
-- `components/features/organization/organization-danger-zone.tsx`
-- `components/features/organization/organization-settings-layout.tsx`
-- `components/features/organization/organization-tabs.tsx`
-- `components/features/admin/*` (dialogs/buttons already implemented)
+Server/API
 
-New (reusable):
+- Resend invitation (POST /api/orgs/[orgSlug]/invitations/[id]/resend)
+  - Generate a new token + expiry (uses INVITE_EXP_MINUTES).
+  - Build inviteUrl: `${APP_URL}/invite?token=...`.
+  - Send email via sendInvitationEmail({ to, orgName, inviteUrl, role, invitedBy }).
+  - DEV: logs to console if email not configured; Non‑DEV: return 500 when email service not configured.
+  - Response includes { id, email, role, expiresAt, inviteUrl, sent }.
+  - Audit: invite_resent (includes invitationId, invitedEmail, role).
 
-- `components/features/organization/members-list.tsx`
-- `components/features/organization/pending-invitations-list.tsx`
-- `hooks/use-members.ts` and `hooks/use-invitations.ts` (lightweight fetch + refetch)
+- Allow invited signups when AUTH_SIGNUP_ENABLED=false
+  - request-otp: if signup disabled and user doesn’t exist, allow if an active invitation exists for the email (acceptedAt=null, revokedAt=null, expiresAt>now). Else block.
+  - verify-otp: same bypass; allow JIT user creation when active invite exists.
+  - Invited emails bypass allowlist checks when active invite exists.
+  - Audit metadata reason: invited_signup_allowed when bypass occurs.
 
-Pages to wire:
+- Invitation validation (GET /api/orgs/invitations/validate?token=...)
+  - Uses validateInvitationToken(token).
+  - Returns: valid, error?, invitation { id, orgId, orgSlug, orgName, email, role, expiresAt }.
+  - If authenticated: include alreadyMember and userIsSuperadmin (membership/org helpers).
 
-- Admin: `app/admin/organizations/[orgSlug]/(tabs)/general/page.tsx`, `.../(tabs)/members/page.tsx`
-- Org-level: `app/o/[orgSlug]/settings/organization/(tabs)/general/page.tsx`, `.../(tabs)/members/page.tsx`
+- Accept invitation (POST /api/orgs/invitations/accept)
+  - Ensure already‑member path includes organization slug in response.
+  - Keep existing success response with { organization: { id, name, slug } }.
+  - No accept‑on‑behalf for superadmins; invited email must match current user.
 
-API touched:
+Client/UI
 
-- `app/api/orgs/[orgSlug]/route.ts` (PATCH)
-- `app/api/orgs/[orgSlug]/members/route.ts` (GET)
-- `app/api/orgs/[orgSlug]/members/[userId]/route.ts` (PATCH, DELETE)
+- PendingInvitationsList
+  - Listen for `org:invitations:changed` and call refetch() when fired.
+  - On resend success: toast, optional copy inviteUrl, dispatch event.
+  - On revoke success: toast, dispatch event.
 
-Sidebar/user menu:
+- InviteMemberDialog
+  - After successful invite creation: dispatch `org:invitations:changed` with { orgSlug }.
 
-- `components/features/dashboard/sidebar.tsx`
+- Invite Page (/invite)
+  - If not authenticated: redirect to /login?next=/invite?token=...
+  - If authenticated: GET /api/orgs/invitations/validate?token=...
+    - Show real orgName (and role) instead of placeholder.
+    - If alreadyMember or userIsSuperadmin: show “You’re already a member” with button to `/o/[orgSlug]`; hide Accept & Join.
+    - If invalid/expired: show error card with guidance to request resend.
+    - Else: show Accept/Decline with org details; Accept posts to /api/orgs/invitations/accept; on success redirect to `/o/[orgSlug]`.
 
-## Implementation Details
+Edge Cases & Security
 
-### 1) Organization Details: reuse and enhance
+- CSRF checks on mutating routes (existing helpers).
+- Email service behavior:
+  - Development: log email contents via lib/email.ts fallback.
+  - Non‑dev: fail with 500 if not configured (visibility over silent failure).
+- Rate limiting and audit logging preserved for auth flows.
+- Never expose tokens/secrets to client; all email sends remain server‑side.
 
-- Keep `OrganizationGeneralCard` with `EditOrganizationButton`/`EditOrganizationDialog`.
-- Add a `canEditSlug` prop to `EditOrganizationDialog` to hide/disable the slug input for non-superadmins.
-- Pass `canEditSlug` from server pages based on `isSuperadmin(user.id)`.
-- Keep existing cookie/redirect logic when slug changes.
+QA Checklist
 
-API (PATCH /api/orgs/[orgSlug]):
+- Resend: email dispatched (or dev‑logged), expiry updated, API returns inviteUrl; UI shows success and list refreshes automatically.
+- Create invite: new invite appears instantly in Pending Invitations.
+- Signup disabled: invited non‑existing email can request + verify OTP and accept invite; non‑invited new emails blocked; existing users continue to sign in.
+- Invite page: shows org name; already‑member and superadmin see dashboard action; invalid invites show guidance.
+- Accept redirect: always to `/o/[orgSlug]` for both success and already‑member responses.
 
-- Allow name updates for admin/superadmin.
-- Only allow slug updates for superadmin; otherwise return 403.
-- Keep slug format/reserved/uniqueness validation.
+Deliverables
 
-### 2) Danger Zone placement
+- Server: updated resend route; updated request-otp and verify-otp gating; new validation route; accept route response tweak.
+- Client: event wiring in invite dialog and pending list; Invite page state updates and copy.
+- Notes: this plan document and wireframes document.
 
-- Render `OrganizationDangerZone` only in admin general tab page.
-- Remove from org-level general tab page.
+Out‑of‑Scope (for now)
 
-### 3) MembersList (reusable)
-
-- Props: `{ orgSlug: string; context: 'admin' | 'org'; excludeSuperadmins?: boolean }`.
-- Renders:
-  - Header with right-aligned `InviteMemberDialog`.
-  - Table: Name, Email, Role, Joined, Actions (Edit, Remove).
-  - Pagination with 10/20/50 page sizes.
-- Behavior differences:
-  - When `context==='org'`, pass `excludeSuperadmins=true` to the API query.
-
-### 4) PendingInvitationsList (reusable)
-
-- Props: `{ orgSlug: string }`.
-- Fetch from `GET /api/orgs/[orgSlug]/invitations`.
-- Each item shows: email, role badge, invited by, created date, days to expiry.
-- Actions: Resend (POST) and Revoke (DELETE) with confirmation dialogs.
-
-### 5) Data Refresh Strategy
-
-- Add hooks:
-  - `useMembers(orgSlug, { page, pageSize, excludeSuperadmins }) -> { data, isLoading, error, refetch, setPage, setPageSize }`
-  - `useInvitations(orgSlug) -> { items, isLoading, error, refetch }`
-- Update existing dialogs/buttons to accept callbacks:
-  - `InviteMemberDialog({ onInvited })`
-  - `EditMemberDialog({ onEdited })`
-  - `RemoveMemberButton({ onRemoved })`
-- On success, invoke callbacks to refetch without relying on `router.refresh()`.
-
-### 6) API Changes and Constraints
-
-- `PATCH /api/orgs/[orgSlug]`:
-  - If `slug` is present and user is not superadmin: return 403.
-- `GET /api/orgs/[orgSlug]/members`:
-  - Support `excludeSuperadmins=true` to filter out users with `user.role==='superadmin'`.
-- `PATCH /api/orgs/[orgSlug]/members/[userId]`:
-  - If requester is org admin (not superadmin) and `userId===requesterId`, block changing own role to member.
-  - Keep last-admin guard.
-- `DELETE /api/orgs/[orgSlug]/members/[userId]`:
-  - If requester is org admin (not superadmin) and `userId===requesterId`, block self-removal.
-  - Keep last-admin guard.
-
-### 7) Sidebar/User Menu Visibility
-
-- In `sidebar.tsx`, hide the “Organization” menu item when `currentOrg.role==='member'`.
-- Keep “Members” entry for admin/superadmin only (already in place).
-
-### 8) Responsiveness
-
-- Ensure full-width cards/tables; wrap long content; preserve mobile usability.
-- Keep “Invite Member” right-aligned above the table in both contexts.
-
-## Acceptance Criteria
-
-Functional:
-
-- Editing org name works for admin/superadmin; slug editing only for superadmin, with validation and redirect.
-- Danger Zone shown only in admin general tab; not visible in org-level settings.
-- Members list shows correct data with pagination; org-level excludes superadmins.
-- Invite/Edit/Remove actions update the Members list immediately.
-- Resend/Revoke actions show confirmation dialogs and update the Pending Invitations list immediately.
-- Admin cannot demote/remove self; last-admin cannot be demoted/removed; clear error toasts/messages.
-- “Organization” option hidden for member-only users in the user menu.
-
-Non-functional:
-
-- Components reusable across admin and org contexts.
-- No client-side exposure of secrets; Node runtime for API routes.
-- Typescript strict; follow project conventions.
-
-## Rollout (PRs)
-
-1. API hardening
-   - Superadmin-only slug updates; self-demote/self-remove guards; `excludeSuperadmins` query.
-2. Reusable UI + hooks
-   - `MembersList`, `PendingInvitationsList`, `useMembers`, `useInvitations`; add callbacks to dialogs/buttons; wire refetch.
-3. Pages wiring + visibility
-   - Replace inline tables with reusable components; adjust Danger Zone placement; hide Organization in user menu for members.
-4. QA & polish
-   - Copy and micro-UX; edge cases; accessibility sweep.
-
-## Test Matrix (manual)
-
-- Edit org (admin): name-only; slug hidden.
-- Edit org (superadmin): slug change; slug taken/reserved/invalid; redirect and cookie update.
-- Members: invite -> appears in invitations; after acceptance path out-of-scope; list refresh works.
-- Members: edit role/name -> list refresh; cannot demote last admin; admin self-demotion blocked.
-- Members: remove -> list refresh; cannot remove last admin; admin self-removal blocked.
-- Pending invitations: resend/revoke with confirm; list refresh.
-- Org-level members exclude superadmins.
-- Danger Zone only on admin general tab.
-- User menu: Organization hidden for members.
+- Comprehensive automated tests (add later).
+- Background job retries for email delivery.

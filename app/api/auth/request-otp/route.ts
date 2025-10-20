@@ -49,10 +49,13 @@ export async function POST(request: Request): Promise<Response> {
       select: { id: true, role: true },
     });
 
-    // Check for active invitation
+    // Check for active invitation (case-insensitive email match)
     const activeInvitation = await db.invitation.findFirst({
       where: {
-        email: normalizedEmail,
+        email: {
+          equals: normalizedEmail,
+          mode: 'insensitive',
+        },
         acceptedAt: null,
         revokedAt: null,
         expiresAt: { gt: new Date() },

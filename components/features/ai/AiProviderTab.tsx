@@ -354,7 +354,10 @@ export function AiProviderTab({
                           variant="ghost"
                           size="sm"
                           onClick={() => handleRemoveModel(model.id)}
-                          disabled={deletingModel === model.id}
+                          disabled={
+                            deletingModel === model.id ||
+                            (configuredModels.length === 1 && model.isDefault)
+                          }
                         >
                           {deletingModel === model.id ? (
                             <Loader2 className="h-3 w-3 animate-spin" />

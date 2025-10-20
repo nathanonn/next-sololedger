@@ -1,142 +1,168 @@
-# UX Flow Map and Screen-by-Screen Wireframes
+# AI Settings — UX Flow & ASCII Wireframes
 
-This UX follows the organization-wide AI plan in `notes/plan.md`. Admins (and superadmins) manage provider keys and curated models under AI API Keys. AI Usage provides filters, totals, a paginated log table, and detail inspector, with purge controls. All actions are server-backed and CSRF-protected.
+This document outlines the flow and screen-by-screen wireframes for the redesigned AI settings with provider tabs and an inline playground modal.
 
----
+## UX Flow Map
 
-## Flow Map
+1. Settings: AI Providers (Tabbed)
+   - Load providers from `/api/orgs/:orgSlug/ai/keys`
+   - For each allowed provider, render a tab with status
+   - Select a tab → load models `/api/orgs/:orgSlug/ai/models?provider=<p>`
 
-- Entry (Org Admin): Organization Settings → AI API Keys ("ai-keys")
-	- Server: fetch provider statuses and models
-	- Actions: add/update/delete provider key, verify before save; manage curated models; set default model
+2. Provider Tab Content
+   - API Key Section
+     - Verify & Save (POST /ai/keys)
+     - Remove API Key (DELETE /ai/keys)
+   - Models Section
+     - Configured Models (Set Default, Remove)
+     - Curated Models (Add)
+   - Open Playground Modal
+   - View Usage (navigates to usage dashboard, optionally filtered)
 
-- Entry (Org Admin): Organization Settings → AI Usage ("ai-usage")
-	- Server: fetch paginated logs with filters and totals
-	- Actions: filter, view detail, purge logs older than N days
+3. Playground Modal (per Provider)
+   - Inputs (model, system prompt, user prompt, max tokens)
+   - Submit → POST `/api/orgs/:orgSlug/ai/generate` (feature="playground")
+   - Show loading → Show pretty JSON result or error
+   - Copy JSON
 
-- Entry (Superadmin): Admin → Organizations → [Org] → AI API Keys / AI Usage
-	- Same flows, scoped to selected organization
-
----
-
-## Screen 1: AI API Keys Management
-
-Goal: Let org admins configure provider API keys and curated models. Keys are never shown in plaintext after save; verification occurs server-side.
-
-```
-+-----------------------------------------------------------------------------------+
-| Settings / Organization / AI API Keys                                             |
-+-----------------------------------------------------------------------------------+
-| Provider        | Status        | Default Model        | Actions                  |
-|-----------------------------------------------------------------------------------|
-| OpenAI          | Verified ✓    | gpt-4o-mini          | [ Manage ]               |
-| Google Gemini   | Missing       | —                    | [ Manage ]               |
-| Anthropic       | Verified ✓    | claude-3-haiku       | [ Manage ]               |
-+-----------------------------------------------------------------------------------+
-```
-
-Manage drawer/modal (per provider)
-
-```
-+------------------------------------------------------------+
-| Manage: OpenAI                                             |
-|------------------------------------------------------------|
-| API Key                                                    |
-| [ sk-************************************** ] [ Verify ]   |
-|                                                            |
-| Models (curated)                                           |
-| [ Add Model ]                                              |
-| --------------------------------------------------------   |
-| | Name         | Label     | Max Out | Default |       |   |
-| | gpt-4o-mini  | 4o Mini   | 2048    |  (•)    |       |   |
-| | gpt-4o       | 4o        | 2048    |  ( )    |       |   |
-| --------------------------------------------------------   |
-| [ Set Default ]  [ Remove Model ]                          |
-|                                                            |
-| Save [ Update ]   Cancel                                   |
-+------------------------------------------------------------+
-```
-
-Notes
-- Verify triggers a server call using the provider adapter; on success, persist encryptedKey, lastVerifiedAt, and lastFour.
-- Clamp Max Out to provider caps; curated model list reduces error risk.
-- Prevent removing a default model without choosing a replacement.
-- Show Sonner toasts for success/error; never display plaintext after save.
-
-Edge cases
-- Invalid key → show structured error; do not persist
-- Rate limited → show retry messaging (429) with backoff
-- Remove key → warn that dependent models become inactive
+4. Usage Dashboard
+   - Filterable by feature="playground" and provider
+   - Shows logged runs from playground and elsewhere
 
 ---
 
-## Screen 2: AI Usage Logs Dashboard
+## Screen-by-Screen Wireframes
 
-Goal: Provide observability and retention for AI requests without exposing sensitive data. Admins only at org level; superadmins at admin level.
+Legend:
 
-```
-+-----------------------------------------------------------------------------------+
-| Settings / Organization / AI Usage                                                |
-+-----------------------------------------------------------------------------------+
-| Filters: [ Provider v ] [ Model v ] [ Feature v ] [ Status v ] [ Date Range v ]   |
-|          [ Search (correlation/text) ]                                            |
-|-----------------------------------------------------------------------------------|
-| Totals: Requests: 1,248 | In: 98,420 tok | Out: 122,311 tok | Avg Lat: 842 ms    |
-|-----------------------------------------------------------------------------------|
-| Correlation ID  | Time              | Prov | Model          | Feat  | St         |
-|-----------------------------------------------------------------------------------|
-| 7f6a…9b         | 2025-10-01 14:18  | OAI  | gpt-4o-mini    | gen   | OK         |
-| 18cd…42         | 2025-10-01 13:57  | GEM  | gemini-1.5     | gen   | OK         |
-| b2aa…77         | 2025-10-01 13:51  | ANT  | claude-3-haiku | gen   | ER         |
-| ...                                                                             |
-+-----------------------------------------------------------------------------------+
-| [ Prev ] Page 1/42 [ Next ]   [ Purge older than (30) days ]  [ Go ]             |
-+-----------------------------------------------------------------------------------+
-```
+- [ ] Checkbox indicates enable/disable; (disabled) when unavailable
+- (…) denotes dynamic content
+- -> denotes action or navigation
 
-Row detail inspector (drawer/modal)
+### 1) AI Settings (Tabbed Providers)
 
 ```
-+------------------------------------------------------------+
-| Log: 7f6a…9b                                               |
-|------------------------------------------------------------|
-| Meta                                                       |
-| Organization: acme                                         |
-| User: user@example.com                                     |
-| Provider: OpenAI   | Model: gpt-4o-mini                    |
-| Feature: generic-text | Status: OK | Latency: 612 ms       |
-| Tokens: in 132, out 289                                    |
-| Correlation ID: 7f6a…9b                                    |
-| Time: 2025-10-01 14:18:22                                  |
-|------------------------------------------------------------|
-| Input (sanitized & truncated)                              |
-| "Write a two-sentence summary of…"                         |
-|------------------------------------------------------------|
-| Output (sanitized & truncated)                             |
-| "Here are two sentences …"                                 |
-|------------------------------------------------------------|
-| Provider response meta (safe fields only)                  |
-| httpStatus: 200 | modelVersion: 2025-09-30                 |
-+------------------------------------------------------------+
+┌────────────────────────────────────────────────────────────────────┐
+│ AI Settings                                                        │
+├────────────────────────────────────────────────────────────────────┤
+│ Tabs:  [ OpenAI (Verified) ]  [ Google Gemini (Missing) ] [ Anthropic (Verified) ]
+│        ^ active tab stored in localStorage                         │
+├────────────────────────────────────────────────────────────────────┤
+│ (Active Tab Content — see next wireframe)                          │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
-Notes
-- Search filters by correlationId and free-text across sanitized fields.
-- Totals recompute per filter; pagination preserves filters.
-- Purge action deletes logs older than N days; confirm before execution; toast on success.
+Notes:
 
-Edge cases
-- Large outputs → ensure truncation UI and copy-visible only
-- Error entries → show errorCode and safe errorMessage
-- Stream cancellations → status "canceled"; tokens may be partial; still record correlationId
+- Tab labels show provider display name and status badge.
+- Active tab persists by org.
+
+### 2) Provider Tab Content
+
+```
+┌──────────────── Provider: OpenAI (Verified) ───────────────────────┐
+│ ****1234 (verified)   Last verified: 2025-10-19 14:23              │
+│                                                                  │
+│ API Key                                                          │
+│ ┌──────────────────────────────────────────────────────────────┐ │
+│ │ [•••••••••••••••••••••••••••••••••••••••••••••••••••     ]   │ │
+│ │                (placeholder: ****1234 (verified))        │ │
+│ └──────────────────────────────────────────────────────────────┘ │
+│ [Verify & Save]   [Remove API Key]                                │
+│                                                                  │
+│ Configured Models                                                 │
+│ ┌──────────────────────────────────────────────────────────────┐ │
+│ │ • GPT-4o Mini                Max: 16384  [Default]           │ │
+│ │   [Set Default](disabled)   [Remove]                         │ │
+│ │                                                              │ │
+│ │ • GPT-4o                    Max: 16384  [ ]                  │ │
+│ │   [Set Default]            [Remove]                          │ │
+│ └──────────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│ Curated Models (Available)                                       │
+│ ┌──────────────────────────────────────────────────────────────┐ │
+│ │ • GPT-5 Mini — Fast, cost-effective. Max 16384               │ │
+│ │   [Add]                                                      │ │
+│ │ • GPT-5 — Most capable. Max 16384                            │ │
+│ │   [Add]                                                      │ │
+│ └──────────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│ [Open Playground] (enabled when key verified & ≥1 model)          │
+│ [View usage] -> opens usage dashboard (feature=playground,provider=openai)
+└──────────────────────────────────────────────────────────────────┘
+```
+
+Empty/Missing states:
+
+- If status=Missing → show helper: “Add an API key to enable models and playground.”
+- If no configured models → show helper: “Add a model to enable playground.”
+
+### 3) Playground Modal (Two Columns)
+
+```
+┌────────────────────────── Playground: OpenAI ──────────────────────┐
+│                                                                    │
+│ Left (Inputs)                               Right (Result)         │
+│ ┌─────────────────────────────┐            ┌─────────────────────┐ │
+│ │ Model: [ GPT-4o Mini  v ]  │            │  Loading… (spinner) │ │
+│ └─────────────────────────────┘            └─────────────────────┘ │
+│                                                                    │
+│ System Prompt                                                     │
+│ ┌───────────────────────────────────────────────────────────────┐ │
+│ │ [ optional text area…                                       ] │ │
+│ └───────────────────────────────────────────────────────────────┘ │
+│                                                                    │
+│ User Prompt (required)                                            │
+│ ┌───────────────────────────────────────────────────────────────┐ │
+│ │ [ required text area…                                        ] │ │
+│ └───────────────────────────────────────────────────────────────┘ │
+│                                                                    │
+│ Max Output Tokens: [ 16384 ] (min=1, max=curated max)             │
+│                                                                    │
+│ [Submit]  [Cancel]                                                 │
+│                                                                    │
+│                                             ┌────────────────────┐ │
+│                                             │ {                  │ │
+│                                             │   "text": "…",    │ │
+│                                             │   "correlationId": │ │
+│                                             │   "…",            │ │
+│                                             │   "tokensIn": 123,│ │
+│                                             │   "tokensOut": 456,│ │
+│                                             │   "latencyMs": 789 │ │
+│                                             │ }                  │ │
+│                                             └────────────────────┘ │
+│                                             [Copy JSON]            │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+Notes:
+
+- Submit sends POST to `/api/orgs/:orgSlug/ai/generate` with feature="playground".
+- While waiting, show loading state on the right and disable Submit.
+- Pretty-print JSON and show correlationId clearly; copy supports full JSON.
+
+### 4) Usage Dashboard (Filtered)
+
+```
+┌────────────────────────── AI Usage Dashboard ──────────────────────┐
+│ Filters: Provider=[OpenAI]  Feature=[playground]  Status=[All]     │
+│ [Clear Filters]                                                    │
+├────────────────────────────────────────────────────────────────────┤
+│ Totals: Requests | Tokens In | Tokens Out | Avg Latency            │
+├────────────────────────────────────────────────────────────────────┤
+│ Logs (click row to view details)                                   │
+│ [ corrId  | time | provider | model | feature | status | latency ] │
+└────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## Components & Patterns
+## Interaction & States
 
-- shadcn/ui: Table, Dialog/Sheet, Input, Button, Badge, Select, Pagination, Tabs
-- RHF + Zod for forms (API Keys modal)
-- Sonner for toasts (success/error/info)
-- Server-first pages with Node runtime API calls; CSRF validation on mutations
-- Correlation ID visible and copyable from detail view
-
+- Disabled states
+  - Playground button: disabled if key missing or no configured model
+  - Set Default: disabled if already default
+- Busy indicators
+  - Verify & Save, Add/Remove model, Set Default, Generate
+- Toasters
+  - Success/error on key ops and model ops; copy success; network errors

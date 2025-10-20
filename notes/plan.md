@@ -1,274 +1,154 @@
-# Organization-wide AI Integration Plan
-
-This plan adds organization-scoped AI configuration and usage to the app. Organization admins (and superadmins) can manage provider API keys and models in a secure, server-only setup using the Vercel AI SDK. All AI generation requests run on the server with org-wide rate limits and CSRF/auth guards. Usage is logged per-organization with correlation IDs, token usage, and latency, with retention/purge controls. Two new settings tabs—AI API Keys and AI Usage—will be available under organization settings (and mirrored in admin org pages) to manage providers and inspect activity.
-
----
-
-## Decisions (confirmed)
-
-- Providers: OpenAI, Google Gemini, Anthropic
-- Who can generate: all organization members (when org has a configured key)
-- Streaming: yes (alongside non-stream)
-- Retention: default 30 days (org-customizable by admin/superadmin)
-- Model UX: curated per-provider whitelist; clamping to provider caps
-- Rate limits: 60/min per org, 120/min per IP (env tunable)
-- Logs access: organization admins see all org logs (members do not see the Usage tab)
-- Tabs/labels: "AI API Keys" at segment "ai-keys" and "AI Usage" at segment "ai-usage"
-- Key verification: always verify before saving; reject invalid keys
-- Keys: one key per provider per org (update to rotate)
-- Token accounting: record provider-reported usage when available; otherwise null; always capture latency
-- Feature namespace: start with "generic-text"
-- Feature flag: AI_FEATURES_ENABLED to gate endpoints/UI
-- Superadmin: can manage keys and view logs for all organizations
-
----
-
-## Data model (Prisma)
-
-Add the following models. Use string literal unions in TypeScript for providers.
-
-1. OrganizationAiApiKey
-
-- id (cuid)
-- organizationId (FK → Organization.id)
-- provider: "openai" | "gemini" | "anthropic"
-- encryptedKey: string (AES-256-GCM envelope, base64-encoded)
-- lastFour: string (last 4 chars of plaintext key for display)
-- lastVerifiedAt: Date
-- createdByUserId: string (FK → User.id)
-- updatedByUserId: string (FK → User.id)
-- createdAt: Date (default now)
-- updatedAt: Date (updatedAt)
-- Unique: (organizationId, provider)
-- Indexes: (organizationId, provider), (organizationId, updatedAt)
-
-2. OrganizationAiModel
-
-- id (cuid)
-- organizationId (FK)
-- provider: same union as above
-- name: string (e.g., "gpt-4o-mini")
-- label: string (display label)
-- maxOutputTokens: number
-- isDefault: boolean (only one default per provider/org)
-- apiKeyId: string (FK → OrganizationAiApiKey.id)
-- Unique: (organizationId, provider, name)
-- Invariant: at most one isDefault=true per (organizationId, provider)
-
-3. AiGenerationLog
-
-- id (cuid)
-- organizationId (FK)
-- userId (FK)
-- provider: string
-- model: string
-- feature: string (e.g., "generic-text")
-- status: "ok" | "error" | "canceled"
-- tokensIn?: number
-- tokensOut?: number
-- latencyMs: number
-- correlationId: string
-- rawInputTruncated: string (sanitized + truncated)
-- rawOutputTruncated: string (sanitized + truncated)
-- errorCode?: string
-- errorMessage?: string
-- createdAt: Date (default now)
-- Indexes: (organizationId, createdAt), (organizationId, provider, model, createdAt), (organizationId, correlationId)
-
-4. OrganizationAiSettings
-
-- id (cuid)
-- organizationId (FK)
-- retentionDays: number (default 30)
-- perMinuteLimit?: number (nullable; override env)
-- createdAt / updatedAt
-
-Migration notes
-
-- Maintain onDelete: Cascade for org-linked tables.
-- Enforce single-default invariant via application logic (and optional DB constraint if supported).
-
----
-
-## Environment & encryption
-
-Env additions (to `lib/env.ts` and `.env.example`)
-
-- APP_ENCRYPTION_KEY: base64-encoded 32 bytes (AES-256-GCM)
-- AI_RATE_LIMIT_PER_MIN_ORG: default "60"
-- AI_RATE_LIMIT_PER_MIN_IP: default "120"
-- AI_ALLOWED_PROVIDERS: "openai,gemini,anthropic" (optional)
-- AI_FEATURES_ENABLED: "true" | "false"
-
-Encryption helper (`lib/secrets.ts`)
-
-- encryptSecret(plaintext: string): string
-- decryptSecret(ciphertext: string): string
-- Envelope format: { v: 1, iv, ct, tag } base64 fields
-- Validate that APP_ENCRYPTION_KEY decodes to 32 bytes on module init.
-
----
-
-## Provider abstraction & caps
-
-`lib/ai/providers.ts` (server-only, Node runtime)
-
-- getOrgProviderClient(orgId, provider):
-  - Fetch OrganizationAiApiKey by (orgId, provider); decrypt key
-  - Return a handle exposing model(name) compatible with AI SDK v5
-- verifyApiKey(provider, keyPlain):
-  - OpenAI, Gemini, Anthropic: tiny generation/whoami call; throw on 4xx auth failure
-- providerCaps: per-provider safe maximums for output tokens; used in clamping
-
-Curated models
-
-- Maintain a small curated list per provider (id, label, safe maxOutputTokens)
-- Allow org admins to pick from this list; free-text model names intentionally disabled for v1
-
----
-
-## Config resolution & wrappers
-
-`lib/ai/config.ts`
-
-- requireOrgAiConfigForFeature({ orgId, feature, requestedMaxOutputTokens?, modelName? }) →
-  - Resolve provider (must have verified key), default model, and clamp tokens by min(requested, model, provider cap)
-  - Throws AiConfigError with codes:
-    - AI_CONFIG_MISSING_API_KEY
-    - AI_CONFIG_MODEL_NOT_ALLOWED
-    - AI_CONFIG_TOKEN_LIMIT_EXCEEDED
-    - AI_CONFIG_PROVIDER_UNAVAILABLE
-
-`lib/ai/generate.ts`
-
-- generateTextWithLogging and streamTextWithLogging
-  - Inputs: { orgId, userId, feature, prompt, modelName?, maxOutputTokens?, correlationId? }
-  - Behavior: log start → AI SDK call → log finish; on error, log error + code → rethrow
-  - Sanitization: redact secrets, truncate inputs/outputs to ~8–16KB
-  - Always record latency; record tokens when provider returns usage
-
----
-
-## API routes (Node runtime, CSRF, authZ)
-
-Base path: `/app/api/orgs/[orgSlug]/ai/`
-
-1. keys (GET/POST/DELETE)
-
-- GET: list providers with status (Verified/Missing) and default model
-- POST: upsert key for provider
-  - Verify key via tiny call → encrypt+store → lastVerifiedAt; audit log
-- DELETE: remove key/provider (must handle dependent models)
-
-2. models (GET/POST/DELETE/PATCH)
-
-- GET: list org models grouped by provider
-- POST: add a curated model; clamp and validate
-- PATCH: set default model for provider (flip isDefault)
-- DELETE: remove model (guard if it is default—require selecting another default first)
-
-3. generate (POST)
-
-- Accepts: { feature, prompt, modelName?, maxOutputTokens?, stream?, correlationId? }
-- Rate limits: per org and per IP
-- Calls wrapper; returns x-correlation-id header; supports non-stream and stream
-- Authorization: any org member; logs userId + orgId
-
-4. logs (GET list, GET detail, DELETE purge)
-
-- GET: filters (provider, model, feature, status, date range, search), pagination, totals (requests, tokens in/out, avg latency)
-- GET /logs/[id]: full sanitized record
-- DELETE /logs/purge: deletes logs older than retentionDays (from OrganizationAiSettings or request body)
-
-Security & runtime
-
-- `export const runtime = "nodejs"` for all routes
-- CSRF: `validateCsrf` for mutating routes (POST/PATCH/DELETE)
-- AuthZ: `requireAdminOrSuperadmin` for keys/models/logs mutations and views; generate allowed for members
-
----
-
-## Authorization & rate limiting
-
-Authorization
-
-- Org admins: manage keys, models, and view all org logs
-- Org members: can call generate (no keys/models/logs management)
-- Superadmins: full management across all organizations
-
-Rate limiting
-
-- Implement per-org (60/min) and per-IP (120/min) buckets
-- Return 429 with Retry-After; expose optional limit headers for observability
-- Allow per-org override via OrganizationAiSettings.perMinuteLimit
-
----
-
-## UI: tabs and screens
-
-Tabs
-
-- Extend `OrganizationTabs` to include:
-  - AI API Keys → `ai-keys`
-  - AI Usage → `ai-usage`
-
-Org-level pages
-
-- `/o/[orgSlug]/settings/organization/(tabs)/ai-keys/page.tsx`
-- `/o/[orgSlug]/settings/organization/(tabs)/ai-usage/page.tsx`
-
-Admin pages (reuse components)
-
-- `/admin/organizations/[orgSlug]/(tabs)/ai-keys/page.tsx`
-- `/admin/organizations/[orgSlug]/(tabs)/ai-usage/page.tsx`
-
-AI API Keys screen
-
-- Provider table with status badge (Verified/Missing), default model, Manage button
-- Manage modal per provider: masked key input, Verify, Save; curated models table; set default; remove model
-
-AI Usage screen
-
-- Filters: provider, model, feature, status, date range, search (correlationId/text)
-- Totals: requests, tokens in/out, avg latency
-- Paginated table; row detail drawer; purge control
-
----
-
-## Testing
-
-Unit
-
-- `lib/secrets.ts`: encrypt/decrypt round-trips, error on bad key length
-- Provider verification success/fail (mock AI SDK)
-- Config clamping logic
-
-API
-
-- keys/models: verify/save/delete, default switching, invariants
-- generate: non-stream + stream; CSRF; rate limit; error propagation; correlationId
-- logs: list filters, totals, detail, purge; permissions
-
-E2E (Playwright)
-
-- Superadmin manages a target org (keys/models/logs)
-- Org admin configures keys/models, triggers generation, inspects logs
-- Org member triggers generation (no tab access)
-
----
-
-## Rollout & docs
-
-- Add AI_FEATURES_ENABLED to gate routes and UI
-- Update README and `.env.example` for new env vars
-- Optional seed to populate demo models and sample logs (no secrets)
-
----
-
-## Acceptance criteria
-
-- Org-scoped encrypted keys per provider (single active key) with verification
-- Org member generation (stream + non-stream), server-only AI SDK usage
-- Structured logs with correlation IDs, token usage, latency, sanitized bodies
-- Admin-only tabs for AI Keys and AI Usage; superadmin across all orgs
-- Retention/purge default 30 days, org/IP rate limits (60/120) with env overrides
+# AI Settings Redesign + Playground — Implementation Plan
+
+This plan refactors the AI settings from a table-based list into a provider-centric tabbed experience with per-provider management and an inline playground. Admins can verify API keys, manage curated models, and test models without leaving the settings page. The playground uses the existing server API for generation and automatically logs usage under the organization with feature="playground".
+
+## Scope
+
+- Replace `components/features/ai/ai-keys-management.tsx` UI with Tabs per allowed provider (from env.AI_ALLOWED_PROVIDERS).
+- Within each tab, provide:
+  - API Key management (verify/save, remove, show last four + last verified)
+  - Models management (configured models list, set default, remove; curated models list to add)
+  - A “Playground” modal to test with configured models
+- Ensure all playground requests log to `AiGenerationLog` with feature="playground" (leveraging existing backend).
+- Add a “View usage” link from each provider tab to the AI usage dashboard.
+
+## Decisions (per user selections)
+
+1. Providers source: env-driven allowed providers (1/a)
+2. Playground model choices: configured models only (2/a)
+3. System prompt handling: concatenate system + user into single prompt (no backend change) (3/b)
+4. Response mode: non-streaming with explicit loading state (4/a)
+5. Max output default: curated model maximum (5/a)
+6. Component structure: split into subcomponents (6/b)
+7. Logging feature tag: "playground" (7/a)
+8. Temperature control: omit for now (8/b)
+9. Empty states and helper text: explicit guidance + disabled actions (9/a)
+10. View usage: add link/button in each tab (10/a)
+
+## Files to Create/Update
+
+- Update: `components/features/ai/ai-keys-management.tsx`
+  - Replace table UI with Tabs per provider
+  - Render per-provider tab content using a new subcomponent
+  - Persist selected tab in localStorage (`app.v1.ai.providerTab:{orgSlug}`)
+- Add: `components/features/ai/AiProviderTab.tsx`
+  - Renders API Key section, Models section, Playground trigger, and View Usage link
+  - Handles provider-scoped model fetching and CRUD
+  - Props:
+    - orgSlug: string
+    - provider: { provider, displayName, status, lastFour, lastVerifiedAt, defaultModel }
+    - onProvidersChanged?: () => void (to refresh parent list after key/model ops)
+- Add: `components/features/ai/AiPlaygroundModal.tsx`
+  - Two-column modal: inputs (left) and JSON response (right)
+  - Props:
+    - orgSlug: string
+    - provider: string
+    - curatedModels: CuratedModel[] (for per-model max tokens)
+    - configuredModels: { id, name, label, maxOutputTokens, isDefault, provider }[]
+    - open: boolean
+    - onOpenChange: (open: boolean) => void
+  - Internal state: selectedModelName, systemPrompt, userPrompt, maxOutputTokens, loading, resultJson, errorJson
+
+## Data Sources and Endpoints (existing)
+
+- Providers: `GET /api/orgs/[orgSlug]/ai/keys`
+- Save key: `POST /api/orgs/[orgSlug]/ai/keys` (provider, apiKey)
+- Delete key: `DELETE /api/orgs/[orgSlug]/ai/keys` (provider)
+- Models (per provider): `GET /api/orgs/[orgSlug]/ai/models?provider=<provider>` → { curatedModels, configured }
+- Add model: `POST /api/orgs/[orgSlug]/ai/models` (provider, modelName, setAsDefault)
+- Remove model: `DELETE /api/orgs/[orgSlug]/ai/models` (modelId)
+- Set default: `PATCH /api/orgs/[orgSlug]/ai/models/[modelId]/default`
+- Generate (playground): `POST /api/orgs/[orgSlug]/ai/generate`
+  - Body: { feature: "playground", provider, modelName, prompt, maxOutputTokens }
+  - Returns: { text, correlationId, tokensIn?, tokensOut?, latencyMs }
+  - Headers: X-Correlation-ID also returned
+
+## UI Details
+
+- Tabs
+  - Labels: provider display name + small status badge (Verified/Missing)
+  - Active tab remembered per org
+
+- API Key section (inside tab)
+  - Input (password) + Verify & Save button
+  - Placeholder when verified: \*\*\*\*lastFour (verified)
+  - Last verified timestamp (small text)
+  - Destructive Remove API key button
+
+- Models section (inside tab)
+  - Configured models list (card/list)
+    - Show label, maxOutputTokens
+    - Default badge or "Set Default" button
+    - Remove button (disable if only model and default per provider)
+  - Curated models (filtered not-added)
+    - Show label, description, and max tokens
+    - Add button (first add becomes default)
+
+- Playground trigger
+  - Button "Open Playground"
+  - Disabled when provider key missing or no configured models
+
+- Playground modal
+  - Left inputs:
+    - Model: Select from configured models for the provider (default = provider default or first)
+    - System prompt: Textarea (optional)
+    - User prompt: Textarea (required)
+    - Max output tokens: Number; default to curated model’s max; min=1, max=curated max
+    - Submit (primary) + Cancel
+  - Right results:
+    - While loading: spinner + placeholder
+    - On success: pretty JSON, shows correlationId and latency
+    - On error: pretty JSON/error block
+    - Copy button to copy full JSON
+
+- View usage link
+  - Navigates to the org’s usage page, optionally with `?feature=playground&provider=<provider>`
+
+## State and Data Flow
+
+- Parent component (`ai-keys-management`)
+  - Fetch providers on mount and after key/model mutations
+  - Render tabs and pass selected provider into `AiProviderTab`
+  - Store selected tab in localStorage
+
+- `AiProviderTab`
+  - Fetch models for provider on mount and when needed
+  - Use curatedModels to determine per-model max tokens (pass to playground modal)
+  - Handle key verify/delete, add/remove model, set default
+  - Notify parent to refresh providers when default model changes or key changes
+
+- `AiPlaygroundModal`
+  - Build prompt by concatenating system + user
+  - POST to generate endpoint with feature="playground"
+  - Render JSON result and allow copy
+
+## Validation, Errors, and Loading
+
+- Client-side checks: require user prompt, ensure model selected
+- Disable action buttons while busy
+- Show toasts on success/failure; show inline errors in JSON pane for generate
+- Respect CSRF and auth (handled by existing routes)
+
+## Security and Guardrails
+
+- All AI calls remain server-side (Node runtime routes)
+- Never expose API keys to client; only show last four
+- Respect env.AI_ALLOWED_PROVIDERS when rendering tabs
+- Token clamping enforced server-side; UI also constrains inputs
+
+## QA / Acceptance Criteria
+
+- Tabs render from allowed providers; statuses and last four visible
+- API key verify/delete work and refresh state
+- Models add/remove/default operations work; curated list filters correctly
+- Playground disabled until a key and at least one model exist
+- Playground shows loading, then pretty JSON with correlationId and latency
+- Logs record each playground run with feature="playground"
+- “View usage” link opens the usage view filtered by feature=playground
+
+## Optional Enhancements (post-MVP)
+
+- Persist playground form inputs per provider (localStorage)
+- Add temperature slider (0–2)
+- Support streaming preview in playground
+- Bulk add curated models for a provider

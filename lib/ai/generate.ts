@@ -1,6 +1,7 @@
 import { generateText, streamText, APICallError } from "ai";
 import { randomBytes } from "crypto";
 import { db } from "@/lib/db";
+import type { Prisma } from "@prisma/client";
 import {
   requireOrgAiConfigForFeature,
   AiConfigError,
@@ -72,6 +73,39 @@ function sanitizeForLog(text: string, maxLength: number): string {
 }
 
 /**
+ * Sanitizes JSON objects for logging (removes secrets from nested structures)
+ */
+function sanitizeJsonForLog(obj: unknown): unknown {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  if (typeof obj === "string") {
+    // Apply same sanitization as text
+    return obj
+      .replace(/sk-[a-zA-Z0-9_-]{20,}/g, "[REDACTED_API_KEY]")
+      .replace(/Bearer\s+[a-zA-Z0-9_-]{20,}/gi, "Bearer [REDACTED]")
+      .replace(/token["\s:=]+[a-zA-Z0-9_-]{20,}/gi, "token [REDACTED]")
+      .replace(/password["\s:=]+\S+/gi, "password [REDACTED]")
+      .replace(/api[_-]?key["\s:=]+\S+/gi, "api_key [REDACTED]");
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map((item) => sanitizeJsonForLog(item));
+  }
+
+  if (typeof obj === "object") {
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      sanitized[key] = sanitizeJsonForLog(value);
+    }
+    return sanitized;
+  }
+
+  return obj;
+}
+
+/**
  * Generates a correlation ID for tracking requests
  */
 function generateCorrelationId(): string {
@@ -94,6 +128,8 @@ async function logGeneration(params: {
   correlationId: string;
   rawInput: string;
   rawOutput: string;
+  rawRequest?: unknown;
+  rawResponse?: unknown;
   errorCode?: string;
   errorMessage?: string;
 }): Promise<void> {
@@ -112,6 +148,8 @@ async function logGeneration(params: {
         correlationId: params.correlationId,
         rawInputTruncated: sanitizeForLog(params.rawInput, MAX_INPUT_LOG_LENGTH),
         rawOutputTruncated: sanitizeForLog(params.rawOutput, MAX_OUTPUT_LOG_LENGTH),
+        rawRequest: params.rawRequest ? (sanitizeJsonForLog(params.rawRequest) as Prisma.InputJsonValue) : undefined,
+        rawResponse: params.rawResponse ? (sanitizeJsonForLog(params.rawResponse) as Prisma.InputJsonValue) : undefined,
         errorCode: params.errorCode ?? null,
         errorMessage: params.errorMessage ?? null,
       },
@@ -158,6 +196,17 @@ export async function generateTextWithLogging(
     resolvedProvider = config.provider;
     resolvedModel = config.modelName;
 
+    // Build raw request for logging
+    const rawRequest = {
+      prompt,
+      maxOutputTokens: config.maxOutputTokens,
+      temperature,
+      provider: config.provider,
+      model: config.modelName,
+      feature,
+      correlationId,
+    };
+
     // Get provider client
     const client = await getOrgProviderClient(orgId, config.provider);
 
@@ -171,6 +220,15 @@ export async function generateTextWithLogging(
     });
 
     const latencyMs = Date.now() - startTime;
+
+    // Build raw response for logging
+    const rawResponse = {
+      text: result.text,
+      usage: result.usage,
+      finishReason: result.finishReason,
+      warnings: result.warnings,
+      latencyMs,
+    };
 
     // Log success
     await logGeneration({
@@ -186,6 +244,8 @@ export async function generateTextWithLogging(
       correlationId,
       rawInput: prompt,
       rawOutput: result.text,
+      rawRequest,
+      rawResponse,
     });
 
     return {
@@ -234,6 +294,26 @@ export async function generateTextWithLogging(
 
     // Log error
     if (resolvedProvider && resolvedModel) {
+      // Build raw request for error logging
+      const rawRequest = {
+        prompt,
+        maxOutputTokens,
+        temperature,
+        provider: resolvedProvider,
+        model: resolvedModel,
+        feature,
+        correlationId,
+      };
+
+      // Build raw response for error logging
+      const rawResponse = {
+        error: {
+          code: errorCode,
+          message: errorMessage,
+        },
+        latencyMs,
+      };
+
       await logGeneration({
         organizationId: orgId,
         userId,
@@ -245,6 +325,8 @@ export async function generateTextWithLogging(
         correlationId,
         rawInput: prompt,
         rawOutput: "",
+        rawRequest,
+        rawResponse,
         errorCode,
         errorMessage,
       });
@@ -294,6 +376,17 @@ export async function streamTextWithLogging(
     resolvedProvider = config.provider;
     resolvedModel = config.modelName;
 
+    // Build raw request for logging
+    const rawRequest = {
+      prompt,
+      maxOutputTokens: config.maxOutputTokens,
+      temperature,
+      provider: config.provider,
+      model: config.modelName,
+      feature,
+      correlationId,
+    };
+
     // Get provider client
     const client = await getOrgProviderClient(orgId, config.provider);
 
@@ -311,7 +404,18 @@ export async function streamTextWithLogging(
     const metadataPromise = (async () => {
       const text = await fullTextPromise;
       const usage = await result.usage;
+      const finishReason = await result.finishReason;
+      const warnings = await result.warnings;
       const latencyMs = Date.now() - startTime;
+
+      // Build raw response for logging
+      const rawResponse = {
+        text,
+        usage,
+        finishReason,
+        warnings,
+        latencyMs,
+      };
 
       // Log after stream completes
       await logGeneration({
@@ -327,6 +431,8 @@ export async function streamTextWithLogging(
         correlationId,
         rawInput: prompt,
         rawOutput: text,
+        rawRequest,
+        rawResponse,
       });
 
       return {
@@ -381,6 +487,26 @@ export async function streamTextWithLogging(
 
     // Log error if we have provider and model info
     if (resolvedProvider && resolvedModel) {
+      // Build raw request for error logging
+      const rawRequest = {
+        prompt,
+        maxOutputTokens,
+        temperature,
+        provider: resolvedProvider,
+        model: resolvedModel,
+        feature,
+        correlationId,
+      };
+
+      // Build raw response for error logging
+      const rawResponse = {
+        error: {
+          code: errorCode,
+          message: errorMessage,
+        },
+        latencyMs,
+      };
+
       await logGeneration({
         organizationId: orgId,
         userId,
@@ -392,6 +518,8 @@ export async function streamTextWithLogging(
         correlationId,
         rawInput: prompt,
         rawOutput: "",
+        rawRequest,
+        rawResponse,
         errorCode,
         errorMessage,
       });

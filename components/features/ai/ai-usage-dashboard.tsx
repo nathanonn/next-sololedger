@@ -29,7 +29,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { Loader2, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Loader2, Search, ChevronLeft, ChevronRight, Copy } from "lucide-react";
 
 type LogEntry = {
   id: string;
@@ -43,6 +44,8 @@ type LogEntry = {
   latencyMs: number;
   rawInputTruncated: string;
   rawOutputTruncated: string;
+  rawRequest: unknown | null;
+  rawResponse: unknown | null;
   errorCode: string | null;
   errorMessage: string | null;
   createdAt: string;
@@ -182,6 +185,82 @@ export function AiUsageDashboard({
   const formatNumber = (num: number | null): string => {
     if (num === null) return "—";
     return num.toLocaleString();
+  };
+
+  // Copy to clipboard
+  const handleCopy = async (content: string): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(content);
+      toast.success("Copied to clipboard");
+    } catch (error) {
+      toast.error("Failed to copy");
+      console.error(error);
+    }
+  };
+
+  // Copy JSON to clipboard
+  const handleCopyJson = async (data: unknown): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+      toast.success("JSON copied to clipboard");
+    } catch (error) {
+      toast.error("Failed to copy JSON");
+      console.error(error);
+    }
+  };
+
+  // Get raw request (use stored data or fall back to reconstruction for old logs)
+  const getRawRequest = (log: LogEntry): unknown => {
+    // Use stored raw request if available
+    if (log.rawRequest) {
+      return log.rawRequest;
+    }
+
+    // Fall back to reconstruction for old logs without rawRequest
+    return {
+      provider: log.provider,
+      model: log.model,
+      feature: log.feature,
+      prompt: log.rawInputTruncated,
+      options: {
+        maxOutputTokens: null,
+        temperature: null,
+        stream: false,
+      },
+      correlationId: log.correlationId,
+      note: "reconstructed from truncated data (legacy log)",
+    };
+  };
+
+  // Get raw response (use stored data or fall back to reconstruction for old logs)
+  const getRawResponse = (log: LogEntry): unknown => {
+    // Use stored raw response if available
+    if (log.rawResponse) {
+      return log.rawResponse;
+    }
+
+    // Fall back to reconstruction for old logs without rawResponse
+    const response: Record<string, unknown> = {
+      status: log.status,
+      text: log.rawOutputTruncated,
+      usage: {
+        inputTokens: log.tokensIn,
+        outputTokens: log.tokensOut,
+      },
+      latencyMs: log.latencyMs,
+      correlationId: log.correlationId,
+      note: "reconstructed from truncated data (legacy log)",
+    };
+
+    // Add error object if present
+    if (log.errorCode || log.errorMessage) {
+      response.error = {
+        code: log.errorCode,
+        message: log.errorMessage,
+      };
+    }
+
+    return response;
   };
 
   return (
@@ -420,80 +499,171 @@ export function AiUsageDashboard({
           </SheetHeader>
 
           {selectedLog && (
-            <div className="mt-6 space-y-6 p-4">
-              {/* Metadata */}
-              <div className="space-y-2">
-                <h3 className="font-semibold">Metadata</h3>
-                <dl className="grid grid-cols-2 gap-2 text-sm">
-                  <dt className="text-muted-foreground">User:</dt>
-                  <dd>{selectedLog.user.name || selectedLog.user.email}</dd>
+            <div className="mt-6">
+              <Tabs defaultValue="pretty" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="pretty">Pretty</TabsTrigger>
+                  <TabsTrigger value="raw">Raw</TabsTrigger>
+                </TabsList>
 
-                  <dt className="text-muted-foreground">Provider:</dt>
-                  <dd>{selectedLog.provider}</dd>
+                {/* Pretty Tab */}
+                <TabsContent value="pretty" className="space-y-6 p-4">
+                  {/* Metadata */}
+                  <div className="space-y-2">
+                    <h3 className="font-semibold">Metadata</h3>
+                    <dl className="grid grid-cols-2 gap-2 text-sm">
+                      <dt className="text-muted-foreground">User:</dt>
+                      <dd>{selectedLog.user.name || selectedLog.user.email}</dd>
 
-                  <dt className="text-muted-foreground">Model:</dt>
-                  <dd>{selectedLog.model}</dd>
+                      <dt className="text-muted-foreground">Provider:</dt>
+                      <dd>{selectedLog.provider}</dd>
 
-                  <dt className="text-muted-foreground">Feature:</dt>
-                  <dd>{selectedLog.feature}</dd>
+                      <dt className="text-muted-foreground">Model:</dt>
+                      <dd>{selectedLog.model}</dd>
 
-                  <dt className="text-muted-foreground">Status:</dt>
-                  <dd>{getStatusBadge(selectedLog.status)}</dd>
+                      <dt className="text-muted-foreground">Feature:</dt>
+                      <dd>{selectedLog.feature}</dd>
 
-                  <dt className="text-muted-foreground">Latency:</dt>
-                  <dd>{selectedLog.latencyMs}ms</dd>
+                      <dt className="text-muted-foreground">Status:</dt>
+                      <dd>{getStatusBadge(selectedLog.status)}</dd>
 
-                  <dt className="text-muted-foreground">Tokens In:</dt>
-                  <dd>{formatNumber(selectedLog.tokensIn)}</dd>
+                      <dt className="text-muted-foreground">Latency:</dt>
+                      <dd>{selectedLog.latencyMs}ms</dd>
 
-                  <dt className="text-muted-foreground">Tokens Out:</dt>
-                  <dd>{formatNumber(selectedLog.tokensOut)}</dd>
+                      <dt className="text-muted-foreground">Tokens In:</dt>
+                      <dd>{formatNumber(selectedLog.tokensIn)}</dd>
 
-                  <dt className="text-muted-foreground">Time:</dt>
-                  <dd>{formatDate(selectedLog.createdAt)}</dd>
-                </dl>
-              </div>
+                      <dt className="text-muted-foreground">Tokens Out:</dt>
+                      <dd>{formatNumber(selectedLog.tokensOut)}</dd>
 
-              {/* Error Info */}
-              {selectedLog.status === "error" && (
-                <div className="space-y-2">
-                  <h3 className="font-semibold text-destructive">
-                    Error Information
-                  </h3>
-                  <div className="rounded-lg bg-destructive/10 p-3 text-sm">
-                    <p className="font-medium">
-                      {selectedLog.errorCode || "Unknown Error"}
-                    </p>
-                    {selectedLog.errorMessage && (
-                      <p className="mt-1 text-muted-foreground">
-                        {selectedLog.errorMessage}
-                      </p>
-                    )}
+                      <dt className="text-muted-foreground">Time:</dt>
+                      <dd>{formatDate(selectedLog.createdAt)}</dd>
+                    </dl>
                   </div>
-                </div>
-              )}
 
-              {/* Input */}
-              <div className="space-y-2">
-                <h3 className="font-semibold">Input (sanitized & truncated)</h3>
-                <div className="rounded-lg bg-muted p-3">
-                  <pre className="whitespace-pre-wrap text-xs font-mono">
-                    {selectedLog.rawInputTruncated || "(empty)"}
-                  </pre>
-                </div>
-              </div>
+                  {/* Error Info */}
+                  {selectedLog.status === "error" && (
+                    <div className="space-y-2">
+                      <h3 className="font-semibold text-destructive">
+                        Error Information
+                      </h3>
+                      <div className="rounded-lg bg-destructive/10 p-3 text-sm">
+                        <p className="font-medium">
+                          {selectedLog.errorCode || "Unknown Error"}
+                        </p>
+                        {selectedLog.errorMessage && (
+                          <p className="mt-1 text-muted-foreground">
+                            {selectedLog.errorMessage}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
-              {/* Output */}
-              <div className="space-y-2">
-                <h3 className="font-semibold">
-                  Output (sanitized & truncated)
-                </h3>
-                <div className="rounded-lg bg-muted p-3">
-                  <pre className="whitespace-pre-wrap text-xs font-mono">
-                    {selectedLog.rawOutputTruncated || "(empty)"}
-                  </pre>
-                </div>
-              </div>
+                  {/* Input */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold">
+                        Input (sanitized & truncated)
+                      </h3>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          handleCopy(selectedLog.rawInputTruncated || "")
+                        }
+                      >
+                        <Copy className="h-4 w-4 mr-1" />
+                        Copy
+                      </Button>
+                    </div>
+                    <div className="rounded-lg bg-muted p-3">
+                      <pre className="whitespace-pre-wrap text-xs font-mono">
+                        {selectedLog.rawInputTruncated || "(empty)"}
+                      </pre>
+                    </div>
+                  </div>
+
+                  {/* Output */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold">
+                        Output (sanitized & truncated)
+                      </h3>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          handleCopy(selectedLog.rawOutputTruncated || "")
+                        }
+                      >
+                        <Copy className="h-4 w-4 mr-1" />
+                        Copy
+                      </Button>
+                    </div>
+                    <div className="rounded-lg bg-muted p-3">
+                      <pre className="whitespace-pre-wrap text-xs font-mono">
+                        {selectedLog.rawOutputTruncated || "(empty)"}
+                      </pre>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                {/* Raw Tab */}
+                <TabsContent value="raw" className="space-y-6 p-4">
+                  {/* Raw Request */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold">Raw Request</h3>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleCopyJson(getRawRequest(selectedLog))}
+                      >
+                        <Copy className="h-4 w-4 mr-1" />
+                        Copy JSON
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedLog.rawRequest
+                        ? "Stored AI SDK request parameters; sanitized."
+                        : "Reconstructed from truncated data (legacy log)."}
+                    </p>
+                    <div className="rounded-lg bg-muted p-3">
+                      <pre className="whitespace-pre-wrap text-xs font-mono">
+                        {JSON.stringify(getRawRequest(selectedLog), null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+
+                  {/* Raw Response */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold">Raw Response</h3>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          handleCopyJson(getRawResponse(selectedLog))
+                        }
+                      >
+                        <Copy className="h-4 w-4 mr-1" />
+                        Copy JSON
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedLog.rawResponse
+                        ? "Stored AI SDK result object; sanitized."
+                        : "Reconstructed from truncated data (legacy log)."}
+                    </p>
+                    <div className="rounded-lg bg-muted p-3">
+                      <pre className="whitespace-pre-wrap text-xs font-mono">
+                        {JSON.stringify(getRawResponse(selectedLog), null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
             </div>
           )}
         </SheetContent>

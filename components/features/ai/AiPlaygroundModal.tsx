@@ -166,7 +166,22 @@ export function AiPlaygroundModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[90vw] md:max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent
+        className="max-w-[90vw] md:max-w-6xl max-h-[90vh] overflow-hidden flex flex-col"
+        showCloseButton={!loading}
+        onInteractOutside={(e) => {
+          if (loading) {
+            e.preventDefault();
+            toast.info("Generation in progress — please wait");
+          }
+        }}
+        onEscapeKeyDown={(e) => {
+          if (loading) {
+            e.preventDefault();
+            toast.info("Generation in progress — please wait");
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Playground: {provider}</DialogTitle>
           <DialogDescription>

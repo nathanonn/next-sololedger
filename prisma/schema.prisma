@@ -211,6 +211,8 @@ model AiGenerationLog {
   correlationId        String    @db.VarChar(100)
   rawInputTruncated    String    @db.Text // Sanitized + truncated
   rawOutputTruncated   String    @db.Text // Sanitized + truncated
+  rawRequest           Json?     @db.Json // Sanitized Vercel AI SDK request params
+  rawResponse          Json?     @db.Json // Sanitized Vercel AI SDK result object
   errorCode            String?   @db.VarChar(100)
   errorMessage         String?   @db.Text
   createdAt            DateTime  @default(now())

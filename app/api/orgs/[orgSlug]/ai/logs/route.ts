@@ -81,7 +81,23 @@ export async function GET(
     const [logs, total] = await Promise.all([
       db.aiGenerationLog.findMany({
         where,
-        include: {
+        select: {
+          id: true,
+          correlationId: true,
+          provider: true,
+          model: true,
+          feature: true,
+          status: true,
+          tokensIn: true,
+          tokensOut: true,
+          latencyMs: true,
+          rawInputTruncated: true,
+          rawOutputTruncated: true,
+          rawRequest: true,
+          rawResponse: true,
+          errorCode: true,
+          errorMessage: true,
+          createdAt: true,
           user: {
             select: {
               email: true,

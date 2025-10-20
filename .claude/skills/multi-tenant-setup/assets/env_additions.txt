@@ -1,0 +1,59 @@
+# Add these environment variables to your .env file
+
+# ============================================================================
+# Multi-Tenant Configuration
+# ============================================================================
+
+# Organization Creation
+ORG_CREATION_ENABLED=true
+ORG_CREATION_LIMIT=5
+
+# Reserved Organization Slugs (comma-separated, no spaces)
+ORG_RESERVED_SLUGS=o,api,dashboard,settings,login,invite,onboarding,_next,assets,auth,public
+
+# Last Organization Cookie
+LAST_ORG_COOKIE_NAME=__last_org
+
+# Invitation Settings
+INVITE_EXP_MINUTES=10080
+INVITES_PER_ORG_PER_DAY=50
+INVITES_PER_IP_15M=5
+
+# ============================================================================
+# Environment Variable Descriptions
+# ============================================================================
+
+# ORG_CREATION_ENABLED
+#   Controls whether regular users can create organizations
+#   Values: "true" | "false"
+#   Note: Superadmins bypass this restriction
+
+# ORG_CREATION_LIMIT
+#   Maximum number of organizations a user can create
+#   Default: 5
+#   Note: Superadmins bypass this limit
+
+# ORG_RESERVED_SLUGS
+#   Comma-separated list of slugs that cannot be used for organizations
+#   Prevents conflicts with app routes and system paths
+#   Default list provided above is recommended
+
+# LAST_ORG_COOKIE_NAME
+#   Name of the cookie that remembers the last visited organization
+#   Used for UX: redirects user to their last active org on login
+#   Default: __last_org
+
+# INVITE_EXP_MINUTES
+#   How long invitation tokens are valid (in minutes)
+#   Default: 10080 (7 days)
+#   After expiry, invitation must be resent with new token
+
+# INVITES_PER_ORG_PER_DAY
+#   Rate limit: maximum invitations per organization per 24 hours
+#   Default: 50
+#   Prevents abuse and spam
+
+# INVITES_PER_IP_15M
+#   Rate limit: maximum invitations from same IP per 15 minutes
+#   Default: 5
+#   Prevents automated abuse

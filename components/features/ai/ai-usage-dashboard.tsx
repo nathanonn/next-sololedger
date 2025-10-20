@@ -63,7 +63,9 @@ type AiUsageDashboardProps = {
   orgSlug: string;
 };
 
-export function AiUsageDashboard({ orgSlug }: AiUsageDashboardProps): React.JSX.Element {
+export function AiUsageDashboard({
+  orgSlug,
+}: AiUsageDashboardProps): React.JSX.Element {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [totals, setTotals] = useState<Totals>({
     requests: 0,
@@ -193,7 +195,9 @@ export function AiUsageDashboard({ orgSlug }: AiUsageDashboardProps): React.JSX.
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatNumber(totals.requests)}</div>
+            <div className="text-2xl font-bold">
+              {formatNumber(totals.requests)}
+            </div>
           </CardContent>
         </Card>
         <Card>
@@ -203,7 +207,9 @@ export function AiUsageDashboard({ orgSlug }: AiUsageDashboardProps): React.JSX.
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatNumber(totals.tokensIn)}</div>
+            <div className="text-2xl font-bold">
+              {formatNumber(totals.tokensIn)}
+            </div>
           </CardContent>
         </Card>
         <Card>
@@ -213,7 +219,9 @@ export function AiUsageDashboard({ orgSlug }: AiUsageDashboardProps): React.JSX.
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatNumber(totals.tokensOut)}</div>
+            <div className="text-2xl font-bold">
+              {formatNumber(totals.tokensOut)}
+            </div>
           </CardContent>
         </Card>
         <Card>
@@ -237,7 +245,10 @@ export function AiUsageDashboard({ orgSlug }: AiUsageDashboardProps): React.JSX.
           <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-2">
               <Label htmlFor="filter-provider">Provider</Label>
-              <Select value={provider || "all"} onValueChange={(v) => handleFilterChange("provider", v)}>
+              <Select
+                value={provider || "all"}
+                onValueChange={(v) => handleFilterChange("provider", v)}
+              >
                 <SelectTrigger id="filter-provider">
                   <SelectValue placeholder="All providers" />
                 </SelectTrigger>
@@ -252,7 +263,10 @@ export function AiUsageDashboard({ orgSlug }: AiUsageDashboardProps): React.JSX.
 
             <div className="space-y-2">
               <Label htmlFor="filter-feature">Feature</Label>
-              <Select value={feature || "all"} onValueChange={(v) => handleFilterChange("feature", v)}>
+              <Select
+                value={feature || "all"}
+                onValueChange={(v) => handleFilterChange("feature", v)}
+              >
                 <SelectTrigger id="filter-feature">
                   <SelectValue placeholder="All features" />
                 </SelectTrigger>
@@ -265,7 +279,10 @@ export function AiUsageDashboard({ orgSlug }: AiUsageDashboardProps): React.JSX.
 
             <div className="space-y-2">
               <Label htmlFor="filter-status">Status</Label>
-              <Select value={status || "all"} onValueChange={(v) => handleFilterChange("status", v)}>
+              <Select
+                value={status || "all"}
+                onValueChange={(v) => handleFilterChange("status", v)}
+              >
                 <SelectTrigger id="filter-status">
                   <SelectValue placeholder="All statuses" />
                 </SelectTrigger>
@@ -340,14 +357,20 @@ export function AiUsageDashboard({ orgSlug }: AiUsageDashboardProps): React.JSX.
                     <TableCell className="font-mono text-xs">
                       {log.correlationId.substring(0, 8)}...
                     </TableCell>
-                    <TableCell className="text-sm">{formatDate(log.createdAt)}</TableCell>
+                    <TableCell className="text-sm">
+                      {formatDate(log.createdAt)}
+                    </TableCell>
                     <TableCell>
-                      <Badge variant="outline">{log.provider.toUpperCase()}</Badge>
+                      <Badge variant="outline">
+                        {log.provider.toUpperCase()}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-sm">{log.model}</TableCell>
                     <TableCell className="text-sm">{log.feature}</TableCell>
                     <TableCell>{getStatusBadge(log.status)}</TableCell>
-                    <TableCell className="text-right text-sm">{log.latencyMs}ms</TableCell>
+                    <TableCell className="text-right text-sm">
+                      {log.latencyMs}ms
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -384,7 +407,10 @@ export function AiUsageDashboard({ orgSlug }: AiUsageDashboardProps): React.JSX.
       </div>
 
       {/* Log Detail Sheet */}
-      <Sheet open={!!selectedLog} onOpenChange={(open) => !open && setSelectedLog(null)}>
+      <Sheet
+        open={!!selectedLog}
+        onOpenChange={(open) => !open && setSelectedLog(null)}
+      >
         <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
           <SheetHeader>
             <SheetTitle>Log Details</SheetTitle>
@@ -394,7 +420,7 @@ export function AiUsageDashboard({ orgSlug }: AiUsageDashboardProps): React.JSX.
           </SheetHeader>
 
           {selectedLog && (
-            <div className="mt-6 space-y-6">
+            <div className="mt-6 space-y-6 p-4">
               {/* Metadata */}
               <div className="space-y-2">
                 <h3 className="font-semibold">Metadata</h3>
@@ -431,11 +457,17 @@ export function AiUsageDashboard({ orgSlug }: AiUsageDashboardProps): React.JSX.
               {/* Error Info */}
               {selectedLog.status === "error" && (
                 <div className="space-y-2">
-                  <h3 className="font-semibold text-destructive">Error Information</h3>
+                  <h3 className="font-semibold text-destructive">
+                    Error Information
+                  </h3>
                   <div className="rounded-lg bg-destructive/10 p-3 text-sm">
-                    <p className="font-medium">{selectedLog.errorCode || "Unknown Error"}</p>
+                    <p className="font-medium">
+                      {selectedLog.errorCode || "Unknown Error"}
+                    </p>
                     {selectedLog.errorMessage && (
-                      <p className="mt-1 text-muted-foreground">{selectedLog.errorMessage}</p>
+                      <p className="mt-1 text-muted-foreground">
+                        {selectedLog.errorMessage}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -453,7 +485,9 @@ export function AiUsageDashboard({ orgSlug }: AiUsageDashboardProps): React.JSX.
 
               {/* Output */}
               <div className="space-y-2">
-                <h3 className="font-semibold">Output (sanitized & truncated)</h3>
+                <h3 className="font-semibold">
+                  Output (sanitized & truncated)
+                </h3>
                 <div className="rounded-lg bg-muted p-3">
                   <pre className="whitespace-pre-wrap text-xs font-mono">
                     {selectedLog.rawOutputTruncated || "(empty)"}

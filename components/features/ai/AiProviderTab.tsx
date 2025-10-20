@@ -67,7 +67,9 @@ export function AiProviderTab({
   const [apiKey, setApiKey] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [curatedModels, setCuratedModels] = useState<CuratedModel[]>([]);
-  const [configuredModels, setConfiguredModels] = useState<ConfiguredModel[]>([]);
+  const [configuredModels, setConfiguredModels] = useState<ConfiguredModel[]>(
+    []
+  );
   const [loadingModels, setLoadingModels] = useState(false);
   const [addingModel, setAddingModel] = useState<string | null>(null);
   const [deletingModel, setDeletingModel] = useState<string | null>(null);
@@ -79,13 +81,16 @@ export function AiProviderTab({
   const fetchModels = async (): Promise<void> => {
     setLoadingModels(true);
     try {
-      const res = await fetch(`/api/orgs/${orgSlug}/ai/models?provider=${provider.provider}`);
+      const res = await fetch(
+        `/api/orgs/${orgSlug}/ai/models?provider=${provider.provider}`
+      );
       if (!res.ok) throw new Error("Failed to fetch models");
       const data = await res.json();
       setCuratedModels(data.curatedModels || []);
       setConfiguredModels(
-        data.configured?.filter((m: ConfiguredModel) => m.provider === provider.provider) ||
-          []
+        data.configured?.filter(
+          (m: ConfiguredModel) => m.provider === provider.provider
+        ) || []
       );
     } catch (error) {
       toast.error("Failed to load models");
@@ -231,10 +236,13 @@ export function AiProviderTab({
   const handleSetDefault = async (modelId: string): Promise<void> => {
     setSettingDefault(modelId);
     try {
-      const res = await fetch(`/api/orgs/${orgSlug}/ai/models/${modelId}/default`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-      });
+      const res = await fetch(
+        `/api/orgs/${orgSlug}/ai/models/${modelId}/default`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
 
       const data = await res.json();
 
@@ -254,17 +262,22 @@ export function AiProviderTab({
     }
   };
 
-  const canOpenPlayground = provider.status === "verified" && configuredModels.length > 0;
+  const canOpenPlayground =
+    provider.status === "verified" && configuredModels.length > 0;
 
   return (
     <div className="space-y-6">
       {/* Status Banner */}
       <div className="flex items-center gap-2">
-        <Badge variant={provider.status === "verified" ? "default" : "secondary"}>
+        <Badge
+          variant={provider.status === "verified" ? "default" : "secondary"}
+        >
           {provider.status === "verified" ? "Verified" : "Missing"}
         </Badge>
         {provider.lastFour && (
-          <span className="text-sm text-muted-foreground">****{provider.lastFour}</span>
+          <span className="text-sm text-muted-foreground">
+            ****{provider.lastFour}
+          </span>
         )}
         {provider.lastVerifiedAt && (
           <span className="text-xs text-muted-foreground">
@@ -289,7 +302,10 @@ export function AiProviderTab({
             onChange={(e) => setApiKey(e.target.value)}
             disabled={verifying}
           />
-          <Button onClick={handleSaveKey} disabled={verifying || !apiKey.trim()}>
+          <Button
+            onClick={handleSaveKey}
+            disabled={verifying || !apiKey.trim()}
+          >
             {verifying ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -329,7 +345,9 @@ export function AiProviderTab({
                 <TableBody>
                   {configuredModels.map((model) => (
                     <TableRow key={model.id}>
-                      <TableCell className="font-medium">{model.label}</TableCell>
+                      <TableCell className="font-medium">
+                        {model.label}
+                      </TableCell>
                       <TableCell>{model.maxOutputTokens}</TableCell>
                       <TableCell>
                         {model.isDefault ? (
@@ -382,7 +400,9 @@ export function AiProviderTab({
             <Label>Available Curated Models</Label>
             <div className="space-y-2">
               {curatedModels
-                .filter((cm) => !configuredModels.some((cfg) => cfg.name === cm.id))
+                .filter(
+                  (cm) => !configuredModels.some((cfg) => cfg.name === cm.id)
+                )
                 .map((model) => (
                   <div
                     key={model.id}
@@ -430,7 +450,7 @@ export function AiProviderTab({
 
         <Button variant="outline" size="sm" asChild>
           <Link
-            href={`/orgs/${orgSlug}/ai/usage?feature=playground&provider=${provider.provider}`}
+            href={`/o/${orgSlug}/settings/organization/ai-usage?feature=playground&provider=${provider.provider}`}
           >
             View Usage
             <ExternalLink className="ml-2 h-3 w-3" />
@@ -472,8 +492,8 @@ export function AiProviderTab({
           <AlertDialogHeader>
             <AlertDialogTitle>Remove API Key?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove the API key for {provider.displayName} and all configured
-              models. This action cannot be undone.
+              This will remove the API key for {provider.displayName} and all
+              configured models. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

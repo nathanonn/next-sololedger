@@ -56,7 +56,8 @@ export function AiPlaygroundModal({
   onOpenChange,
 }: AiPlaygroundModalProps): React.JSX.Element {
   // Find default model or use first
-  const defaultModel = configuredModels.find((m) => m.isDefault) || configuredModels[0];
+  const defaultModel =
+    configuredModels.find((m) => m.isDefault) || configuredModels[0];
 
   const [selectedModelName, setSelectedModelName] = useState<string>(
     defaultModel?.name || ""
@@ -81,7 +82,8 @@ export function AiPlaygroundModal({
   // Reset when dialog opens
   useEffect(() => {
     if (open) {
-      const defaultModel = configuredModels.find((m) => m.isDefault) || configuredModels[0];
+      const defaultModel =
+        configuredModels.find((m) => m.isDefault) || configuredModels[0];
       setSelectedModelName(defaultModel?.name || "");
       setSystemPrompt("");
       setUserPrompt("");
@@ -164,11 +166,12 @@ export function AiPlaygroundModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-[90vw] md:max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>Playground: {provider}</DialogTitle>
           <DialogDescription>
-            Test AI models with custom prompts. Results are logged with feature=&quot;playground&quot;.
+            Test AI models with custom prompts. Results are logged with
+            feature=&quot;playground&quot;.
           </DialogDescription>
         </DialogHeader>
 
@@ -238,7 +241,10 @@ export function AiPlaygroundModal({
                 value={maxOutputTokens}
                 onChange={(e) =>
                   setMaxOutputTokens(
-                    Math.min(maxTokensLimit, Math.max(1, parseInt(e.target.value) || 1))
+                    Math.min(
+                      maxTokensLimit,
+                      Math.max(1, parseInt(e.target.value) || 1)
+                    )
                   )
                 }
                 disabled={loading}
@@ -247,7 +253,10 @@ export function AiPlaygroundModal({
 
             {/* Action Buttons */}
             <div className="flex gap-2 pt-2">
-              <Button onClick={handleSubmit} disabled={loading || !userPrompt.trim()}>
+              <Button
+                onClick={handleSubmit}
+                disabled={loading || !userPrompt.trim()}
+              >
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -284,7 +293,9 @@ export function AiPlaygroundModal({
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center space-y-3">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">Generating response...</p>
+                    <p className="text-sm text-muted-foreground">
+                      Generating response...
+                    </p>
                   </div>
                 </div>
               )}
@@ -299,7 +310,7 @@ export function AiPlaygroundModal({
 
               {!loading && resultJson !== null && (
                 <div className="space-y-3">
-                  <pre className="text-xs font-mono bg-secondary/50 p-4 rounded-lg overflow-x-auto">
+                  <pre className="text-xs font-mono bg-secondary/50 p-4 rounded-lg whitespace-pre-wrap break-all">
                     {JSON.stringify(resultJson, null, 2)}
                   </pre>
                   {typeof resultJson === "object" &&
@@ -327,7 +338,9 @@ export function AiPlaygroundModal({
 
               {!loading && errorJson !== null && (
                 <div className="space-y-3">
-                  <div className="text-sm font-medium text-destructive">Error</div>
+                  <div className="text-sm font-medium text-destructive">
+                    Error
+                  </div>
                   <pre className="text-xs font-mono bg-destructive/10 text-destructive p-4 rounded-lg overflow-x-auto">
                     {JSON.stringify(errorJson, null, 2)}
                   </pre>

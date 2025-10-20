@@ -1,168 +1,122 @@
-# AI Settings — UX Flow & ASCII Wireframes
+# AI Playground + AI Usage Dashboard — Wireframes
 
-This document outlines the flow and screen-by-screen wireframes for the redesigned AI settings with provider tabs and an inline playground modal.
+This document provides a UX flow map and ASCII wireframes for the changes described in `notes/plan.md`.
 
-## UX Flow Map
+## Flow map (high level)
 
-1. Settings: AI Providers (Tabbed)
-   - Load providers from `/api/orgs/:orgSlug/ai/keys`
-   - For each allowed provider, render a tab with status
-   - Select a tab → load models `/api/orgs/:orgSlug/ai/models?provider=<p>`
+	+------------------------------+                     +----------------------------+
+	| Dashboard: AI Usage Logs    | -- select row -->   | Log Details (Sheet)       |
+	| - Filters, Table, Paging    |                     | - Tabs: Pretty | Raw       |
+	+------------------------------+                     | - Metadata, Error (if any) |
+																											| - Input/Output w/ Copy     |
+																											| - Raw Request/Response     |
+																											+----------------------------+
 
-2. Provider Tab Content
-   - API Key Section
-     - Verify & Save (POST /ai/keys)
-     - Remove API Key (DELETE /ai/keys)
-   - Models Section
-     - Configured Models (Set Default, Remove)
-     - Curated Models (Add)
-   - Open Playground Modal
-   - View Usage (navigates to usage dashboard, optionally filtered)
+	+------------------------------+
+	| Playground (opens modal)    |
+	| - Model, Prompts, Tokens    |
+	| - Submit → Generating…      |
+	| - While generating:         |
+	|   * No close via ESC/overlay|
+	|   * Close icon hidden       |
+	|   * Cancel disabled         |
+	+------------------------------+
 
-3. Playground Modal (per Provider)
-   - Inputs (model, system prompt, user prompt, max tokens)
-   - Submit → POST `/api/orgs/:orgSlug/ai/generate` (feature="playground")
-   - Show loading → Show pretty JSON result or error
-   - Copy JSON
+## Screens / States
 
-4. Usage Dashboard
-   - Filterable by feature="playground" and provider
-   - Shows logged runs from playground and elsewhere
+### 1) AI Playground Modal (idle)
 
----
-
-## Screen-by-Screen Wireframes
-
-Legend:
-
-- [ ] Checkbox indicates enable/disable; (disabled) when unavailable
-- (…) denotes dynamic content
-- -> denotes action or navigation
-
-### 1) AI Settings (Tabbed Providers)
-
-```
-┌────────────────────────────────────────────────────────────────────┐
-│ AI Settings                                                        │
-├────────────────────────────────────────────────────────────────────┤
-│ Tabs:  [ OpenAI (Verified) ]  [ Google Gemini (Missing) ] [ Anthropic (Verified) ]
-│        ^ active tab stored in localStorage                         │
-├────────────────────────────────────────────────────────────────────┤
-│ (Active Tab Content — see next wireframe)                          │
-└────────────────────────────────────────────────────────────────────┘
-```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Dialog: Playground: {provider}                                               │
+│ description: Test AI models with custom prompts.                             │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ LEFT (Inputs)                                         │ RIGHT (Response)     │
+│ ─ Model [Select ▼]                                    │ ┌───────────────────┐ │
+│ ─ System Prompt [Textarea]                            │ │ Response          │ │
+│ ─ User Prompt [Textarea]*                             │ │ (empty state)     │ │
+│ ─ Max Output Tokens [Number]                          │ └───────────────────┘ │
+│                                                        │                      │
+│ [Submit] [Cancel]                                      │                      │
+└──────────────────────────────────────────────────────────────────────────────┘
 
 Notes:
+- Close icon visible; overlay/ESC close allowed in idle state.
 
-- Tab labels show provider display name and status badge.
-- Active tab persists by org.
+### 2) AI Playground Modal (generating)
 
-### 2) Provider Tab Content
-
-```
-┌──────────────── Provider: OpenAI (Verified) ───────────────────────┐
-│ ****1234 (verified)   Last verified: 2025-10-19 14:23              │
-│                                                                  │
-│ API Key                                                          │
-│ ┌──────────────────────────────────────────────────────────────┐ │
-│ │ [•••••••••••••••••••••••••••••••••••••••••••••••••••     ]   │ │
-│ │                (placeholder: ****1234 (verified))        │ │
-│ └──────────────────────────────────────────────────────────────┘ │
-│ [Verify & Save]   [Remove API Key]                                │
-│                                                                  │
-│ Configured Models                                                 │
-│ ┌──────────────────────────────────────────────────────────────┐ │
-│ │ • GPT-4o Mini                Max: 16384  [Default]           │ │
-│ │   [Set Default](disabled)   [Remove]                         │ │
-│ │                                                              │ │
-│ │ • GPT-4o                    Max: 16384  [ ]                  │ │
-│ │   [Set Default]            [Remove]                          │ │
-│ └──────────────────────────────────────────────────────────────┘ │
-│                                                                  │
-│ Curated Models (Available)                                       │
-│ ┌──────────────────────────────────────────────────────────────┐ │
-│ │ • GPT-5 Mini — Fast, cost-effective. Max 16384               │ │
-│ │   [Add]                                                      │ │
-│ │ • GPT-5 — Most capable. Max 16384                            │ │
-│ │   [Add]                                                      │ │
-│ └──────────────────────────────────────────────────────────────┘ │
-│                                                                  │
-│ [Open Playground] (enabled when key verified & ≥1 model)          │
-│ [View usage] -> opens usage dashboard (feature=playground,provider=openai)
-└──────────────────────────────────────────────────────────────────┘
-```
-
-Empty/Missing states:
-
-- If status=Missing → show helper: “Add an API key to enable models and playground.”
-- If no configured models → show helper: “Add a model to enable playground.”
-
-### 3) Playground Modal (Two Columns)
-
-```
-┌────────────────────────── Playground: OpenAI ──────────────────────┐
-│                                                                    │
-│ Left (Inputs)                               Right (Result)         │
-│ ┌─────────────────────────────┐            ┌─────────────────────┐ │
-│ │ Model: [ GPT-4o Mini  v ]  │            │  Loading… (spinner) │ │
-│ └─────────────────────────────┘            └─────────────────────┘ │
-│                                                                    │
-│ System Prompt                                                     │
-│ ┌───────────────────────────────────────────────────────────────┐ │
-│ │ [ optional text area…                                       ] │ │
-│ └───────────────────────────────────────────────────────────────┘ │
-│                                                                    │
-│ User Prompt (required)                                            │
-│ ┌───────────────────────────────────────────────────────────────┐ │
-│ │ [ required text area…                                        ] │ │
-│ └───────────────────────────────────────────────────────────────┘ │
-│                                                                    │
-│ Max Output Tokens: [ 16384 ] (min=1, max=curated max)             │
-│                                                                    │
-│ [Submit]  [Cancel]                                                 │
-│                                                                    │
-│                                             ┌────────────────────┐ │
-│                                             │ {                  │ │
-│                                             │   "text": "…",    │ │
-│                                             │   "correlationId": │ │
-│                                             │   "…",            │ │
-│                                             │   "tokensIn": 123,│ │
-│                                             │   "tokensOut": 456,│ │
-│                                             │   "latencyMs": 789 │ │
-│                                             │ }                  │ │
-│                                             └────────────────────┘ │
-│                                             [Copy JSON]            │
-└────────────────────────────────────────────────────────────────────┘
-```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Dialog: Playground: {provider}                                               │
+│ description: Test AI models with custom prompts.                             │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ LEFT (Inputs)                                         │ RIGHT (Response)     │
+│ ─ Model [Select ▼] (disabled)                          │ ┌───────────────────┐ │
+│ ─ System Prompt [Textarea] (disabled)                  │ │ [spinner]         │ │
+│ ─ User Prompt [Textarea]* (disabled)                   │ │ Generating…       │ │
+│ ─ Max Output Tokens [Number] (disabled)                │ └───────────────────┘ │
+│                                                        │                      │
+│ [ Generating… (spinner) ] [Cancel (disabled)]          │                      │
+└──────────────────────────────────────────────────────────────────────────────┘
 
 Notes:
+- Close icon hidden; overlay/ESC attempts do nothing.
+- If user attempts to close, show a brief info toast: “Generation in progress — please wait.”
+- Parent-driven close (e.g., route change) still closes.
 
-- Submit sends POST to `/api/orgs/:orgSlug/ai/generate` with feature="playground".
-- While waiting, show loading state on the right and disable Submit.
-- Pretty-print JSON and show correlationId clearly; copy supports full JSON.
+### 3) AI Usage Dashboard (Logs table)
 
-### 4) Usage Dashboard (Filtered)
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Filters: Provider | Feature | Status | Search [      ] [Search]  [Clear]     │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Table: Correlation | Time | Provider | Model | Feature | Status | Latency     │
+│  row… (clickable)                                                             │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Pagination:  Page X of Y   [Prev] [Next]                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
 
-```
-┌────────────────────────── AI Usage Dashboard ──────────────────────┐
-│ Filters: Provider=[OpenAI]  Feature=[playground]  Status=[All]     │
-│ [Clear Filters]                                                    │
-├────────────────────────────────────────────────────────────────────┤
-│ Totals: Requests | Tokens In | Tokens Out | Avg Latency            │
-├────────────────────────────────────────────────────────────────────┤
-│ Logs (click row to view details)                                   │
-│ [ corrId  | time | provider | model | feature | status | latency ] │
-└────────────────────────────────────────────────────────────────────┘
-```
+### 4) Log Details Sheet (Tabs: Pretty | Raw)
 
----
+┌───────────────────────────────────────────────────── Sheet ──────────────────┐
+│ Title: Log Details                                                  [Close]   │
+│ Sub: Correlation ID: abcdef12…                                               │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Tabs: [ Pretty ]  Raw                                                         │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Pretty tab                                                                    │
+│ ─ Metadata (two-column key/value)                                             │
+│ ─ Error Information (if status === error)                                     │
+│ ─ Input (sanitized & truncated)                         [Copy]                │
+│     ┌───────────────────────────────────────────────┐                         │
+│     │ <pre>…log.rawInputTruncated…</pre>            │                         │
+│     └───────────────────────────────────────────────┘                         │
+│ ─ Output (sanitized & truncated)                        [Copy]                │
+│     ┌───────────────────────────────────────────────┐                         │
+│     │ <pre>…log.rawOutputTruncated…</pre>           │                         │
+│     └───────────────────────────────────────────────┘                         │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Raw tab                                                                       │
+│ Tabs:  Pretty  [ Raw ]                                                        │
+│ ─ Raw Request                                     [Copy JSON]                 │
+│   helper: Reconstructed from stored logs; sanitized and may be truncated.     │
+│     ┌───────────────────────────────────────────────┐                         │
+│     │ {                                            │                         │
+│     │   provider, model, feature, prompt,          │                         │
+│     │   options: { maxOutputTokens: null,          │                         │
+│     │              temperature: null, stream: false },│                      │
+│     │   correlationId, note                        │                         │
+│     │ }                                            │                         │
+│     └───────────────────────────────────────────────┘                         │
+│ ─ Raw Response                                    [Copy JSON]                 │
+│   helper: Reconstructed from stored logs; sanitized and may be truncated.     │
+│     ┌───────────────────────────────────────────────┐                         │
+│     │ {                                            │                         │
+│     │   status, text, usage: { in, out },          │                         │
+│     │   latencyMs, error?, correlationId, note     │                         │
+│     │ }                                            │                         │
+│     └───────────────────────────────────────────────┘                         │
+└──────────────────────────────────────────────────────────────────────────────┘
 
-## Interaction & States
+## Notes & interactions
+- Copy buttons always enabled; if content is empty, we still copy an empty string and show a success/neutral toast.
+- JSON shown in the Raw tab is reconstructed from truncated/sanitized fields. Some fields are intentionally null/omitted to avoid implying exact provider payload parity.
+- Metadata and Error sections are unchanged from current behavior on the Pretty tab.
 
-- Disabled states
-  - Playground button: disabled if key missing or no configured model
-  - Set Default: disabled if already default
-- Busy indicators
-  - Verify & Save, Add/Remove model, Set Default, Generate
-- Toasters
-  - Success/error on key ops and model ops; copy success; network errors

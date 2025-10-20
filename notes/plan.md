@@ -1,154 +1,130 @@
-# AI Settings Redesign + Playground — Implementation Plan
+# AI Playground Lock + AI Usage Dashboard Enhancements — Implementation Plan
 
-This plan refactors the AI settings from a table-based list into a provider-centric tabbed experience with per-provider management and an inline playground. Admins can verify API keys, manage curated models, and test models without leaving the settings page. The playground uses the existing server API for generation and automatically logs usage under the organization with feature="playground".
+This plan makes the AI Playground modal non-closable while a generation is running and enhances the AI Usage Dashboard’s Log Details with copy actions and a clear Pretty/Raw split. We’ll block user-initiated closes (overlay, ESC, close icon) during generation but still allow parent-driven closes, add Copy buttons for sanitized input/output, and introduce Tabs with a reconstructed provider-agnostic Raw request/response JSON view (sanitized/truncated). No server/database changes are required.
 
 ## Scope
 
-- Replace `components/features/ai/ai-keys-management.tsx` UI with Tabs per allowed provider (from env.AI_ALLOWED_PROVIDERS).
-- Within each tab, provide:
-  - API Key management (verify/save, remove, show last four + last verified)
-  - Models management (configured models list, set default, remove; curated models list to add)
-  - A “Playground” modal to test with configured models
-- Ensure all playground requests log to `AiGenerationLog` with feature="playground" (leveraging existing backend).
-- Add a “View usage” link from each provider tab to the AI usage dashboard.
+- Lock `AiPlaygroundModal` during generation (user-initiated closing disabled; parent can still close).
+- Add Copy buttons to sanitized Input and Output in Log Details.
+- Replace single view in Log Details with Tabs: Pretty (default) and Raw.
+- Raw tab shows reconstructed request/response JSON (sanitized/truncated) with Copy JSON buttons.
+- No changes to API routes, database schema, or environment variables.
 
-## Decisions (per user selections)
+## Files to edit
 
-1. Providers source: env-driven allowed providers (1/a)
-2. Playground model choices: configured models only (2/a)
-3. System prompt handling: concatenate system + user into single prompt (no backend change) (3/b)
-4. Response mode: non-streaming with explicit loading state (4/a)
-5. Max output default: curated model maximum (5/a)
-6. Component structure: split into subcomponents (6/b)
-7. Logging feature tag: "playground" (7/a)
-8. Temperature control: omit for now (8/b)
-9. Empty states and helper text: explicit guidance + disabled actions (9/a)
-10. View usage: add link/button in each tab (10/a)
+- `components/features/ai/AiPlaygroundModal.tsx`
+- `components/features/ai/ai-usage-dashboard.tsx`
 
-## Files to Create/Update
+## Implementation details
 
-- Update: `components/features/ai/ai-keys-management.tsx`
-  - Replace table UI with Tabs per provider
-  - Render per-provider tab content using a new subcomponent
-  - Persist selected tab in localStorage (`app.v1.ai.providerTab:{orgSlug}`)
-- Add: `components/features/ai/AiProviderTab.tsx`
-  - Renders API Key section, Models section, Playground trigger, and View Usage link
-  - Handles provider-scoped model fetching and CRUD
-  - Props:
-    - orgSlug: string
-    - provider: { provider, displayName, status, lastFour, lastVerifiedAt, defaultModel }
-    - onProvidersChanged?: () => void (to refresh parent list after key/model ops)
-- Add: `components/features/ai/AiPlaygroundModal.tsx`
-  - Two-column modal: inputs (left) and JSON response (right)
-  - Props:
-    - orgSlug: string
-    - provider: string
-    - curatedModels: CuratedModel[] (for per-model max tokens)
-    - configuredModels: { id, name, label, maxOutputTokens, isDefault, provider }[]
-    - open: boolean
-    - onOpenChange: (open: boolean) => void
-  - Internal state: selectedModelName, systemPrompt, userPrompt, maxOutputTokens, loading, resultJson, errorJson
+### A) AiPlaygroundModal: make non-closable while generating
 
-## Data Sources and Endpoints (existing)
+Context: `AiPlaygroundModal` uses `Dialog`, `DialogContent` (from `components/ui/dialog.tsx`) and tracks `loading`.
 
-- Providers: `GET /api/orgs/[orgSlug]/ai/keys`
-- Save key: `POST /api/orgs/[orgSlug]/ai/keys` (provider, apiKey)
-- Delete key: `DELETE /api/orgs/[orgSlug]/ai/keys` (provider)
-- Models (per provider): `GET /api/orgs/[orgSlug]/ai/models?provider=<provider>` → { curatedModels, configured }
-- Add model: `POST /api/orgs/[orgSlug]/ai/models` (provider, modelName, setAsDefault)
-- Remove model: `DELETE /api/orgs/[orgSlug]/ai/models` (modelId)
-- Set default: `PATCH /api/orgs/[orgSlug]/ai/models/[modelId]/default`
-- Generate (playground): `POST /api/orgs/[orgSlug]/ai/generate`
-  - Body: { feature: "playground", provider, modelName, prompt, maxOutputTokens }
-  - Returns: { text, correlationId, tokensIn?, tokensOut?, latencyMs }
-  - Headers: X-Correlation-ID also returned
+1. Prevent user-initiated close while `loading === true`:
+   - On `DialogContent` add handlers:
+     - `onInteractOutside={(e) => loading && (e.preventDefault(), toast.info("Generation in progress — please wait"))}`
+     - `onEscapeKeyDown={(e) => loading && (e.preventDefault(), toast.info("Generation in progress — please wait"))}`
+   - Pass `showCloseButton={!loading}` to `DialogContent` so the “X” is hidden while generating.
 
-## UI Details
+2. Keep Cancel button disabled while loading (already in place):
+   - Continue using `disabled={loading}` on the Cancel button.
 
-- Tabs
-  - Labels: provider display name + small status badge (Verified/Missing)
-  - Active tab remembered per org
+3. Respect parent-driven closes (choice 2/b):
+   - Keep `Dialog` controlled by `open` and `onOpenChange` as-is, but wrap/guard locally so user-initiated close attempts are blocked by the handlers above. If the parent intentionally calls `onOpenChange(false)` (e.g., route change), allow it to close.
 
-- API Key section (inside tab)
-  - Input (password) + Verify & Save button
-  - Placeholder when verified: \*\*\*\*lastFour (verified)
-  - Last verified timestamp (small text)
-  - Destructive Remove API key button
+4. Optional UX feedback (choice 1/b):
+   - Show a small info toast when a close attempt is blocked during generation to reduce user confusion.
 
-- Models section (inside tab)
-  - Configured models list (card/list)
-    - Show label, maxOutputTokens
-    - Default badge or "Set Default" button
-    - Remove button (disable if only model and default per provider)
-  - Curated models (filtered not-added)
-    - Show label, description, and max tokens
-    - Add button (first add becomes default)
+Notes:
 
-- Playground trigger
-  - Button "Open Playground"
-  - Disabled when provider key missing or no configured models
+- No changes required in `components/ui/dialog.tsx` because it already forwards event handlers and supports `showCloseButton`.
 
-- Playground modal
-  - Left inputs:
-    - Model: Select from configured models for the provider (default = provider default or first)
-    - System prompt: Textarea (optional)
-    - User prompt: Textarea (required)
-    - Max output tokens: Number; default to curated model’s max; min=1, max=curated max
-    - Submit (primary) + Cancel
-  - Right results:
-    - While loading: spinner + placeholder
-    - On success: pretty JSON, shows correlationId and latency
-    - On error: pretty JSON/error block
-    - Copy button to copy full JSON
+Acceptance:
 
-- View usage link
-  - Navigates to the org’s usage page, optionally with `?feature=playground&provider=<provider>`
+- During generation: overlay click, ESC do nothing; close icon hidden; Cancel disabled.
+- After generation completes: dialog is closable normally.
 
-## State and Data Flow
+### B) AI Usage Dashboard: Copy actions + Pretty/Raw tabs
 
-- Parent component (`ai-keys-management`)
-  - Fetch providers on mount and after key/model mutations
-  - Render tabs and pass selected provider into `AiProviderTab`
-  - Store selected tab in localStorage
+Context: `ai-usage-dashboard.tsx` renders the Log Details in a `Sheet` with Metadata, Error info, and sanitized Input/Output.
 
-- `AiProviderTab`
-  - Fetch models for provider on mount and when needed
-  - Use curatedModels to determine per-model max tokens (pass to playground modal)
-  - Handle key verify/delete, add/remove model, set default
-  - Notify parent to refresh providers when default model changes or key changes
+1. Add Copy buttons for sanitized Input and Output (choice 3/a):
+   - In the Input section header, add a small ghost button with Copy icon that copies `selectedLog.rawInputTruncated || ""` to clipboard and shows a toast.
+   - In the Output section header, add a similar Copy button copying `selectedLog.rawOutputTruncated || ""`.
+   - Always enabled, even if content is empty; show a success/neutral toast for predictability.
 
-- `AiPlaygroundModal`
-  - Build prompt by concatenating system + user
-  - POST to generate endpoint with feature="playground"
-  - Render JSON result and allow copy
+2. Introduce Tabs: Pretty (default) and Raw (choice 4/c):
+   - Use `components/ui/tabs.tsx` to add Tabs within the Sheet content.
+   - Pretty Tab: existing layout — Metadata, Error (if any), Input (with Copy), Output (with Copy).
+   - Raw Tab: two blocks — “Raw Request” and “Raw Response” — each with a Copy JSON button.
 
-## Validation, Errors, and Loading
+3. Reconstructed provider-agnostic JSON schema (choice 5/b):
+   - Raw Request (sanitized/truncated):
+     {
+     provider: log.provider,
+     model: log.model,
+     feature: log.feature,
+     prompt: log.rawInputTruncated,
+     options: {
+     maxOutputTokens: null,
+     temperature: null,
+     stream: false
+     },
+     correlationId: log.correlationId,
+     note: "sanitized; may be truncated"
+     }
+   - Raw Response:
+     {
+     status: log.status,
+     text: log.rawOutputTruncated,
+     usage: { inputTokens: log.tokensIn, outputTokens: log.tokensOut },
+     latencyMs: log.latencyMs,
+     ...(log.errorCode || log.errorMessage ? { error: { code: log.errorCode, message: log.errorMessage } } : {}),
+     correlationId: log.correlationId,
+     note: "sanitized; may be truncated"
+     }
 
-- Client-side checks: require user prompt, ensure model selected
-- Disable action buttons while busy
-- Show toasts on success/failure; show inline errors in JSON pane for generate
-- Respect CSRF and auth (handled by existing routes)
+4. Labels and placement (choices 6/a and 7/a):
+   - Section headings: “Raw Request” / “Raw Response”.
+   - Helper text under headings: “Reconstructed from stored logs; sanitized and may be truncated.”
+   - Copy buttons live in the title bar of each section for consistent placement.
 
-## Security and Guardrails
+Acceptance:
 
-- All AI calls remain server-side (Node runtime routes)
-- Never expose API keys to client; only show last four
-- Respect env.AI_ALLOWED_PROVIDERS when rendering tabs
-- Token clamping enforced server-side; UI also constrains inputs
+- Pretty tab shows current (sanitized) Input/Output with Copy actions; Raw tab shows reconstructed JSON with Copy JSON actions.
+- Copy actions work reliably with toasts; empty content copies as empty string but still shows success.
 
-## QA / Acceptance Criteria
+## Edge cases
 
-- Tabs render from allowed providers; statuses and last four visible
-- API key verify/delete work and refresh state
-- Models add/remove/default operations work; curated list filters correctly
-- Playground disabled until a key and at least one model exist
-- Playground shows loading, then pretty JSON with correlationId and latency
-- Logs record each playground run with feature="playground"
-- “View usage” link opens the usage view filtered by feature=playground
+- Empty input/output: copy actions still enabled and copy empty string.
+- Very long text: UI keeps code blocks scrollable; copy still works.
+- Error logs: Raw Response includes `error` object only when present; Pretty tab shows Error section as today.
+- Clipboard permission: if denied, show error toast; failure does not crash UI.
+- iOS/older browsers: rely on `navigator.clipboard`; if unavailable, optionally fall back to a transient `<textarea>` and `document.execCommand("copy")` (only if needed; likely not required for supported browsers).
 
-## Optional Enhancements (post-MVP)
+## Testing / QA steps
 
-- Persist playground form inputs per provider (localStorage)
-- Add temperature slider (0–2)
-- Support streaming preview in playground
-- Bulk add curated models for a provider
+Manual tests:
+
+1. Playground
+   - Start generation. Press ESC and click overlay → dialog remains.
+   - Confirm close icon hidden and Cancel disabled.
+   - On block, an info toast appears.
+   - After generation completes, dialog closes normally.
+2. Usage Dashboard
+   - Open Log Details. In Pretty tab, copy Input and Output; verify clipboard and toasts.
+   - Switch to Raw tab; copy Raw Request/Response JSON; verify JSON validity and content.
+   - Verify error logs include error object in Raw Response and Error section in Pretty.
+   - Try with empty output; copying still works.
+
+## Risks and mitigations
+
+- Clipboard API quirks → show error toast on failure; consider optional fallback if needed.
+- Misinterpretation of Raw JSON → add helper text making clear it’s reconstructed and sanitized/truncated.
+
+## Out of scope
+
+- Persisting raw request/response in DB.
+- Adding new filters/endpoints.
+- Provider-specific raw shapes.

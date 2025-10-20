@@ -4,7 +4,7 @@
 
 ```
 ./worktrees.sh setup \
-  --branches feat/org_ai_features \
+  --branches feat/org_ai_features_enhance \
   --db-url postgresql://pi:password@localhost:5432/nextboilerplate
 ```
 
@@ -17,7 +17,7 @@
 ## merge
 
 ```
-./worktrees.sh merge --branches feat/org_ai_features --into main
+./worktrees.sh merge --branches feat/org_ai_features_enhance --into main
 ```
 
 # create wireframes based on plan

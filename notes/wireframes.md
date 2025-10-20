@@ -1,143 +1,142 @@
-Title: Invitations UX — Flow & Wireframes
+# UX Flow Map and Screen-by-Screen Wireframes
 
-Legend
+This UX follows the organization-wide AI plan in `notes/plan.md`. Admins (and superadmins) manage provider keys and curated models under AI API Keys. AI Usage provides filters, totals, a paginated log table, and detail inspector, with purge controls. All actions are server-backed and CSRF-protected.
 
-- [S] Server call
-- [C] Client action
-- [UI] Screen/card state
+---
 
-UX Flow Map
+## Flow Map
 
-1. Admin invites a member
-   [UI] Admin Members tab
-   └─ InviteMemberDialog → Submit
-   [S] POST /api/orgs/:slug/invitations
-   [C] On success: toast + show invite URL (optional), dispatch `org:invitations:changed` → PendingInvitationsList refetches
+- Entry (Org Admin): Organization Settings → AI API Keys ("ai-keys")
+	- Server: fetch provider statuses and models
+	- Actions: add/update/delete provider key, verify before save; manage curated models; set default model
 
-2. Admin resends or revokes invite
-   [UI] PendingInvitationsList → Resend/Revoke
-   [S] POST /api/orgs/:slug/invitations/:id/resend
-   [S] DELETE /api/orgs/:slug/invitations/:id
-   [C] On success: toast + (resend) optional copy link, dispatch event, list refetches
+- Entry (Org Admin): Organization Settings → AI Usage ("ai-usage")
+	- Server: fetch paginated logs with filters and totals
+	- Actions: filter, view detail, purge logs older than N days
 
-3. Invitee opens invite link
-   [C] /invite?token=...
-   If not authenticated → redirect to /login?next=/invite?token=...
-   If authenticated → [S] GET /api/orgs/invitations/validate?token=... - valid + access (member or superadmin) → show Already Member card with button to /o/:slug - valid + no access → show Accept/Decline card
-   Accept → [S] POST /api/orgs/invitations/accept → redirect /o/:slug - invalid/expired → show Invalid Invite card + guidance to request resend
+- Entry (Superadmin): Admin → Organizations → [Org] → AI API Keys / AI Usage
+	- Same flows, scoped to selected organization
 
-Screen Wireframes (ASCII)
+---
 
-Admin — Members Tab (header area)
+## Screen 1: AI API Keys Management
 
-┌───────────────────────────────────────────────────────────────┐
-│ Members [Invite Member] │
-└───────────────────────────────────────────────────────────────┘
+Goal: Let org admins configure provider API keys and curated models. Keys are never shown in plaintext after save; verification occurs server-side.
 
-Invite Member Dialog
+```
++-----------------------------------------------------------------------------------+
+| Settings / Organization / AI API Keys                                             |
++-----------------------------------------------------------------------------------+
+| Provider        | Status        | Default Model        | Actions                  |
+|-----------------------------------------------------------------------------------|
+| OpenAI          | Verified ✓    | gpt-4o-mini          | [ Manage ]               |
+| Google Gemini   | Missing       | —                    | [ Manage ]               |
+| Anthropic       | Verified ✓    | claude-3-haiku       | [ Manage ]               |
++-----------------------------------------------------------------------------------+
+```
 
-┌──────────────── Invite Member ────────────────┐
-│ Name (optional): [ ] │
-│ Email*: [ ] │
-│ Role*: [ Admin ▼ ][ Member ] │
-│ [ ] Send email │
-│ │
-│ [Cancel] [Send Invitation] │
-└─────────────────────────────────────────────────┘
+Manage drawer/modal (per provider)
 
-On success (inline success view inside dialog):
-
-┌────────────── Invitation Sent ────────────────┐
-│ Invitation link: │
-│ https://app.example.com/invite?token=... │
-│ ✓ Email sent to user@example.com │
-│ │
-│ [Copy link] [Open invite] [Done] │
-└───────────────────────────────────────────────┘
-
-Pending Invitations List
-
-┌──────────────── Pending Invitations ──────────┐
-│ Invitations waiting to be accepted │
-├───────────────────────────────────────────────┤
-│ • user@example.com (Member) │
-│ Invited by admin@acme.com · Expires: 2025‑11‑01
-│ [Resend] [Revoke] │
-│ │
-│ • jane@example.com (Admin) │
-│ Invited by admin@acme.com · Expires: 2025‑11‑04
-│ [Resend] [Revoke] │
-└───────────────────────────────────────────────┘
-
-Resend Confirmation Dialog
-
-┌────────────── Resend Invitation ──────────────┐
-│ Resend invitation to user@example.com? │
-│ │
-│ [Cancel] [Resend Invite]│
-└───────────────────────────────────────────────┘
-
-Revoke Confirmation Dialog
-
-┌────────────── Revoke Invitation ──────────────┐
-│ Revoke invitation for user@example.com? │
-│ │
-│ [Cancel] [Revoke] │
-└───────────────────────────────────────────────┘
-
-Invite Page — Loading
-
-┌───────────────────────────────────────────────┐
-│ ⟳ Validating invitation... │
-└───────────────────────────────────────────────┘
-
-Invite Page — Invalid/Expired
-
-┌──────────────── Invalid Invitation ───────────┐
-│ This invitation link is invalid or expired. │
-│ │
-│ [Go to Dashboard] [Sign In] │
-└───────────────────────────────────────────────┘
-
-Invite Page — Already a Member (or Superadmin)
-
-┌────────────── You’re already a member ────────┐
-│ You already have access to this organization. │
-│ │
-│ [Go to Dashboard] │
-└───────────────────────────────────────────────┘
-
-Invite Page — Valid Invite (Accept/Decline)
-
-┌──────────────── You’ve been invited! ─────────┐
-│ You’ve been invited to join: │
-│ │
-│ Organization: ACME, Inc. │
-│ Role: Member │
-│ │
-│ [Accept & Join] [Decline] │
-│ │
-│ Having trouble? Ask an admin to resend. │
-└───────────────────────────────────────────────┘
-
-Toast Examples
-
-- “Invitation created” (after POST create)
-- “Invitation email resent” (resend)
-- “Invitation revoked” (revoke)
-- “Link copied” (copy inviteUrl)
-
-Empty States
-
-- Pending Invitations (none)
-
-┌──────────────── Pending Invitations ──────────┐
-│ No pending invitations │
-│ Invite users to get started. │
-└───────────────────────────────────────────────┘
+```
++------------------------------------------------------------+
+| Manage: OpenAI                                             |
+|------------------------------------------------------------|
+| API Key                                                    |
+| [ sk-************************************** ] [ Verify ]   |
+|                                                            |
+| Models (curated)                                           |
+| [ Add Model ]                                              |
+| --------------------------------------------------------   |
+| | Name         | Label     | Max Out | Default |       |   |
+| | gpt-4o-mini  | 4o Mini   | 2048    |  (•)    |       |   |
+| | gpt-4o       | 4o        | 2048    |  ( )    |       |   |
+| --------------------------------------------------------   |
+| [ Set Default ]  [ Remove Model ]                          |
+|                                                            |
+| Save [ Update ]   Cancel                                   |
++------------------------------------------------------------+
+```
 
 Notes
+- Verify triggers a server call using the provider adapter; on success, persist encryptedKey, lastVerifiedAt, and lastFour.
+- Clamp Max Out to provider caps; curated model list reduces error risk.
+- Prevent removing a default model without choosing a replacement.
+- Show Sonner toasts for success/error; never display plaintext after save.
 
-- The pending list auto‑refreshes via a global `org:invitations:changed` event.
-- The Invite page derives org name, role, and access state from the validation endpoint.
-- Superadmins never accept on behalf; they see the direct dashboard CTA.
+Edge cases
+- Invalid key → show structured error; do not persist
+- Rate limited → show retry messaging (429) with backoff
+- Remove key → warn that dependent models become inactive
+
+---
+
+## Screen 2: AI Usage Logs Dashboard
+
+Goal: Provide observability and retention for AI requests without exposing sensitive data. Admins only at org level; superadmins at admin level.
+
+```
++-----------------------------------------------------------------------------------+
+| Settings / Organization / AI Usage                                                |
++-----------------------------------------------------------------------------------+
+| Filters: [ Provider v ] [ Model v ] [ Feature v ] [ Status v ] [ Date Range v ]   |
+|          [ Search (correlation/text) ]                                            |
+|-----------------------------------------------------------------------------------|
+| Totals: Requests: 1,248 | In: 98,420 tok | Out: 122,311 tok | Avg Lat: 842 ms    |
+|-----------------------------------------------------------------------------------|
+| Correlation ID  | Time              | Prov | Model          | Feat  | St         |
+|-----------------------------------------------------------------------------------|
+| 7f6a…9b         | 2025-10-01 14:18  | OAI  | gpt-4o-mini    | gen   | OK         |
+| 18cd…42         | 2025-10-01 13:57  | GEM  | gemini-1.5     | gen   | OK         |
+| b2aa…77         | 2025-10-01 13:51  | ANT  | claude-3-haiku | gen   | ER         |
+| ...                                                                             |
++-----------------------------------------------------------------------------------+
+| [ Prev ] Page 1/42 [ Next ]   [ Purge older than (30) days ]  [ Go ]             |
++-----------------------------------------------------------------------------------+
+```
+
+Row detail inspector (drawer/modal)
+
+```
++------------------------------------------------------------+
+| Log: 7f6a…9b                                               |
+|------------------------------------------------------------|
+| Meta                                                       |
+| Organization: acme                                         |
+| User: user@example.com                                     |
+| Provider: OpenAI   | Model: gpt-4o-mini                    |
+| Feature: generic-text | Status: OK | Latency: 612 ms       |
+| Tokens: in 132, out 289                                    |
+| Correlation ID: 7f6a…9b                                    |
+| Time: 2025-10-01 14:18:22                                  |
+|------------------------------------------------------------|
+| Input (sanitized & truncated)                              |
+| "Write a two-sentence summary of…"                         |
+|------------------------------------------------------------|
+| Output (sanitized & truncated)                             |
+| "Here are two sentences …"                                 |
+|------------------------------------------------------------|
+| Provider response meta (safe fields only)                  |
+| httpStatus: 200 | modelVersion: 2025-09-30                 |
++------------------------------------------------------------+
+```
+
+Notes
+- Search filters by correlationId and free-text across sanitized fields.
+- Totals recompute per filter; pagination preserves filters.
+- Purge action deletes logs older than N days; confirm before execution; toast on success.
+
+Edge cases
+- Large outputs → ensure truncation UI and copy-visible only
+- Error entries → show errorCode and safe errorMessage
+- Stream cancellations → status "canceled"; tokens may be partial; still record correlationId
+
+---
+
+## Components & Patterns
+
+- shadcn/ui: Table, Dialog/Sheet, Input, Button, Badge, Select, Pagination, Tabs
+- RHF + Zod for forms (API Keys modal)
+- Sonner for toasts (success/error/info)
+- Server-first pages with Node runtime API calls; CSRF validation on mutations
+- Correlation ID visible and copyable from detail view
+

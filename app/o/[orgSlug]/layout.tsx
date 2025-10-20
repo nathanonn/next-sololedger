@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getOrgBySlug, getUserMembership, isSuperadmin } from "@/lib/org-helpers";
+import {
+  getOrgBySlug,
+  getUserMembership,
+  isSuperadmin,
+} from "@/lib/org-helpers";
 import { DashboardShell } from "@/components/features/dashboard/dashboard-shell";
 import { env } from "@/lib/env";
 import { Home, Settings } from "lucide-react";
@@ -44,7 +48,9 @@ export default async function OrgLayout({
   }
 
   // Determine user's role (use membership role or 'superadmin')
-  const userRole = userIsSuperadmin ? "superadmin" : membership?.role || "member";
+  const userRole = userIsSuperadmin
+    ? "superadmin"
+    : membership?.role || "member";
   const isAdminOrSuperadmin = userRole === "admin" || userRole === "superadmin";
 
   // Compute canCreateOrganizations

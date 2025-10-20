@@ -41,7 +41,8 @@ export default function InvitePage(): React.JSX.Element {
 
   const [isLoading, setIsLoading] = React.useState(true);
   const [isAccepting, setIsAccepting] = React.useState(false);
-  const [validation, setValidation] = React.useState<InvitationValidation | null>(null);
+  const [validation, setValidation] =
+    React.useState<InvitationValidation | null>(null);
 
   // Check authentication and validate token
   React.useEffect(() => {
@@ -117,10 +118,10 @@ export default function InvitePage(): React.JSX.Element {
       // Success
       toast.success(result.message || "Invitation accepted successfully");
 
-      // Redirect to organization (use slug from response)
+      // Redirect to organization dashboard (use slug from response)
       if (result.organization?.slug) {
         setTimeout(() => {
-          router.push(`/o/${result.organization.slug}`);
+          router.push(`/o/${result.organization.slug}/dashboard`);
         }, 1000);
       } else {
         // Fallback to home
@@ -211,7 +212,7 @@ export default function InvitePage(): React.JSX.Element {
             </p>
             <Button
               onClick={() =>
-                router.push(`/o/${validation.invitation?.orgSlug}`)
+                router.push(`/o/${validation.invitation?.orgSlug}/dashboard`)
               }
               className="w-full"
             >

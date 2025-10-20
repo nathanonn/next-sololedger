@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { validateCsrf } from "@/lib/csrf";
 import { generateInvitationToken } from "@/lib/invitation-helpers";
+import { sendInvitationEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
 
@@ -103,6 +104,7 @@ export async function POST(
           metadata: {
             invitationId: id,
             invitedEmail: invitation.email,
+            role: invitation.role,
           },
         },
       });
@@ -114,8 +116,30 @@ export async function POST(
     const appUrl = env.APP_URL;
     const inviteUrl = `${appUrl}/invite?token=${token}`;
 
-    // TODO: Send email via Resend
-    console.log(`Resent invitation URL: ${inviteUrl}`);
+    // Send email via Resend
+    let emailSent = false;
+    try {
+      await sendInvitationEmail({
+        to: invitation.email,
+        orgName: org.name,
+        inviteUrl,
+        role: invitation.role,
+        invitedBy: user.email,
+      });
+      emailSent = true;
+    } catch (emailError) {
+      // In dev, email service logs to console and doesn't throw
+      // In non-dev, email service throws if not configured
+      if (env.NODE_ENV !== "development") {
+        console.error("Failed to send invitation email:", emailError);
+        return NextResponse.json(
+          { error: "Email service not configured. Cannot send invitation." },
+          { status: 500 }
+        );
+      }
+      // In dev, continue even if email "fails" (it's just logged)
+      emailSent = false;
+    }
 
     return NextResponse.json({
       invitation: {
@@ -124,6 +148,7 @@ export async function POST(
         role: updatedInvitation.role,
         expiresAt: updatedInvitation.expiresAt,
         inviteUrl,
+        sent: emailSent,
       },
     });
   } catch (error) {

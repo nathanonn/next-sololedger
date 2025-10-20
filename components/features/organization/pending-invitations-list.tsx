@@ -65,6 +65,22 @@ export function PendingInvitationsList({
     }
   }, [error]);
 
+  // Listen for org:invitations:changed event
+  React.useEffect(() => {
+    const handleInvitationsChanged = (event: Event) => {
+      const customEvent = event as CustomEvent<{ orgSlug: string }>;
+      if (customEvent.detail?.orgSlug === orgSlug) {
+        refetch();
+      }
+    };
+
+    window.addEventListener("org:invitations:changed", handleInvitationsChanged);
+
+    return () => {
+      window.removeEventListener("org:invitations:changed", handleInvitationsChanged);
+    };
+  }, [orgSlug, refetch]);
+
   // Handle resend confirmation
   const handleOpenResendDialog = (invitationId: string, email: string) => {
     setSelectedInvitation(invitationId);
@@ -105,8 +121,13 @@ export function PendingInvitationsList({
       setResendDialogOpen(false);
       setIsSubmitting(false);
 
-      // Refetch invitations
-      await refetch();
+      // Dispatch event to refresh invitations list
+      const event = new CustomEvent("org:invitations:changed", {
+        detail: { orgSlug },
+      });
+      window.dispatchEvent(event);
+
+      // Call callback
       if (onResent) {
         onResent();
       }
@@ -143,8 +164,13 @@ export function PendingInvitationsList({
       setRevokeDialogOpen(false);
       setIsSubmitting(false);
 
-      // Refetch invitations
-      await refetch();
+      // Dispatch event to refresh invitations list
+      const event = new CustomEvent("org:invitations:changed", {
+        detail: { orgSlug },
+      });
+      window.dispatchEvent(event);
+
+      // Call callback
       if (onRevoked) {
         onRevoked();
       }

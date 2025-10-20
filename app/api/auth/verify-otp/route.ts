@@ -51,26 +51,41 @@ export async function POST(request: Request): Promise<Response> {
       select: { id: true, role: true },
     });
 
-    // Signup toggle check: if disabled and user doesn't exist, block
-    if (!env.AUTH_SIGNUP_ENABLED && !existingUser) {
-      await audit({
-        action: "otp_verify_failure",
+    // Check for active invitation
+    const activeInvitation = await db.invitation.findFirst({
+      where: {
         email: normalizedEmail,
-        ip,
-        metadata: { reason: "signup_disabled_no_account" },
-      });
-      return NextResponse.json(
-        {
-          error:
-            "Your account does not exist and sign up is disabled. Please contact an administrator.",
-        },
-        { status: 401 }
-      );
+        acceptedAt: null,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+    });
+
+    // Signup toggle check: if disabled and user doesn't exist, allow if active invite exists
+    if (!env.AUTH_SIGNUP_ENABLED && !existingUser) {
+      if (!activeInvitation) {
+        await audit({
+          action: "otp_verify_failure",
+          email: normalizedEmail,
+          ip,
+          metadata: { reason: "signup_disabled_no_account" },
+        });
+        return NextResponse.json(
+          {
+            error:
+              "Your account does not exist and sign up is disabled. Please contact an administrator.",
+          },
+          { status: 401 }
+        );
+      }
+      // Active invitation exists - allow signup to proceed (bypass will be logged in audit)
     }
 
-    // Allowlist check (superadmins bypass allowlist)
+    // Allowlist check (superadmins and invited users bypass allowlist)
     const isSuperadmin = existingUser?.role === "superadmin";
-    if (!isSuperadmin && !isEmailAllowed(normalizedEmail)) {
+    const hasActiveInvite = !!activeInvitation;
+
+    if (!isSuperadmin && !hasActiveInvite && !isEmailAllowed(normalizedEmail)) {
       await audit({
         action: "otp_verify_failure",
         email: normalizedEmail,
@@ -133,6 +148,9 @@ export async function POST(request: Request): Promise<Response> {
       userId: user.id,
       email: normalizedEmail,
       ip,
+      ...(hasActiveInvite && {
+        metadata: { reason: "invited_signup_allowed" },
+      }),
     });
 
     const redirect = safeRedirect(next);

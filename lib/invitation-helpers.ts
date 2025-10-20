@@ -117,9 +117,11 @@ export interface InvitationValidation {
   invitation?: {
     id: string;
     organizationId: string;
+    orgSlug: string;
     email: string;
     role: string;
     orgName: string;
+    expiresAt: Date;
   };
 }
 
@@ -137,6 +139,7 @@ export async function validateInvitationToken(
         select: {
           id: true,
           name: true,
+          slug: true,
         },
       },
     },
@@ -158,9 +161,11 @@ export async function validateInvitationToken(
         invitation: {
           id: inv.id,
           organizationId: inv.organizationId,
+          orgSlug: inv.organization.slug,
           email: inv.email,
           role: inv.role,
           orgName: inv.organization.name,
+          expiresAt: inv.expiresAt,
         },
       };
     }

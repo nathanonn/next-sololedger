@@ -3,9 +3,6 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-
-// Force dynamic rendering since we use searchParams
-export const dynamic = "force-dynamic";
 import {
   Card,
   CardContent,
@@ -18,17 +15,23 @@ import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
 
 /**
  * Invitation accept page
- * Allows users to accept organization invitations
+ * Allows users to accept organization invitations with proper validation
  */
 
-interface InvitationInfo {
+interface InvitationValidation {
   valid: boolean;
   error?: string;
   invitation?: {
+    id: string;
+    orgId: string;
+    orgSlug: string;
     orgName: string;
     email: string;
     role: string;
+    expiresAt: string;
   };
+  alreadyMember?: boolean;
+  userIsSuperadmin?: boolean;
 }
 
 export default function InvitePage(): React.JSX.Element {
@@ -38,33 +41,14 @@ export default function InvitePage(): React.JSX.Element {
 
   const [isLoading, setIsLoading] = React.useState(true);
   const [isAccepting, setIsAccepting] = React.useState(false);
-  const [invitationInfo, setInvitationInfo] =
-    React.useState<InvitationInfo | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = React.useState<
-    boolean | null
-  >(null);
+  const [validation, setValidation] = React.useState<InvitationValidation | null>(null);
 
   // Check authentication and validate token
   React.useEffect(() => {
-    async function checkAuth() {
+    async function validateInvitation() {
       try {
-        // Check if user is authenticated by trying to fetch their orgs
-        const authResponse = await fetch("/api/orgs");
-        const authenticated = authResponse.ok;
-        setIsAuthenticated(authenticated);
-
-        if (!authenticated) {
-          // Not signed in - redirect to login
-          const loginUrl = `/login?next=${encodeURIComponent(
-            `/invite?token=${token}`
-          )}`;
-          router.push(loginUrl);
-          return;
-        }
-
-        // Authenticated - validate the token
         if (!token) {
-          setInvitationInfo({
+          setValidation({
             valid: false,
             error: "No invitation token provided",
           });
@@ -72,20 +56,31 @@ export default function InvitePage(): React.JSX.Element {
           return;
         }
 
-        // Note: We'll validate the token when accepting
-        // For now, show a generic "ready to accept" message
-        setInvitationInfo({
-          valid: true,
-          invitation: {
-            orgName: "an organization",
-            email: "",
-            role: "member",
-          },
-        });
+        // Check if user is authenticated by trying to fetch their orgs
+        const authResponse = await fetch("/api/orgs");
+        const authenticated = authResponse.ok;
+
+        if (!authenticated) {
+          // Not signed in - redirect to login with next param
+          const loginUrl = `/login?next=${encodeURIComponent(
+            `/invite?token=${token}`
+          )}`;
+          router.push(loginUrl);
+          return;
+        }
+
+        // Authenticated - validate the token via API
+        const validateResponse = await fetch(
+          `/api/orgs/invitations/validate?token=${encodeURIComponent(token)}`
+        );
+
+        const result: InvitationValidation = await validateResponse.json();
+
+        setValidation(result);
         setIsLoading(false);
       } catch (error) {
-        console.error("Error checking authentication:", error);
-        setInvitationInfo({
+        console.error("Error validating invitation:", error);
+        setValidation({
           valid: false,
           error: "Failed to validate invitation",
         });
@@ -93,7 +88,7 @@ export default function InvitePage(): React.JSX.Element {
       }
     }
 
-    checkAuth();
+    validateInvitation();
   }, [token, router]);
 
   async function handleAccept(): Promise<void> {
@@ -112,7 +107,7 @@ export default function InvitePage(): React.JSX.Element {
 
       if (!response.ok) {
         toast.error(result.error || "Failed to accept invitation");
-        setInvitationInfo({
+        setValidation({
           valid: false,
           error: result.error || "Failed to accept invitation",
         });
@@ -122,10 +117,10 @@ export default function InvitePage(): React.JSX.Element {
       // Success
       toast.success(result.message || "Invitation accepted successfully");
 
-      // Redirect to organization
-      if (result.organization) {
+      // Redirect to organization (use slug from response)
+      if (result.organization?.slug) {
         setTimeout(() => {
-          router.push(`/o/${result.organization.slug}/dashboard`);
+          router.push(`/o/${result.organization.slug}`);
         }, 1000);
       } else {
         // Fallback to home
@@ -145,7 +140,7 @@ export default function InvitePage(): React.JSX.Element {
   }
 
   // Loading state
-  if (isLoading || isAuthenticated === null) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
@@ -163,7 +158,7 @@ export default function InvitePage(): React.JSX.Element {
   }
 
   // Invalid invitation
-  if (!invitationInfo?.valid) {
+  if (!validation?.valid) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
@@ -175,8 +170,11 @@ export default function InvitePage(): React.JSX.Element {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              {invitationInfo?.error ||
+              {validation?.error ||
                 "This invitation link is invalid or has expired."}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Having trouble? Ask an admin to resend the invitation.
             </p>
             <div className="flex gap-2">
               <Button onClick={() => router.push("/")} className="flex-1">
@@ -190,6 +188,35 @@ export default function InvitePage(): React.JSX.Element {
                 Sign In
               </Button>
             </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Already a member or superadmin
+  if (validation.alreadyMember || validation.userIsSuperadmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-6 w-6 text-green-600" />
+              <CardTitle>You&apos;re already a member</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              You already have access to {validation.invitation?.orgName}.
+            </p>
+            <Button
+              onClick={() =>
+                router.push(`/o/${validation.invitation?.orgSlug}`)
+              }
+              className="w-full"
+            >
+              Go to Dashboard
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -214,14 +241,14 @@ export default function InvitePage(): React.JSX.Element {
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Organization:</span>
               <span className="font-medium">
-                {invitationInfo.invitation?.orgName}
+                {validation.invitation?.orgName}
               </span>
             </div>
-            {invitationInfo.invitation?.role && (
+            {validation.invitation?.role && (
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Role:</span>
                 <span className="font-medium capitalize">
-                  {invitationInfo.invitation.role}
+                  {validation.invitation.role}
                 </span>
               </div>
             )}
@@ -253,8 +280,7 @@ export default function InvitePage(): React.JSX.Element {
           </div>
 
           <p className="text-xs text-muted-foreground text-center">
-            Having trouble? This invitation may have expired. Ask an admin to
-            resend it.
+            Having trouble? Ask an admin to resend it.
           </p>
         </CardContent>
       </Card>

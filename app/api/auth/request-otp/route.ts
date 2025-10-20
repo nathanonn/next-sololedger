@@ -49,26 +49,41 @@ export async function POST(request: Request): Promise<Response> {
       select: { id: true, role: true },
     });
 
-    // Signup toggle check: if disabled and user doesn't exist, block with explicit message
-    if (!env.AUTH_SIGNUP_ENABLED && !existingUser) {
-      await audit({
-        action: "otp_request_blocked",
+    // Check for active invitation
+    const activeInvitation = await db.invitation.findFirst({
+      where: {
         email: normalizedEmail,
-        ip,
-        metadata: { reason: "signup_disabled_no_account" },
-      });
-      return NextResponse.json(
-        {
-          error:
-            "No account found for this email. Sign up is disabled. Please contact an administrator.",
-        },
-        { status: 400 }
-      );
+        acceptedAt: null,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+    });
+
+    // Signup toggle check: if disabled and user doesn't exist, allow if active invite exists
+    if (!env.AUTH_SIGNUP_ENABLED && !existingUser) {
+      if (!activeInvitation) {
+        await audit({
+          action: "otp_request_blocked",
+          email: normalizedEmail,
+          ip,
+          metadata: { reason: "signup_disabled_no_account" },
+        });
+        return NextResponse.json(
+          {
+            error:
+              "No account found for this email. Sign up is disabled. Please contact an administrator.",
+          },
+          { status: 400 }
+        );
+      }
+      // Active invitation exists - allow signup to proceed (bypass will be logged in audit)
     }
 
-    // Allowlist check (superadmins bypass allowlist)
+    // Allowlist check (superadmins and invited users bypass allowlist)
     const isSuperadmin = existingUser?.role === "superadmin";
-    if (!isSuperadmin && !isEmailAllowed(normalizedEmail)) {
+    const hasActiveInvite = !!activeInvitation;
+
+    if (!isSuperadmin && !hasActiveInvite && !isEmailAllowed(normalizedEmail)) {
       await audit({
         action: "otp_request_blocked",
         email: normalizedEmail,
@@ -144,6 +159,9 @@ export async function POST(request: Request): Promise<Response> {
       action: "otp_request",
       email: normalizedEmail,
       ip,
+      ...(hasActiveInvite && {
+        metadata: { reason: "invited_signup_allowed" },
+      }),
     });
 
     return NextResponse.json(

@@ -20,7 +20,6 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-  FormDescription,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import {
@@ -104,6 +103,12 @@ export function InviteMemberDialog({
       toast.success("Invitation created successfully");
       router.refresh();
       setIsSubmitting(false);
+
+      // Dispatch event to refresh pending invitations list
+      const event = new CustomEvent("org:invitations:changed", {
+        detail: { orgSlug },
+      });
+      window.dispatchEvent(event);
 
       // Call onInvited callback
       if (onInvited) {

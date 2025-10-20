@@ -55,16 +55,28 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    const invitation = tokenValidation.invitation;
+    const validatedInvitation = tokenValidation.invitation;
 
     // Check if user email matches invitation email
-    if (user.email.toLowerCase() !== invitation.email.toLowerCase()) {
+    if (user.email.toLowerCase() !== validatedInvitation.email.toLowerCase()) {
       return NextResponse.json(
         {
           error:
             "This invitation is for a different email address. Please sign in with the invited email.",
         },
         { status: 403 }
+      );
+    }
+
+    // Fetch full invitation details (including name field)
+    const invitation = await db.invitation.findUnique({
+      where: { id: validatedInvitation.id },
+    });
+
+    if (!invitation) {
+      return NextResponse.json(
+        { error: "Invitation not found" },
+        { status: 404 }
       );
     }
 
@@ -85,10 +97,21 @@ export async function POST(request: Request): Promise<Response> {
         data: { acceptedAt: new Date() },
       });
 
+      // Get organization details for redirect
+      const org = await db.organization.findUnique({
+        where: { id: invitation.organizationId },
+        select: { id: true, name: true, slug: true },
+      });
+
       return NextResponse.json({
         message: "You are already a member of this organization",
         organizationId: invitation.organizationId,
         alreadyMember: true,
+        organization: {
+          id: org!.id,
+          name: org!.name,
+          slug: org!.slug,
+        },
       });
     }
 

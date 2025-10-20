@@ -29,6 +29,9 @@ model User {
   createdOrganizations   Organization[] @relation("OrganizationCreator")
   sentInvitations        Invitation[]   @relation("InvitationSender")
   defaultOrganization    Organization?  @relation("UserDefaultOrganization", fields: [defaultOrganizationId], references: [id], onDelete: SetNull)
+  createdAiKeys          OrganizationAiApiKey[] @relation("AiKeyCreatedBy")
+  updatedAiKeys          OrganizationAiApiKey[] @relation("AiKeyUpdatedBy")
+  aiGenerationLogs       AiGenerationLog[] @relation("AiGenerationLogs")
 
   @@index([email])
   @@index([defaultOrganizationId])
@@ -92,11 +95,15 @@ model Organization {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  createdBy             User           @relation("OrganizationCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy             User                     @relation("OrganizationCreator", fields: [createdById], references: [id], onDelete: Restrict)
   memberships           Membership[]
   invitations           Invitation[]
   auditLogs             AuditLog[]
-  defaultForUsers       User[]         @relation("UserDefaultOrganization")
+  defaultForUsers       User[]                   @relation("UserDefaultOrganization")
+  aiApiKeys             OrganizationAiApiKey[]
+  aiModels              OrganizationAiModel[]
+  aiGenerationLogs      AiGenerationLog[]
+  aiSettings            OrganizationAiSettings?
 
   @@index([slug])
   @@index([createdById])
@@ -141,4 +148,92 @@ model Invitation {
   @@index([tokenHash])
   @@index([email, acceptedAt, revokedAt])
   @@map("invitations")
+}
+
+// OrganizationAiApiKey: encrypted API keys per provider
+model OrganizationAiApiKey {
+  id               String   @id @default(cuid())
+  organizationId   String
+  provider         String   @db.VarChar(20) // "openai" | "gemini" | "anthropic"
+  encryptedKey     String   @db.Text // AES-256-GCM envelope, base64-encoded
+  lastFour         String   @db.VarChar(4) // Last 4 chars for display
+  lastVerifiedAt   DateTime
+  createdByUserId  String
+  updatedByUserId  String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization  Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy     User                  @relation("AiKeyCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  updatedBy     User                  @relation("AiKeyUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
+  models        OrganizationAiModel[]
+
+  @@unique([organizationId, provider])
+  @@index([organizationId, provider])
+  @@index([organizationId, updatedAt])
+  @@map("organization_ai_api_keys")
+}
+
+// OrganizationAiModel: curated models per organization/provider
+model OrganizationAiModel {
+  id               String   @id @default(cuid())
+  organizationId   String
+  provider         String   @db.VarChar(20) // "openai" | "gemini" | "anthropic"
+  name             String   @db.VarChar(100) // e.g., "gpt-4o-mini"
+  label            String   @db.VarChar(100) // Display label
+  maxOutputTokens  Int
+  isDefault        Boolean  @default(false)
+  apiKeyId         String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  apiKey       OrganizationAiApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider, name])
+  @@index([organizationId, provider])
+  @@index([organizationId, isDefault])
+  @@map("organization_ai_models")
+}
+
+// AiGenerationLog: usage logs with tokens, latency, correlation IDs
+model AiGenerationLog {
+  id                   String    @id @default(cuid())
+  organizationId       String
+  userId               String
+  provider             String    @db.VarChar(20)
+  model                String    @db.VarChar(100)
+  feature              String    @db.VarChar(50) // e.g., "generic-text"
+  status               String    @db.VarChar(20) // "ok" | "error" | "canceled"
+  tokensIn             Int?
+  tokensOut            Int?
+  latencyMs            Int
+  correlationId        String    @db.VarChar(100)
+  rawInputTruncated    String    @db.Text // Sanitized + truncated
+  rawOutputTruncated   String    @db.Text // Sanitized + truncated
+  errorCode            String?   @db.VarChar(100)
+  errorMessage         String?   @db.Text
+  createdAt            DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation("AiGenerationLogs", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, provider, model, createdAt])
+  @@index([organizationId, correlationId])
+  @@map("ai_generation_logs")
+}
+
+// OrganizationAiSettings: retention and rate limit overrides
+model OrganizationAiSettings {
+  id               String   @id @default(cuid())
+  organizationId   String   @unique
+  retentionDays    Int      @default(30)
+  perMinuteLimit   Int? // Nullable; override env
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("organization_ai_settings")
 }

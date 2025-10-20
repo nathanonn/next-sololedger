@@ -7,6 +7,7 @@ import {
   getUserMembership,
 } from "@/lib/org-helpers";
 import { OrganizationSettingsLayout } from "@/components/features/organization/organization-settings-layout";
+import { env } from "@/lib/env";
 
 /**
  * Organization Settings Tabs Layout
@@ -69,6 +70,7 @@ export default async function OrganizationSettingsTabsLayout({
       orgSlug={orgSlug}
       membersCount={membersCount}
       baseHref={`/o/${orgSlug}/settings/organization`}
+      aiEnabled={env.AI_FEATURES_ENABLED}
     >
       {children}
     </OrganizationSettingsLayout>

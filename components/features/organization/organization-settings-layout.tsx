@@ -19,6 +19,7 @@ type OrganizationSettingsLayoutProps = {
   membersCount: number;
   baseHref: string;
   maxWidth?: string;
+  aiEnabled?: boolean;
   children: React.ReactNode;
 };
 
@@ -30,6 +31,7 @@ export function OrganizationSettingsLayout({
   membersCount,
   baseHref,
   maxWidth = "max-w-4xl",
+  aiEnabled = false,
   children,
 }: OrganizationSettingsLayoutProps): React.JSX.Element {
   return (
@@ -56,6 +58,7 @@ export function OrganizationSettingsLayout({
       <OrganizationTabs
         baseHref={baseHref}
         membersCount={membersCount}
+        aiEnabled={aiEnabled}
       />
 
       {/* Tab Content */}

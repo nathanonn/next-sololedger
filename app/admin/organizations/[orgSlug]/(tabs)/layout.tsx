@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { OrganizationSettingsLayout } from "@/components/features/organization/organization-settings-layout";
+import { env } from "@/lib/env";
 
 /**
  * Admin Organization Tabs Layout
@@ -44,6 +45,7 @@ export default async function AdminOrganizationTabsLayout({
       membersCount={org._count.memberships}
       baseHref={`/admin/organizations/${orgSlug}`}
       maxWidth=""
+      aiEnabled={env.AI_FEATURES_ENABLED}
     >
       {children}
     </OrganizationSettingsLayout>

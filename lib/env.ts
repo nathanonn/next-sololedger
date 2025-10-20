@@ -95,6 +95,24 @@ const envSchema = z.object({
 
   // Seed (for scripts)
   SEED_EMAIL: z.string().email().optional(),
+
+  // AI Features
+  AI_FEATURES_ENABLED: z
+    .string()
+    .transform((val) => val === "true")
+    .default("false"),
+  APP_ENCRYPTION_KEY: z.string().optional(), // base64-encoded 32 bytes (AES-256-GCM), required when AI_FEATURES_ENABLED=true
+  AI_RATE_LIMIT_PER_MIN_ORG: z
+    .string()
+    .transform((val) => parseInt(val, 10))
+    .default("60"),
+  AI_RATE_LIMIT_PER_MIN_IP: z
+    .string()
+    .transform((val) => parseInt(val, 10))
+    .default("120"),
+  AI_ALLOWED_PROVIDERS: z
+    .string()
+    .default("openai,gemini,anthropic"),
 })
   .refine(
     (data) => {
@@ -107,6 +125,19 @@ const envSchema = z.object({
     {
       message: "ALLOWED_EMAILS is required when AUTH_ALLOWLIST_ENABLED=true",
       path: ["ALLOWED_EMAILS"],
+    }
+  )
+  .refine(
+    (data) => {
+      // If AI features are enabled, APP_ENCRYPTION_KEY must be provided
+      if (data.AI_FEATURES_ENABLED && !data.APP_ENCRYPTION_KEY) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "APP_ENCRYPTION_KEY is required when AI_FEATURES_ENABLED=true",
+      path: ["APP_ENCRYPTION_KEY"],
     }
   );
 

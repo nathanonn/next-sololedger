@@ -16,6 +16,9 @@ type OrganizationTabsProps = {
   membersCount: number;
   showGeneral?: boolean;
   showMembers?: boolean;
+  showAiKeys?: boolean;
+  showAiUsage?: boolean;
+  aiEnabled?: boolean;
 };
 
 export function OrganizationTabs({
@@ -23,6 +26,9 @@ export function OrganizationTabs({
   membersCount,
   showGeneral = true,
   showMembers = true,
+  showAiKeys = true,
+  showAiUsage = true,
+  aiEnabled = false,
 }: OrganizationTabsProps): React.JSX.Element {
   const segment = useSelectedLayoutSegment();
   const activeTab = segment || "general";
@@ -43,6 +49,16 @@ export function OrganizationTabs({
                 {membersCount}
               </Badge>
             </TabsTrigger>
+          </Link>
+        )}
+        {aiEnabled && showAiKeys && (
+          <Link href={`${baseHref}/ai-keys`}>
+            <TabsTrigger value="ai-keys">AI API Keys</TabsTrigger>
+          </Link>
+        )}
+        {aiEnabled && showAiUsage && (
+          <Link href={`${baseHref}/ai-usage`}>
+            <TabsTrigger value="ai-usage">AI Usage</TabsTrigger>
           </Link>
         )}
       </TabsList>

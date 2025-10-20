@@ -1,4 +1,4 @@
-import { generateText, streamText } from "ai";
+import { generateText, streamText, APICallError } from "ai";
 import { randomBytes } from "crypto";
 import { db } from "@/lib/db";
 import {
@@ -27,6 +27,7 @@ type GenerateOptions = {
   maxOutputTokens?: number;
   correlationId?: string;
   temperature?: number;
+  abortSignal?: AbortSignal;
 };
 
 type GenerateResult = {
@@ -137,6 +138,7 @@ export async function generateTextWithLogging(
     maxOutputTokens,
     correlationId = generateCorrelationId(),
     temperature,
+    abortSignal,
   } = options;
 
   const startTime = Date.now();
@@ -163,8 +165,9 @@ export async function generateTextWithLogging(
     const result = await generateText({
       model: client.model(config.modelName),
       prompt,
-      maxTokens: config.maxOutputTokens,
+      maxOutputTokens: config.maxOutputTokens,
       temperature,
+      abortSignal,
     });
 
     const latencyMs = Date.now() - startTime;
@@ -177,8 +180,8 @@ export async function generateTextWithLogging(
       model: config.modelName,
       feature,
       status: "ok",
-      tokensIn: result.usage?.promptTokens,
-      tokensOut: result.usage?.completionTokens,
+      tokensIn: result.usage?.inputTokens,
+      tokensOut: result.usage?.outputTokens,
       latencyMs,
       correlationId,
       rawInput: prompt,
@@ -188,8 +191,8 @@ export async function generateTextWithLogging(
     return {
       text: result.text,
       correlationId,
-      tokensIn: result.usage?.promptTokens,
-      tokensOut: result.usage?.completionTokens,
+      tokensIn: result.usage?.inputTokens,
+      tokensOut: result.usage?.outputTokens,
       latencyMs,
     };
   } catch (error) {
@@ -202,17 +205,27 @@ export async function generateTextWithLogging(
     if (error instanceof AiConfigError) {
       errorCode = error.code;
       errorMessage = error.message;
+    } else if (error instanceof APICallError) {
+      // Handle AI SDK API errors with status codes
+      errorMessage = error.message;
+      const statusCode = error.statusCode;
+
+      if (statusCode === 401) {
+        errorCode = "UNAUTHORIZED";
+      } else if (statusCode === 429) {
+        errorCode = "RATE_LIMITED";
+      } else if (statusCode === 403) {
+        errorCode = "QUOTA_EXCEEDED";
+      } else if (statusCode && statusCode >= 500) {
+        errorCode = "SERVER_ERROR";
+      } else {
+        errorCode = `API_ERROR_${statusCode || "UNKNOWN"}`;
+      }
     } else if (error instanceof Error) {
       errorMessage = error.message;
 
-      // Parse common AI SDK errors
-      if (errorMessage.includes("401") || errorMessage.includes("unauthorized")) {
-        errorCode = "UNAUTHORIZED";
-      } else if (errorMessage.includes("429") || errorMessage.includes("rate limit")) {
-        errorCode = "RATE_LIMITED";
-      } else if (errorMessage.includes("quota")) {
-        errorCode = "QUOTA_EXCEEDED";
-      } else if (errorMessage.includes("timeout")) {
+      // Parse common error patterns
+      if (errorMessage.includes("timeout")) {
         errorCode = "TIMEOUT";
       } else if (errorMessage.includes("network") || errorMessage.includes("ECONNREFUSED")) {
         errorCode = "NETWORK_ERROR";
@@ -261,6 +274,7 @@ export async function streamTextWithLogging(
     maxOutputTokens,
     correlationId = generateCorrelationId(),
     temperature,
+    abortSignal,
   } = options;
 
   const startTime = Date.now();
@@ -287,8 +301,9 @@ export async function streamTextWithLogging(
     const result = streamText({
       model: client.model(config.modelName),
       prompt,
-      maxTokens: config.maxOutputTokens,
+      maxOutputTokens: config.maxOutputTokens,
       temperature,
+      abortSignal,
     });
 
     // Collect full text and metadata for logging
@@ -306,8 +321,8 @@ export async function streamTextWithLogging(
         model: config.modelName,
         feature,
         status: "ok",
-        tokensIn: usage?.promptTokens,
-        tokensOut: usage?.completionTokens,
+        tokensIn: usage?.inputTokens,
+        tokensOut: usage?.outputTokens,
         latencyMs,
         correlationId,
         rawInput: prompt,
@@ -315,8 +330,8 @@ export async function streamTextWithLogging(
       });
 
       return {
-        tokensIn: usage?.promptTokens,
-        tokensOut: usage?.completionTokens,
+        tokensIn: usage?.inputTokens,
+        tokensOut: usage?.outputTokens,
         latencyMs,
       };
     })();
@@ -337,16 +352,27 @@ export async function streamTextWithLogging(
     if (error instanceof AiConfigError) {
       errorCode = error.code;
       errorMessage = error.message;
+    } else if (error instanceof APICallError) {
+      // Handle AI SDK API errors with status codes
+      errorMessage = error.message;
+      const statusCode = error.statusCode;
+
+      if (statusCode === 401) {
+        errorCode = "UNAUTHORIZED";
+      } else if (statusCode === 429) {
+        errorCode = "RATE_LIMITED";
+      } else if (statusCode === 403) {
+        errorCode = "QUOTA_EXCEEDED";
+      } else if (statusCode && statusCode >= 500) {
+        errorCode = "SERVER_ERROR";
+      } else {
+        errorCode = `API_ERROR_${statusCode || "UNKNOWN"}`;
+      }
     } else if (error instanceof Error) {
       errorMessage = error.message;
 
-      if (errorMessage.includes("401") || errorMessage.includes("unauthorized")) {
-        errorCode = "UNAUTHORIZED";
-      } else if (errorMessage.includes("429") || errorMessage.includes("rate limit")) {
-        errorCode = "RATE_LIMITED";
-      } else if (errorMessage.includes("quota")) {
-        errorCode = "QUOTA_EXCEEDED";
-      } else if (errorMessage.includes("timeout")) {
+      // Parse common error patterns
+      if (errorMessage.includes("timeout")) {
         errorCode = "TIMEOUT";
       } else if (errorMessage.includes("network") || errorMessage.includes("ECONNREFUSED")) {
         errorCode = "NETWORK_ERROR";

@@ -1,7 +1,7 @@
-import { openai } from "@ai-sdk/openai";
-import { anthropic } from "@ai-sdk/anthropic";
-import { google } from "@ai-sdk/google";
-import { generateText } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { generateText, type LanguageModel, APICallError } from "ai";
 import { db } from "@/lib/db";
 import { decryptSecret } from "@/lib/secrets";
 import { env } from "@/lib/env";
@@ -135,7 +135,7 @@ export function getAllowedProviders(): AiProvider[] {
  */
 type ProviderClient = {
   provider: AiProvider;
-  model: (name: string) => ReturnType<typeof openai | typeof anthropic | typeof google>;
+  model: (name: string) => LanguageModel;
 };
 
 /**
@@ -171,21 +171,27 @@ export async function getOrgProviderClient(
 
   // Return provider-specific client factory
   switch (provider) {
-    case "openai":
+    case "openai": {
+      const openai = createOpenAI({ apiKey: plainKey });
       return {
         provider,
-        model: (name: string) => openai(name, { apiKey: plainKey }),
+        model: (name: string) => openai(name),
       };
-    case "gemini":
+    }
+    case "gemini": {
+      const google = createGoogleGenerativeAI({ apiKey: plainKey });
       return {
         provider,
-        model: (name: string) => google(name, { apiKey: plainKey }),
+        model: (name: string) => google(name),
       };
-    case "anthropic":
+    }
+    case "anthropic": {
+      const anthropic = createAnthropic({ apiKey: plainKey });
       return {
         provider,
-        model: (name: string) => anthropic(name, { apiKey: plainKey }),
+        model: (name: string) => anthropic(name),
       };
+    }
     default:
       throw new Error(`Unsupported provider: ${provider}`);
   }
@@ -207,72 +213,85 @@ export async function verifyApiKey(
   const testPrompt = "Hello";
 
   try {
+    let model: LanguageModel;
+
     switch (provider) {
       case "openai": {
-        await generateText({
-          model: openai("gpt-4o-mini", { apiKey: plainKey }),
-          prompt: testPrompt,
-          maxTokens: 5,
-        });
+        const openai = createOpenAI({ apiKey: plainKey });
+        model = openai("gpt-4o-mini");
         break;
       }
       case "gemini": {
-        await generateText({
-          model: google("gemini-2.5-flash", { apiKey: plainKey }),
-          prompt: testPrompt,
-          maxTokens: 5,
-        });
+        const google = createGoogleGenerativeAI({ apiKey: plainKey });
+        model = google("gemini-2.5-flash");
         break;
       }
       case "anthropic": {
-        await generateText({
-          model: anthropic("claude-3-5-haiku-20241022", { apiKey: plainKey }),
-          prompt: testPrompt,
-          maxTokens: 5,
-        });
+        const anthropic = createAnthropic({ apiKey: plainKey });
+        model = anthropic("claude-3-5-haiku-20241022");
         break;
       }
       default:
         throw new Error(`Unsupported provider: ${provider}`);
     }
+
+    // Make the verification call
+    await generateText({
+      model,
+      prompt: testPrompt,
+      maxOutputTokens: 32,
+    });
   } catch (error) {
     // Parse error to provide helpful feedback
+    const displayName = PROVIDER_CAPS[provider].displayName;
+
+    if (error instanceof APICallError) {
+      const statusCode = error.statusCode;
+
+      if (statusCode === 401) {
+        throw new Error(
+          `Invalid API key for ${displayName}. Please check your key and try again.`
+        );
+      }
+
+      if (statusCode === 429) {
+        throw new Error(
+          `Rate limited by ${displayName}. Please try again later.`
+        );
+      }
+
+      if (statusCode === 403) {
+        throw new Error(
+          `API quota exceeded for ${displayName}. Please check your billing.`
+        );
+      }
+
+      // Generic API error with status code
+      throw new Error(
+        `Verification failed for ${displayName} (HTTP ${statusCode}): ${error.message}`
+      );
+    }
+
     if (error instanceof Error) {
       const message = error.message.toLowerCase();
 
-      if (message.includes("401") || message.includes("unauthorized") || message.includes("invalid_api_key")) {
+      if (
+        message.includes("network") ||
+        message.includes("econnrefused") ||
+        message.includes("timeout")
+      ) {
         throw new Error(
-          `Invalid API key for ${PROVIDER_CAPS[provider].displayName}. Please check your key and try again.`
-        );
-      }
-
-      if (message.includes("429") || message.includes("rate limit")) {
-        throw new Error(
-          `Rate limited by ${PROVIDER_CAPS[provider].displayName}. Please try again later.`
-        );
-      }
-
-      if (message.includes("quota") || message.includes("insufficient_quota")) {
-        throw new Error(
-          `API quota exceeded for ${PROVIDER_CAPS[provider].displayName}. Please check your billing.`
-        );
-      }
-
-      if (message.includes("network") || message.includes("econnrefused") || message.includes("timeout")) {
-        throw new Error(
-          `Network error connecting to ${PROVIDER_CAPS[provider].displayName}. Please try again.`
+          `Network error connecting to ${displayName}. Please try again.`
         );
       }
 
       // Generic error with original message
       throw new Error(
-        `Verification failed for ${PROVIDER_CAPS[provider].displayName}: ${error.message}`
+        `Verification failed for ${displayName}: ${error.message}`
       );
     }
 
-    throw new Error(
-      `Unknown error verifying ${PROVIDER_CAPS[provider].displayName} API key`
-    );
+    throw new Error(`Unknown error verifying ${displayName} API key`);
   }
 }
 
@@ -286,7 +305,10 @@ export function getCuratedModels(provider: AiProvider): CuratedModel[] {
 /**
  * Validates that a model name exists in the curated list
  */
-export function isCuratedModel(provider: AiProvider, modelName: string): boolean {
+export function isCuratedModel(
+  provider: AiProvider,
+  modelName: string
+): boolean {
   return CURATED_MODELS[provider]?.some((m) => m.id === modelName) ?? false;
 }
 

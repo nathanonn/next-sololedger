@@ -4,7 +4,7 @@
 
 ```
 ./worktrees.sh setup \
-  --branches feat/org_ai_features_enhance \
+  --branches feat/org_app_integration \
   --db-url postgresql://pi:password@localhost:5432/nextboilerplate
 ```
 
@@ -17,16 +17,16 @@
 ## merge
 
 ```
-./worktrees.sh merge --branches feat/org_ai_features_enhance --into main
+./worktrees.sh merge --branches feat/org_app_integration --into main
 ```
 
 # create wireframes based on plan
 
-Based on this plan outlined at @notes/plan.md, give me the ux flow map and screen-by-screen content using the ASCII wireframe. Put it at @notes/wireframes.md.
+Based on this plan outlined at @notes/plan.md, give me the ux flow map and screen-by-screen content using the ASCII wireframe. Put it at @notes/wireframes.md. IMPORTANT: Always wrap codeblocks with triple backticks around the wireframes for proper formatting.
 
 # create wireframes based on plan (copilot version)
 
-Based on this plan outlined at #notes/plan.md, give me the ux flow map and screen-by-screen content using the ASCII wireframe. Put it at #notes/wireframes.md.
+Based on this plan outlined at #notes/plan.md, give me the ux flow map and screen-by-screen content using the ASCII wireframe. Put it at #notes/wireframes.md. IMPORTANT: Always wrap codeblocks with triple backticks around the wireframes for proper formatting.
 
 # Implementation
 

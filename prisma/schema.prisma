@@ -32,6 +32,8 @@ model User {
   createdAiKeys          OrganizationAiApiKey[] @relation("AiKeyCreatedBy")
   updatedAiKeys          OrganizationAiApiKey[] @relation("AiKeyUpdatedBy")
   aiGenerationLogs       AiGenerationLog[] @relation("AiGenerationLogs")
+  createdIntegrations    OrganizationIntegration[] @relation("IntegrationCreatedBy")
+  updatedIntegrations    OrganizationIntegration[] @relation("IntegrationUpdatedBy")
 
   @@index([email])
   @@index([defaultOrganizationId])
@@ -104,6 +106,7 @@ model Organization {
   aiModels              OrganizationAiModel[]
   aiGenerationLogs      AiGenerationLog[]
   aiSettings            OrganizationAiSettings?
+  integrations          OrganizationIntegration[]
 
   @@index([slug])
   @@index([createdById])
@@ -238,4 +241,71 @@ model OrganizationAiSettings {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("organization_ai_settings")
+}
+
+// OrganizationIntegration: external service integrations (Reddit, Notion)
+model OrganizationIntegration {
+  id                    String    @id @default(cuid())
+  organizationId        String
+  provider              String    @db.VarChar(20) // "reddit" | "notion"
+  status                String    @db.VarChar(20) @default("connected") // "connected" | "disconnected" | "error"
+  accountId             String?   @db.VarChar(255) // Reddit user id; Notion workspace/bot id
+  accountName           String?   @db.VarChar(255) // Reddit username; Notion workspace name
+  encryptedAccessToken  String    @db.Text // AES-256-GCM encrypted
+  encryptedRefreshToken String?   @db.Text // AES-256-GCM encrypted, Reddit only
+  tokenType             String?   @db.VarChar(50) // e.g., "bearer"
+  expiresAt             DateTime?
+  scope                 String?   @db.Text
+  createdByUserId       String
+  updatedByUserId       String
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("IntegrationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  updatedBy    User         @relation("IntegrationUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, provider])
+  @@index([organizationId, provider])
+  @@index([organizationId, updatedAt])
+  @@map("organization_integrations")
+}
+
+// IntegrationAuthState: temporary OAuth state storage (PKCE)
+model IntegrationAuthState {
+  id             String   @id @default(cuid())
+  state          String   @db.VarChar(255)
+  provider       String   @db.VarChar(20)
+  organizationId String   @db.VarChar(255)
+  userId         String   @db.VarChar(255)
+  codeVerifier   String?  @db.VarChar(255) // PKCE code verifier
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  @@index([state, provider])
+  @@map("integration_auth_states")
+}
+
+// IntegrationCallLog: API call usage logs
+model IntegrationCallLog {
+  id                 String   @id @default(cuid())
+  organizationId     String   @db.VarChar(255)
+  userId             String   @db.VarChar(255)
+  provider           String   @db.VarChar(20)
+  endpoint           String   @db.VarChar(500)
+  method             String   @db.VarChar(10)
+  status             String   @db.VarChar(20) // "ok" | "error"
+  httpStatus         Int?
+  latencyMs          Int
+  correlationId      String   @db.VarChar(100)
+  requestTruncated   String   @db.Text
+  responseTruncated  String   @db.Text
+  errorCode          String?  @db.VarChar(100)
+  errorMessage       String?  @db.Text
+  createdAt          DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, provider, createdAt])
+  @@index([organizationId, correlationId])
+  @@map("integration_call_logs")
 }

@@ -20,6 +20,8 @@ type OrganizationSettingsLayoutProps = {
   baseHref: string;
   maxWidth?: string;
   aiEnabled?: boolean;
+  integrationsEnabled?: boolean;
+  integrationsUsageLoggingEnabled?: boolean;
   children: React.ReactNode;
 };
 
@@ -32,6 +34,8 @@ export function OrganizationSettingsLayout({
   baseHref,
   maxWidth = "max-w-4xl",
   aiEnabled = false,
+  integrationsEnabled = false,
+  integrationsUsageLoggingEnabled = false,
   children,
 }: OrganizationSettingsLayoutProps): React.JSX.Element {
   return (
@@ -59,6 +63,8 @@ export function OrganizationSettingsLayout({
         baseHref={baseHref}
         membersCount={membersCount}
         aiEnabled={aiEnabled}
+        integrationsEnabled={integrationsEnabled}
+        integrationsUsageLoggingEnabled={integrationsUsageLoggingEnabled}
       />
 
       {/* Tab Content */}

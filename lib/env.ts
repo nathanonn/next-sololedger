@@ -113,6 +113,30 @@ const envSchema = z.object({
   AI_ALLOWED_PROVIDERS: z
     .string()
     .default("openai,gemini,anthropic"),
+
+  // External Integrations
+  INTEGRATIONS_ENABLED: z
+    .string()
+    .transform((val) => val === "true")
+    .default("false"),
+  INTEGRATIONS_ALLOWED: z
+    .string()
+    .default("reddit,notion"),
+  INTEGRATIONS_USAGE_LOGGING_ENABLED: z
+    .string()
+    .transform((val) => val === "true")
+    .default("false"),
+
+  // Reddit Integration
+  REDDIT_CLIENT_ID: z.string().optional(),
+  REDDIT_CLIENT_SECRET: z.string().optional(),
+  REDDIT_USER_AGENT: z.string().optional(),
+  REDDIT_SCOPES: z.string().default("identity read"),
+
+  // Notion Integration
+  NOTION_CLIENT_ID: z.string().optional(),
+  NOTION_CLIENT_SECRET: z.string().optional(),
+  NOTION_API_VERSION: z.string().default("2022-06-28"),
 })
   .refine(
     (data) => {
@@ -138,6 +162,55 @@ const envSchema = z.object({
     {
       message: "APP_ENCRYPTION_KEY is required when AI_FEATURES_ENABLED=true",
       path: ["APP_ENCRYPTION_KEY"],
+    }
+  )
+  .refine(
+    (data) => {
+      // If integrations are enabled, APP_ENCRYPTION_KEY must be provided
+      if (data.INTEGRATIONS_ENABLED && !data.APP_ENCRYPTION_KEY) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "APP_ENCRYPTION_KEY is required when INTEGRATIONS_ENABLED=true",
+      path: ["APP_ENCRYPTION_KEY"],
+    }
+  )
+  .refine(
+    (data) => {
+      // If integrations are enabled and reddit is allowed, validate Reddit credentials
+      if (data.INTEGRATIONS_ENABLED) {
+        const allowed = data.INTEGRATIONS_ALLOWED.split(",").map((p) => p.trim());
+        if (allowed.includes("reddit")) {
+          if (!data.REDDIT_CLIENT_ID || !data.REDDIT_CLIENT_SECRET || !data.REDDIT_USER_AGENT) {
+            return false;
+          }
+        }
+      }
+      return true;
+    },
+    {
+      message: "REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, and REDDIT_USER_AGENT are required when reddit is in INTEGRATIONS_ALLOWED",
+      path: ["REDDIT_CLIENT_ID"],
+    }
+  )
+  .refine(
+    (data) => {
+      // If integrations are enabled and notion is allowed, validate Notion credentials
+      if (data.INTEGRATIONS_ENABLED) {
+        const allowed = data.INTEGRATIONS_ALLOWED.split(",").map((p) => p.trim());
+        if (allowed.includes("notion")) {
+          if (!data.NOTION_CLIENT_ID || !data.NOTION_CLIENT_SECRET) {
+            return false;
+          }
+        }
+      }
+      return true;
+    },
+    {
+      message: "NOTION_CLIENT_ID and NOTION_CLIENT_SECRET are required when notion is in INTEGRATIONS_ALLOWED",
+      path: ["NOTION_CLIENT_ID"],
     }
   );
 

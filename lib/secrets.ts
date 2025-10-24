@@ -27,11 +27,11 @@ try {
     );
   }
 } catch (error) {
-  if (env.AI_FEATURES_ENABLED) {
+  if (env.AI_FEATURES_ENABLED || env.INTEGRATIONS_ENABLED) {
     console.error("Failed to initialize encryption key:", error);
     throw error;
   }
-  // If AI features are disabled, we don't need the encryption key
+  // If AI features and integrations are disabled, we don't need the encryption key
   encryptionKey = Buffer.alloc(32); // Placeholder
 }
 

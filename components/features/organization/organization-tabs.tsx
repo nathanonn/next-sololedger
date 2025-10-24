@@ -18,7 +18,11 @@ type OrganizationTabsProps = {
   showMembers?: boolean;
   showAiKeys?: boolean;
   showAiUsage?: boolean;
+  showIntegrations?: boolean;
+  showIntegrationUsage?: boolean;
   aiEnabled?: boolean;
+  integrationsEnabled?: boolean;
+  integrationsUsageLoggingEnabled?: boolean;
 };
 
 export function OrganizationTabs({
@@ -28,7 +32,11 @@ export function OrganizationTabs({
   showMembers = true,
   showAiKeys = true,
   showAiUsage = true,
+  showIntegrations = true,
+  showIntegrationUsage = true,
   aiEnabled = false,
+  integrationsEnabled = false,
+  integrationsUsageLoggingEnabled = false,
 }: OrganizationTabsProps): React.JSX.Element {
   const segment = useSelectedLayoutSegment();
   const activeTab = segment || "general";
@@ -59,6 +67,16 @@ export function OrganizationTabs({
         {aiEnabled && showAiUsage && (
           <Link href={`${baseHref}/ai-usage`}>
             <TabsTrigger value="ai-usage">AI Usage</TabsTrigger>
+          </Link>
+        )}
+        {integrationsEnabled && showIntegrations && (
+          <Link href={`${baseHref}/integrations`}>
+            <TabsTrigger value="integrations">Integrations</TabsTrigger>
+          </Link>
+        )}
+        {integrationsEnabled && integrationsUsageLoggingEnabled && showIntegrationUsage && (
+          <Link href={`${baseHref}/integration-usage`}>
+            <TabsTrigger value="integration-usage">Integration Usage</TabsTrigger>
           </Link>
         )}
       </TabsList>

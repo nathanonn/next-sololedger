@@ -71,6 +71,8 @@ export default async function OrganizationSettingsTabsLayout({
       membersCount={membersCount}
       baseHref={`/o/${orgSlug}/settings/organization`}
       aiEnabled={env.AI_FEATURES_ENABLED}
+      integrationsEnabled={env.INTEGRATIONS_ENABLED}
+      integrationsUsageLoggingEnabled={env.INTEGRATIONS_USAGE_LOGGING_ENABLED}
     >
       {children}
     </OrganizationSettingsLayout>

@@ -159,7 +159,22 @@ export function IntegrationTestDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-[90vw] md:max-w-6xl max-h-[90vh] overflow-hidden flex flex-col"
+        showCloseButton={!isLoading}
+        onInteractOutside={(e) => {
+          if (isLoading) {
+            e.preventDefault();
+            toast.info("Test in progress — please wait");
+          }
+        }}
+        onEscapeKeyDown={(e) => {
+          if (isLoading) {
+            e.preventDefault();
+            toast.info("Test in progress — please wait");
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Test {displayName} Connection</DialogTitle>
           <DialogDescription>
@@ -167,126 +182,180 @@ export function IntegrationTestDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Preview */}
-          <div className="rounded-md bg-muted p-3 text-sm font-mono">
-            <span className="font-semibold">{method}</span> {baseUrl}
-            {endpoint}
-          </div>
+        <div className="flex gap-6 flex-1 overflow-hidden">
+          {/* Left Column: Inputs */}
+          <div className="flex-1 space-y-4 overflow-y-auto pr-2">
+            {/* Preview */}
+            <div className="rounded-md bg-muted p-3 text-sm font-mono">
+              <span className="font-semibold">{method}</span> {baseUrl}
+              {endpoint}
+            </div>
 
-          {/* Method */}
-          <div className="space-y-2">
-            <Label htmlFor="method">Method</Label>
-            <Select value={method} onValueChange={setMethod}>
-              <SelectTrigger id="method">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {HTTP_METHODS.map((m) => (
-                  <SelectItem key={m} value={m}>
-                    {m}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Endpoint */}
-          <div className="space-y-2">
-            <Label htmlFor="endpoint">Endpoint</Label>
-            <Input
-              id="endpoint"
-              value={endpoint}
-              onChange={(e) => setEndpoint(e.target.value)}
-              placeholder="/api/v1/endpoint"
-              disabled={isLoading}
-            />
-          </div>
-
-          {/* Headers */}
-          <div className="space-y-2">
-            <Label htmlFor="headers">Headers (JSON, optional)</Label>
-            <Textarea
-              id="headers"
-              value={headers}
-              onChange={(e) => setHeaders(e.target.value)}
-              placeholder='{"Accept": "application/json"}'
-              className="font-mono text-sm"
-              rows={3}
-              disabled={isLoading}
-            />
-          </div>
-
-          {/* Body (shown for non-GET/HEAD methods) */}
-          {showBodyField && (
+            {/* Method */}
             <div className="space-y-2">
-              <Label htmlFor="body">Body (JSON, optional)</Label>
-              <Textarea
-                id="body"
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                placeholder="{}"
-                className="font-mono text-sm"
-                rows={4}
+              <Label htmlFor="method">Method</Label>
+              <Select value={method} onValueChange={setMethod} disabled={isLoading}>
+                <SelectTrigger id="method">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {HTTP_METHODS.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Endpoint */}
+            <div className="space-y-2">
+              <Label htmlFor="endpoint">Endpoint</Label>
+              <Input
+                id="endpoint"
+                value={endpoint}
+                onChange={(e) => setEndpoint(e.target.value)}
+                placeholder="/api/v1/endpoint"
                 disabled={isLoading}
               />
             </div>
-          )}
 
-          {/* Result */}
-          {result && (
-            <div className="space-y-3 rounded-lg border p-4">
-              <div className="flex items-center gap-3">
-                <Badge variant={result.ok ? "default" : "destructive"}>
-                  {result.ok ? "Success" : "Error"}
-                </Badge>
-                {result.httpStatus && (
-                  <span className="text-sm text-muted-foreground">
-                    HTTP {result.httpStatus}
-                  </span>
-                )}
-                {result.correlationId && (
-                  <span className="text-xs text-muted-foreground font-mono">
-                    ID: {result.correlationId}
-                  </span>
-                )}
+            {/* Headers */}
+            <div className="space-y-2">
+              <Label htmlFor="headers">Headers (JSON, optional)</Label>
+              <Textarea
+                id="headers"
+                value={headers}
+                onChange={(e) => setHeaders(e.target.value)}
+                placeholder='{"Accept": "application/json"}'
+                className="font-mono text-sm"
+                rows={3}
+                disabled={isLoading}
+              />
+            </div>
+
+            {/* Body (shown for non-GET/HEAD methods) */}
+            {showBodyField && (
+              <div className="space-y-2">
+                <Label htmlFor="body">Body (JSON, optional)</Label>
+                <Textarea
+                  id="body"
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  placeholder="{}"
+                  className="font-mono text-sm"
+                  rows={4}
+                  disabled={isLoading}
+                />
               </div>
+            )}
 
-              {/* Error message */}
-              {(() => {
-                if (!result.ok && result.message) {
-                  const friendlyMsg = getErrorMessage(result.code, result.httpStatus);
-                  const displayMsg = friendlyMsg ?? result.message;
-                  return (
-                    <div className="text-sm text-destructive">
-                      {displayMsg}
-                    </div>
-                  );
-                }
-                return null;
-              })()}
+            {/* Action Buttons */}
+            <div className="flex gap-2 pt-2">
+              <Button onClick={handleTest} disabled={isLoading}>
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Testing...
+                  </>
+                ) : (
+                  "Run Test"
+                )}
+              </Button>
+              <Button variant="outline" onClick={handleClose} disabled={isLoading}>
+                Close
+              </Button>
+            </div>
+          </div>
 
-              {/* Response data */}
-              {result.data != null && (
-                <div className="space-y-2">
-                  <Label>Response</Label>
-                  <pre className="rounded-md bg-muted p-3 text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto">
-                    {JSON.stringify(result.data, null, 2)}
-                  </pre>
+          {/* Right Column: Results */}
+          <div className="flex-1 flex flex-col overflow-hidden border rounded-lg">
+            <div className="flex items-center justify-between p-3 border-b bg-muted/50">
+              <span className="text-sm font-medium">Response</span>
+              {result && (
+                <div className="flex items-center gap-2">
+                  <Badge variant={result.ok ? "default" : "destructive"} className="text-xs">
+                    {result.ok ? "Success" : "Error"}
+                  </Badge>
+                  {result.httpStatus && (
+                    <span className="text-xs text-muted-foreground">
+                      HTTP {result.httpStatus}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
-          )}
 
-          {/* Actions */}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={handleClose} disabled={isLoading}>
-              Close
-            </Button>
-            <Button onClick={handleTest} disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isLoading ? "Testing..." : "Run Test"}
-            </Button>
+            <div className="flex-1 overflow-y-auto p-4">
+              {/* Loading State */}
+              {isLoading && (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center space-y-3">
+                    <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      Testing connection...
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Empty State */}
+              {!isLoading && !result && (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-sm text-muted-foreground">
+                    Run a test to see results here
+                  </p>
+                </div>
+              )}
+
+              {/* Error State */}
+              {!isLoading && result && !result.ok && (
+                <div className="space-y-3">
+                  <div className="text-sm font-medium text-destructive">
+                    {(() => {
+                      const friendlyMsg = getErrorMessage(result.code, result.httpStatus);
+                      return friendlyMsg ?? result.message ?? "Test failed";
+                    })()}
+                  </div>
+                  {result.correlationId && (
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <p>
+                        Correlation ID:{" "}
+                        <code className="bg-secondary px-1 py-0.5 rounded">
+                          {result.correlationId}
+                        </code>
+                      </p>
+                    </div>
+                  )}
+                  {result.data != null && (
+                    <pre className="text-xs font-mono bg-destructive/10 text-destructive p-4 rounded-lg overflow-x-auto">
+                      {JSON.stringify(result.data, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              )}
+
+              {/* Success State */}
+              {!isLoading && result && result.ok && (
+                <div className="space-y-3">
+                  {result.data != null && (
+                    <pre className="text-xs font-mono bg-secondary/50 p-4 rounded-lg whitespace-pre-wrap break-all">
+                      {JSON.stringify(result.data, null, 2)}
+                    </pre>
+                  )}
+                  {result.correlationId && (
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <p>
+                        Correlation ID:{" "}
+                        <code className="bg-secondary px-1 py-0.5 rounded">
+                          {result.correlationId}
+                        </code>
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </DialogContent>

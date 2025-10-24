@@ -65,9 +65,17 @@ export async function GET(
       console.error(`OAuth error for ${provider}:`, error);
       const errorDescription = searchParams.get("error_description") || error;
 
+      // If we can't resolve orgSlug, return 500 (no safe redirect destination)
+      if (!orgSlug) {
+        return new Response(
+          `OAuth error: ${errorDescription}. Unable to redirect - invalid or expired state.`,
+          { status: 500 }
+        );
+      }
+
       // Redirect back to integrations page with error
       const redirectUrl = new URL(
-        `/o/${orgSlug || "unknown"}/settings/organization/integrations`,
+        `/o/${orgSlug}/settings/organization/integrations`,
         env.APP_URL
       );
       redirectUrl.searchParams.set("error", errorDescription);
@@ -77,12 +85,22 @@ export async function GET(
 
     // Validate required params
     if (!code || !state) {
+      // If we have orgSlug, redirect with error instead of returning 400
+      if (orgSlug) {
+        const redirectUrl = new URL(
+          `/o/${orgSlug}/settings/organization/integrations`,
+          env.APP_URL
+        );
+        redirectUrl.searchParams.set("error", "Missing code or state from OAuth provider");
+        return NextResponse.redirect(redirectUrl);
+      }
+      // No orgSlug available - return error response
       return new Response("Missing code or state", { status: 400 });
     }
 
-    // If we couldn't find org slug, return error
+    // If we couldn't find org slug, cannot safely redirect
     if (!orgSlug) {
-      return new Response("Invalid or expired state", { status: 400 });
+      return new Response("Invalid or expired state. Please try connecting again.", { status: 500 });
     }
 
     // Exchange code for token

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { IntegrationTestDialog } from "@/components/features/integrations/integration-test-dialog";
 
 type IntegrationProvider = {
   provider: string;
@@ -40,6 +41,10 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
   const [loading, setLoading] = useState(true);
   const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
   const [disconnectDialog, setDisconnectDialog] = useState<{
+    provider: string;
+    displayName: string;
+  } | null>(null);
+  const [testDialog, setTestDialog] = useState<{
     provider: string;
     displayName: string;
   } | null>(null);
@@ -209,17 +214,30 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
                     {integration.status === "error" ? "Reconnect" : "Connect"}
                   </Button>
                 ) : (
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      setDisconnectDialog({
-                        provider: integration.provider,
-                        displayName: integration.displayName,
-                      })
-                    }
-                  >
-                    Disconnect
-                  </Button>
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        setTestDialog({
+                          provider: integration.provider,
+                          displayName: integration.displayName,
+                        })
+                      }
+                    >
+                      Test Connection
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        setDisconnectDialog({
+                          provider: integration.provider,
+                          displayName: integration.displayName,
+                        })
+                      }
+                    >
+                      Disconnect
+                    </Button>
+                  </>
                 )}
               </div>
             </div>
@@ -263,6 +281,19 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Test connection dialog */}
+      {testDialog && (
+        <IntegrationTestDialog
+          open={!!testDialog}
+          onOpenChange={(open) => {
+            if (!open) setTestDialog(null);
+          }}
+          orgSlug={orgSlug}
+          provider={testDialog.provider}
+          displayName={testDialog.displayName}
+        />
+      )}
     </div>
   );
 }

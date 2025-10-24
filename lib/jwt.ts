@@ -79,13 +79,21 @@ export async function verifyRefreshJwt(
 
 /**
  * Set access token cookie
+ *
+ * SameSite strategy:
+ * - strict: Maximum security, but breaks OAuth flows (cookie not sent on redirect)
+ * - lax: Default; allows cookies on top-level cross-site redirects (required for OAuth)
+ * - none: Allows all cross-site requests; requires HTTPS (secure=true)
  */
 export async function setAccessCookie(token: string): Promise<void> {
   const cookieStore = await cookies();
+  const sameSite = env.AUTH_SAMESITE_STRATEGY;
+  const isProduction = process.env.NODE_ENV === "production";
+
   cookieStore.set(env.JWT_ACCESS_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    secure: sameSite === "none" ? true : isProduction,
+    sameSite,
     path: "/",
     maxAge: 60 * 60, // 1 hour
   });
@@ -93,13 +101,19 @@ export async function setAccessCookie(token: string): Promise<void> {
 
 /**
  * Set refresh token cookie
+ *
+ * Uses the same SameSite strategy as access token to ensure
+ * consistent behavior across OAuth flows.
  */
 export async function setRefreshCookie(token: string): Promise<void> {
   const cookieStore = await cookies();
+  const sameSite = env.AUTH_SAMESITE_STRATEGY;
+  const isProduction = process.env.NODE_ENV === "production";
+
   cookieStore.set(env.JWT_REFRESH_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    secure: sameSite === "none" ? true : isProduction,
+    sameSite,
     path: "/",
     maxAge: 60 * 60 * 24 * 14, // 14 days
   });

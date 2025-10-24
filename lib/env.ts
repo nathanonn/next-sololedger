@@ -15,6 +15,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
   JWT_ACCESS_COOKIE_NAME: z.string().default("__access"),
   JWT_REFRESH_COOKIE_NAME: z.string().default("__session"),
+  AUTH_SAMESITE_STRATEGY: z.enum(["strict", "lax", "none"]).default("lax"),
 
   // Auth
   AUTH_ALLOWLIST_ENABLED: z

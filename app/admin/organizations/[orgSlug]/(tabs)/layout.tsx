@@ -46,6 +46,8 @@ export default async function AdminOrganizationTabsLayout({
       baseHref={`/admin/organizations/${orgSlug}`}
       maxWidth=""
       aiEnabled={env.AI_FEATURES_ENABLED}
+      integrationsEnabled={env.INTEGRATIONS_ENABLED}
+      integrationsUsageLoggingEnabled={env.INTEGRATIONS_USAGE_LOGGING_ENABLED}
     >
       {children}
     </OrganizationSettingsLayout>

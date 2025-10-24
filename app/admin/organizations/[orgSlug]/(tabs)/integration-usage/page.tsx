@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getOrgBySlug, requireAdminOrSuperadmin } from "@/lib/org-helpers";
+import { getOrgBySlug, isSuperadmin } from "@/lib/org-helpers";
 import { env } from "@/lib/env";
 import { IntegrationUsageDashboard } from "@/components/features/integrations/integration-usage-dashboard";
 
 /**
- * Integration Usage Logs Page
- * Allows organization admins to view integration API call logs and analytics
+ * Admin Integration Usage Logs Page
+ * Allows superadmins to view integration API call logs and analytics for any organization
  */
 
 type PageProps = {
@@ -15,32 +15,29 @@ type PageProps = {
   }>;
 };
 
-export default async function IntegrationUsagePage({ params }: PageProps): Promise<React.JSX.Element> {
+export default async function AdminIntegrationUsagePage({ params }: PageProps): Promise<React.JSX.Element> {
   const { orgSlug } = await params;
 
   if (!env.INTEGRATIONS_ENABLED || !env.INTEGRATIONS_USAGE_LOGGING_ENABLED) {
-    redirect(`/o/${orgSlug}/settings/organization/general`);
+    redirect(`/admin/organizations/${orgSlug}/general`);
   }
 
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const org = await getOrgBySlug(orgSlug);
-  if (!org) redirect("/dashboard");
+  // Verify user is superadmin
+  const userIsSuperadmin = await isSuperadmin(user.id);
+  if (!userIsSuperadmin) redirect("/dashboard");
 
-  // Verify user is admin or superadmin
-  try {
-    await requireAdminOrSuperadmin(user.id, org.id);
-  } catch {
-    redirect(`/o/${orgSlug}/dashboard`);
-  }
+  const org = await getOrgBySlug(orgSlug);
+  if (!org) redirect("/admin/organizations");
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold">Integration Usage</h2>
         <p className="text-muted-foreground">
-          View integration API call logs and analytics for your organization.
+          View integration API call logs and analytics for {org.name}.
         </p>
       </div>
 

@@ -16,6 +16,8 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ provider: string }> }
 ): Promise<Response> {
+  let orgSlug: string | null = null;
+
   try {
     if (!env.INTEGRATIONS_ENABLED) {
       return new Response("Integrations are disabled", { status: 404 });
@@ -27,18 +29,50 @@ export async function GET(
     const state = searchParams.get("state");
     const error = searchParams.get("error");
 
-    // Check for OAuth errors
+    // Validate provider first
+    if (!isIntegrationAllowed(provider)) {
+      return new Response(`Provider "${provider}" is not allowed`, {
+        status: 400,
+      });
+    }
+
+    // Look up organization slug from state (needed for all redirect paths)
+    if (state) {
+      const authState = await db.integrationAuthState.findFirst({
+        where: {
+          state,
+          provider,
+        },
+        select: {
+          organizationId: true,
+        },
+      });
+
+      if (authState) {
+        const org = await db.organization.findUnique({
+          where: { id: authState.organizationId },
+          select: { slug: true },
+        });
+
+        if (org) {
+          orgSlug = org.slug;
+        }
+      }
+    }
+
+    // Check for OAuth errors from provider
     if (error) {
       console.error(`OAuth error for ${provider}:`, error);
       const errorDescription = searchParams.get("error_description") || error;
 
       // Redirect back to integrations page with error
-      return NextResponse.redirect(
-        new URL(
-          `/o/unknown/settings/organization/integrations?error=${encodeURIComponent(errorDescription)}`,
-          env.APP_URL
-        )
+      const redirectUrl = new URL(
+        `/o/${orgSlug || "unknown"}/settings/organization/integrations`,
+        env.APP_URL
       );
+      redirectUrl.searchParams.set("error", errorDescription);
+
+      return NextResponse.redirect(redirectUrl);
     }
 
     // Validate required params
@@ -46,11 +80,9 @@ export async function GET(
       return new Response("Missing code or state", { status: 400 });
     }
 
-    // Validate provider
-    if (!isIntegrationAllowed(provider)) {
-      return new Response(`Provider "${provider}" is not allowed`, {
-        status: 400,
-      });
+    // If we couldn't find org slug, return error
+    if (!orgSlug) {
+      return new Response("Invalid or expired state", { status: 400 });
     }
 
     // Exchange code for token
@@ -59,16 +91,6 @@ export async function GET(
       code,
       state
     );
-
-    // Get organization to build redirect URL
-    const org = await db.organization.findUnique({
-      where: { id: result.organizationId },
-      select: { slug: true },
-    });
-
-    if (!org) {
-      return new Response("Organization not found", { status: 404 });
-    }
 
     // Write audit log
     await db.auditLog.create({
@@ -84,9 +106,8 @@ export async function GET(
     });
 
     // Redirect back to integrations page with success message
-    const providerName = PROVIDER_INFO[provider as IntegrationProvider].displayName;
     const redirectUrl = new URL(
-      `/o/${org.slug}/settings/organization/integrations`,
+      `/o/${orgSlug}/settings/organization/integrations`,
       env.APP_URL
     );
     redirectUrl.searchParams.set("connected", provider);
@@ -99,13 +120,20 @@ export async function GET(
     const errorMessage =
       error instanceof Error ? error.message : "Failed to connect integration";
 
-    // Try to redirect with error, fallback to generic path
-    const redirectUrl = new URL(
-      `/o/unknown/settings/organization/integrations`,
-      env.APP_URL
-    );
-    redirectUrl.searchParams.set("error", errorMessage);
+    // Redirect with error to org page if we have the slug, otherwise 500
+    if (orgSlug) {
+      const redirectUrl = new URL(
+        `/o/${orgSlug}/settings/organization/integrations`,
+        env.APP_URL
+      );
+      redirectUrl.searchParams.set("error", errorMessage);
 
-    return NextResponse.redirect(redirectUrl);
+      return NextResponse.redirect(redirectUrl);
+    }
+
+    // No org slug available - return error response
+    return new Response(`OAuth callback error: ${errorMessage}`, {
+      status: 500,
+    });
   }
 }

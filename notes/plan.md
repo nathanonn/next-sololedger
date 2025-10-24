@@ -1,88 +1,161 @@
-# Reddit OAuth Callback Fix + Integrations “Test Connection” Plan
+# Plan: Add Notion Internal Integration alongside Public OAuth
 
-This plan fixes the post‑OAuth logout/crash by updating auth cookies to SameSite=lax (toggleable via a new env flag for safe rollback) and by ensuring the OAuth callback always redirects users back to the Integrations page with a clear error message instead of returning raw 400/500 errors. It then adds a provider‑agnostic “Test Connection” feature in the Integrations settings: a modal playground that posts to a new server‑only test endpoint, supports all HTTP methods, optional headers and JSON body, and displays prettified results with correlation IDs that link to the existing Integration Usage logs. All work respects guardrails: Node runtime for DB access, server‑only secrets, Lucide icons only, and local Postgres with Prisma.
+This plan adds first-class support for two Notion integration types—public (OAuth) and internal (token)—controlled via environment flags. We’ll enforce a single Notion integration per org at a time, persist the connection type in the database, and provide secure admin-only endpoints and UI to connect and rotate internal tokens. The existing OAuth flow remains for public; client requests to Notion continue to use the same provider key ("notion"). The UI shows a single Notion card with a connect dropdown for the chosen variant(s), plus an “Update token” action for internal.
 
-## Decisions (confirmed)
-- 1/ Cookies: a) SameSite=lax for both access and refresh
-- 2/ Callback errors: a) Redirect back to Integrations with `?error=`
-- 3/ Modal scope: b) Full controls (method, endpoint, headers JSON, body JSON)
-- 4/ Endpoint safety: a) Relative paths only; base URL server‑side
-- 5/ Who can test: a) Admin or Superadmin
-- 6/ Button placement: a) On each connected provider card
-- 7/ Default tests: a) Reddit `/api/v1/me`, Notion `/users/me`
-- 8/ Results UI: a) Pretty‑printed JSON + status + correlation ID
-- 9/ Error guidance: a) Map common codes to friendly messages
-- 10/ Rollback: a) Feature flag `AUTH_SAMESITE_STRATEGY`
+## Decisions (your choices)
 
-## Implementation Steps
+- INTEGRATIONS_ALLOWED format: a) "reddit,notion_public,notion_internal"
+- Allow both Notion variants simultaneously: a) No (one per org)
+- Store workspace ID: a) Yes (optional)
+- UI for both variants: a) Single Notion card with dropdown
+- Token rotation UX: a) Provide "Update token" action (PATCH)
+- Legacy "notion" in env: b) Hard-break (require explicit notion_public/internal)
+- DB column name for variant: a) connectionType
 
-1) Fix OAuth Return Logout
-- Add `AUTH_SAMESITE_STRATEGY` to `lib/env.ts` as a z.enum(`strict | lax | none`), default `lax`.
-- In `lib/jwt.ts`, set both access and refresh cookies using `sameSite` from env:
-  - `strict` → current behavior (not recommended for OAuth)
-  - `lax` → default; allows cookies on top‑level cross‑site redirects
-  - `none` → only if fully HTTPS; force `secure: true`
-- Add inline comments documenting why OAuth flows require `lax`.
-- Update `.env.example` with the new variable and guidance.
+## Scope
 
-2) Harden OAuth Callback UX
-- File: `app/api/integrations/[provider]/callback/route.ts` (Node runtime).
-- If provider returns `error`, keep current redirect with `?error=`.
-- If `code` or `state` are missing but `state` resolves to an org, redirect to `/o/{orgSlug}/settings/organization/integrations?error=Missing+code+or+state` instead of returning 400.
-- If `state` is invalid and orgSlug cannot be resolved, respond 500 (no safe org to target).
-- Keep success path: redirect with `?connected={provider}&accountName=...`.
+1. Env and validation
+2. DB schema + migration
+3. API surface (list, public authorize guard, internal connect, internal token rotate, disconnect)
+4. Client utilities (reuse)
+5. UI updates (single Notion card, connect dropdown, internal connect dialog, update token)
+6. Documentation updates
+7. QA and minimal tests
 
-3) Test Connection API (server‑only)
-- New route: `app/api/orgs/[orgSlug]/integrations/[provider]/test/route.ts`.
-- `export const runtime = "nodejs"`.
-- AuthZ: `getCurrentUser`, `getOrgBySlug`, `requireAdminOrSuperadmin`.
-- CSRF: `validateCsrf(request)`.
-- Provider allowlist: `isIntegrationAllowed(provider)`.
-- Input (Zod):
-  - `method`: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
-  - `endpoint`: string; must start with `/` (reject absolute URLs)
-  - `headers?`: Record<string,string>
-  - `query?`: Record<string,string>
-  - `body?`: unknown (JSON)
-- Execution: call `callIntegration({ orgId, userId, provider, endpoint, method, headers, query, body })`.
-- Response:
-  - Success: `{ ok: true, httpStatus, correlationId, data }`
-  - Error: `{ ok: false, code, message, httpStatus?, correlationId? }`
-- Safety: enforce relative endpoints; base URL comes from `PROVIDER_INFO` server‑side (prevents SSRF); never expose tokens to client.
+## Changes by Layer
 
-4) UI — “Test Connection” Modal
-- Update `components/features/integrations/integrations-management.tsx`:
-  - For each provider card with `connected=true`, render a `Test Connection` button.
-  - Clicking opens a new client component `IntegrationTestDialog`.
-- New `components/features/integrations/integration-test-dialog.tsx` (client):
-  - Props: `orgSlug`, `provider`, `displayName`.
-  - Prefills: Reddit → `GET /api/v1/me`; Notion → `GET /users/me`.
-  - Controls: Method select; Endpoint input (relative only); Headers JSON textarea (optional); Body JSON textarea (shown for non‑GET/HEAD). Validate JSON before submit.
-  - Preview: “Will call: {METHOD} {providerBaseUrl}{endpoint}”. Use a small client‑safe map for base URLs (no server imports).
-  - Submit: POST to `/api/orgs/{orgSlug}/integrations/{provider}/test`.
-  - Result: status badge (success/destructive), HTTP status, correlation ID, and a pretty‑printed code block of the response. Map common error codes to friendly text (401 “Reconnect the integration”, 403 “Permission denied”, 404 “Not found”, 429 “Rate limited”).
-  - Follow shadcn Dialog guidance; only apply the pointer‑events restore pattern if invoked via a dropdown/context menu.
+### 1) Environment and Provider Helpers
 
-5) Logging & Observability
-- Reuse `logIntegrationCall` (already redacts secrets and truncates payloads).
-- Surface returned `correlationId` in the modal. Mention that full details appear in the Integration Usage dashboard.
+- INTEGRATIONS_ALLOWED accepts: `reddit`, `notion_public`, `notion_internal`.
+- Remove legacy `notion` (hard break) with a clear validation error.
+- Require `NOTION_CLIENT_ID` and `NOTION_CLIENT_SECRET` only when `notion_public` is enabled.
+- `lib/integrations/providers.ts`:
+  - Keep `IntegrationProvider = "reddit" | "notion"`.
+  - `getAllowedIntegrations()` returns base providers; if any Notion variant enabled, include `"notion"`.
+  - Add `getNotionVariantFlags()` returning `{ public: boolean, internal: boolean }`.
 
-6) File Changes (summary)
-- Update: `lib/env.ts`, `lib/jwt.ts`, `app/api/integrations/[provider]/callback/route.ts`, `.env.example`, `notes/skills/reddit_integration.md` (cookie note).
-- Add: `app/api/orgs/[orgSlug]/integrations/[provider]/test/route.ts`, `components/features/integrations/integration-test-dialog.tsx`.
-- Minor: `components/features/integrations/integrations-management.tsx` to mount the dialog and button.
+### 2) Database Schema and Migration
 
-7) Validation Plan
-- OAuth: Reddit connect returns to Integrations while staying signed in; denial/missing code redirects back with error toast.
-- Test modal: default GET to identity endpoints succeeds and shows payload + correlation ID; 401 after manual revoke prompts reconnection; non‑JSON responses render as text.
-- Regression: OTP signin, refresh rotation, and protected routes continue to work.
+- `OrganizationIntegration` add fields:
+  - `connectionType` String @db.VarChar(20), default: "public"; values: "public" | "internal".
+  - `workspaceId` String? @db.VarChar(255).
+- Keep unique constraint `(organizationId, provider)` (enforces one Notion integration per org).
+- Migration: backfill existing Notion rows with `connectionType = "public"`.
 
-8) Rollout & Rollback
-- Default `AUTH_SAMESITE_STRATEGY=lax` across environments.
-- Rollback options: set to `strict` (OAuth returns will fail as before) or `none` (only if fully HTTPS; `secure=true` enforced).
+### 3) APIs
+
+- GET `/api/orgs/[orgSlug]/integrations`
+  - Include `variantsAllowed` for Notion item: `{ public, internal }`.
+  - Include `connectionType` when connected.
+
+- POST `/api/orgs/[orgSlug]/integrations/[provider]/authorize` (public OAuth)
+  - If `provider === "notion"`, require `notion_public` enabled; else 400.
+
+- GET `/api/integrations/[provider]/callback` (public OAuth)
+  - Unchanged. Upsert will implicitly set `connectionType = "public"`.
+
+- NEW: POST `/api/orgs/[orgSlug]/integrations/notion/internal-connect`
+  - Admin-only + CSRF.
+  - Input: `{ token: string; workspaceId?: string }`.
+  - Client: require non-empty token only; Server: verify token via API call.
+  - Verify token via `GET https://api.notion.com/v1/users/me` using `Notion-Version`.
+  - If a Notion integration already exists for org: 409 (disconnect first).
+  - Upsert `provider="notion"`, `connectionType="internal"`, `encryptedAccessToken=token`, `encryptedRefreshToken=null`, `tokenType="bearer"` (optional), `expiresAt=null`, `scope=null`, `workspaceId` if provided; save `accountId` (bot id) and `accountName` (workspace_name). Audit log `integration.connected`.
+
+- NEW: PATCH `/api/orgs/[orgSlug]/integrations/notion/token`
+  - Admin-only + CSRF.
+  - Input: `{ token: string }`.
+  - Verify token via `/v1/users/me`. If Notion internal is not the current connection: 409 or 400.
+  - Update `encryptedAccessToken` and optionally refresh `accountName`. Audit log `integration.token_rotated`.
+
+- DELETE `/api/orgs/[orgSlug]/integrations/[provider]`
+  - Unchanged. For Notion, no provider revoke; delete and audit log `integration.disconnected`.
+
+### 4) Client Utilities
+
+- `lib/integrations/client.ts` `notionRequest()` remains unchanged—resolves tokens regardless of connectionType.
+- 401 handling remains: mark status="error"; UI prompts reconnect/update.
+
+### 5) UI
+
+- `components/features/integrations/integrations-management.tsx` updates:
+  - Single Notion card with split-button dropdown:
+    - "Connect with OAuth (Public)" shown when `variantsAllowed.public` is true.
+    - "Connect with Token (Internal)" shown when `variantsAllowed.internal` is true.
+  - Show badge: `Type: Public` or `Type: Internal` when connected.
+  - When internal & connected: show an "Update token" action (opens the internal dialog in update mode; calls PATCH route).
+  - Error state for Notion still shows Reconnect (public) or Update token (internal) accordingly.
+
+- New `NotionInternalConnectDialog`:
+  - Fields: Internal Integration Token (required), Workspace ID (optional).
+  - Client validation: token must be non-empty; rely on server verification for correctness.
+  - Submits to internal-connect (for connect) or token PATCH (for update).
+  - Success and error toasts + list refresh.
+
+### 6) Documentation
+
+- `.env.example`
+  - Use `INTEGRATIONS_ALLOWED="reddit,notion_public,notion_internal"`.
+  - Note: `NOTION_CLIENT_ID`/`NOTION_CLIENT_SECRET` required only when `notion_public` is present.
+  - Remove legacy `notion`; add a note it is unsupported.
+
+- README/notes
+  - Internal integration steps: create internal integration in Notion, copy token (starts with `secret_`), share pages/databases with the integration; optionally capture workspace ID.
+  - How to reconnect/update tokens.
+
+### 7) QA and Minimal Tests
+
+- Manual checks:
+  - Public OAuth connect and disconnect; Notion calls succeed.
+  - Internal connect with valid token; invalid/expired token yields error; Notion calls succeed after connect.
+  - Switching variants requires disconnect first (409).
+  - 401 from Notion marks status="error" and prompts correct remediation for each type.
+
+- Tests (optional initial set):
+  - Env parsing/validation for variant flags and legacy `notion` hard-break.
+  - Internal connect route token verification success/failure.
+
+## API Contracts (succinct)
+
+- POST `/api/orgs/[orgSlug]/integrations/notion/internal-connect`
+  - In: `{ token: string; workspaceId?: string }`
+  - Out: `200 { ok: true }` | `409 { error }` | `400 { error }` | `401/403`
+
+- PATCH `/api/orgs/[orgSlug]/integrations/notion/token`
+  - In: `{ token: string }`
+  - Out: `200 { ok: true }` | `400/404/409 { error }` | `401/403`
+
+- GET `/api/orgs/[orgSlug]/integrations`
+  - Out (Notion item fields added): `variantsAllowed`, `connectionType` (if connected)
+
+## Edge Cases
+
+- Env contains legacy `notion` → fail validation with remediation message.
+- Internal token invalid at connect/rotate → 400.
+- Notion returns 401 later → set status="error"; surface correct remediation per type.
+- Attempt to connect Notion when already connected → 409.
+
+## User-Facing Error Copy
+
+- When a Notion integration already exists and admin attempts to connect the other type:
+  - HTTP 409 with message: "A Notion integration already exists for this organization. Disconnect it before switching the connection type."
+
+## Rollout & Migration Steps
+
+1. Apply Prisma migration (adds columns & backfill connectionType="public").
+2. Update env: replace `notion` with `notion_public` / `notion_internal` as needed.
+3. Deploy server and UI changes.
+4. Verify both flows in staging.
 
 ## Acceptance Criteria
-- Connecting Reddit no longer logs users out; callback never strands users on a raw error page.
-- Integrations settings show a “Test Connection” button for connected providers.
-- Test modal supports method/endpoint/headers/body, runs calls server‑side, and displays results with correlation IDs.
-- All guardrails maintained: Node runtime for DB, secrets never exposed client‑side.
+
+- Variant flags via env control which flows are available.
+- Exactly one Notion integration per org; connect flow enforces this.
+- Internal connect and token rotation work and are verified against Notion API.
+- UI shows variant badges/actions appropriately; test dialog works for both types.
+- Tokens are encrypted; logs redact secrets; audit events recorded.
+
+## Risks & Follow-ups
+
+- If Notion changes token format, relax token shape validation (keep server-side verification as source of truth).
+- Optional: add rate limits to internal-connect and token PATCH routes.

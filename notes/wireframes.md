@@ -1,190 +1,163 @@
-# Integrations UX Flow & Wireframes
+# UX Flow Map and Wireframes (Notion Public + Internal)
 
-The following ASCII maps outline the end‑to‑end flows for connecting Reddit, handling the OAuth callback without logging users out, and testing connections from the Integrations settings. Code blocks are intentionally wrapped in triple backticks for proper formatting.
+Below are the UX flow map and the screen-by-screen ASCII wireframes. Code blocks are used for proper formatting.
 
-## Flow Map
-
-```
-User (Admin)                              App                                      Reddit
-────────────────────────────────────────────────────────────────────────────────────────────────────────
-1. Navigate to Integrations tab
-   /o/{org}/settings/organization/integrations
-    │
-    │  [Connect Reddit]
-    ├────────────────────────────┐ 2. POST /api/orgs/{org}/integrations/reddit/authorize
-    │                            │    - Node runtime, CSRF, Admin check
-    │                            │    - buildAuthorizeUrl() saves state + PKCE
-    │                            ▼    - returns { url }
-    │                        302 Redirect to Reddit authorize (identity read, duration=permanent)
-    │                            │
-    │                            ▼
-    │                      User authorizes app
-    │                            │
-    │                            ▼
-    │                        302 Redirect back to
-    │                            /api/integrations/reddit/callback?code=...&state=...
-    │                            │   (Top‑level navigation; cookies sent with SameSite=lax)
-    │                            ▼
-    │        Exchange code → tokens → upsert integration → write audit log
-    │                            │
-    │                        302 Redirect to
-    │                            /o/{org}/settings/organization/integrations
-    │                            ?connected=reddit&accountName={u}
-    │                            │
-    ▼                            ▼
-Toast: “Reddit connected as {u}”     UI reloads providers list
-
-
-Callback error branch (missing/denied code or invalid state):
-    /api/integrations/reddit/callback?error=access_denied&state=...
-    │
-    ├─ resolves state → orgSlug → 302 to
-    │   /o/{org}/settings/organization/integrations?error=access_denied
-    ▼
-Toast: “Connection failed: access_denied”
-
-
-Test Connection flow:
-    Integrations tab → [Test Connection] on Reddit card
-    │
-    ▼
-    Modal opens with defaults: Method=GET, Endpoint=/api/v1/me
-    │
-    ├─ Run Test → POST /api/orgs/{org}/integrations/reddit/test
-    │             - Node runtime, CSRF, Admin check, provider allowlist
-    │             - callIntegration() → redditRequest() (auto refresh 401)
-    │             - logIntegrationCall() (correlationId)
-    ▼
-    Result in modal: HTTP 200, correlationId=abcd..., JSON payload pretty‑printed
-    [View logs] → Integration Usage tab (filter by correlationId)
-```
-
-## Screen: Integrations (Connected + Actions)
+## UX Flow Map
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ Integrations                                                                │
-│ Connect external services to your organization.                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ Reddit                         [Connected]                                   │
-│ Account: u_myreddit                                                  ▼      │
-│ Scopes: identity read                                                      │
-│                                                                             │
-│ [Test Connection]   [Disconnect]                                            │
-└─────────────────────────────────────────────────────────────────────────────┘
+[Settings > Organization > Integrations]
+			 |
+			 v
+  [Notion card]
+	  |
+	  +-- Connect ▼ (dropdown)
+	  |       |-- (if notion_public enabled)  A) Connect with OAuth (Public) -----> [Authorize Endpoint] -> Redirect to Notion -> [OAuth Callback] -> Success toast
+	  |       |-- (if notion_internal enabled) B) Connect with Token (Internal) --> [Internal Connect Dialog] -> Verify token -> Success toast
+	  |
+	  +-- When Connected: [Badge: Connected] [Badge: Type: Public|Internal] [Test Connection] [Disconnect]
+									  |
+									  +-- If Internal: [Update Token] -> [Internal Connect Dialog (Update)] -> PATCH -> Success toast
+									  |
+									  +-- If Error: [Reconnect] (Public) | [Update Token] (Internal)
 
-Notes:
-- “Test Connection” appears only when status=connected.
-- “Disconnect” opens confirmation dialog; on confirm, tokens revoked and removed.
+  [Test Connection]
+	  -> Opens "Integration Test" dialog (existing) -> calls /test -> shows response
+
+  [Disconnect]
+	  -> Confirm -> DELETE -> Success toast -> Card returns to disconnected state
 ```
 
-## Screen: Connect to Reddit (Redirect)
+## Screen-by-Screen Wireframes
+
+### 1) Organization Integrations Settings (Disconnected)
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ Redirecting to Reddit…                                                      │
-│ You’ll be sent back here automatically after authorizing.                   │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-Notes:
-- Actual redirect is immediate after POST authorize; this is a conceptual screen.
++----------------------------------------------------------------------------------+
+| Organization Settings / Integrations                                             |
+|----------------------------------------------------------------------------------|
+|                                                                                  |
+|  Notion [Card]                                                                   |
+|  --------------------------------------------------------------------------------|
+|  Title: Notion                                                                   |
+|  Description: Connect your Notion workspace.                                     |
+|                                                                                  |
+|  Status: [Disconnected]                                                          |
+|                                                                                  |
+|  Actions:                                                                        |
+|   [ Connect ▼ ]                                                                  |
+|       ├─ (if enabled) Connect with OAuth (Public)                                |
+|       └─ (if enabled) Connect with Token (Internal)                              |
+|                                                                                  |
+|  (If scopes are known after connect, show them below as read-only detail)        |
+|                                                                                  |
++----------------------------------------------------------------------------------+
 ```
 
-## Screen: OAuth Callback (Success/Error -> Always Back to Integrations)
+### 2) Connect with Token (Internal) Dialog
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ (No visible page; server redirects)                                         │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-Success redirect:
-  /o/{org}/settings/organization/integrations?connected=reddit&accountName={u}
-  → Toast: “Reddit connected successfully as {u}” → providers list refreshed
-
-Error redirect:
-  /o/{org}/settings/organization/integrations?error=... (e.g., access_denied)
-  → Toast: “Connection failed: …” → URL cleaned → user stays signed in
++----------------------------------- Dialog: Connect Notion (Internal) -----------------------------------+
+|                                                                                                          |
+|  Title: Connect Notion (Internal)                                                                        |
+|  Description: Use your Notion Internal Integration token. Ensure the integration has access to pages.    |
+|                                                                                                          |
+|  [ Token (required)                              ]                                                       |
+|      helper: Paste your Notion internal integration token.                                              |
+|  [ Workspace ID (optional)                       ]                                                       |
+|      helper: If you use it in downstream logic, supply the Notion workspace ID.                          |
+|                                                                                                          |
+|  [ Cancel ]                                         [ Connect ]                                          |
+|                                                                                                          |
+|  Validation errors appear inline; network/API errors show as toasts.                                     |
+|                                                                                                          |
++----------------------------------------------------------------------------------------------------------+
 ```
 
-## Screen: Test Connection (Modal)
+### 3) Organization Integrations Settings (Connected: Public)
 
 ```
-┌──────────────────────────── Test Reddit Connection ──────────────────────────┐
-│ Provider: Reddit                                                            │
-│ Will call: GET https://oauth.reddit.com/api/v1/me                           │
-│                                                                             │
-│ Method: [ GET ▾ ]   Endpoint: [/api/v1/me__________________________]        │
-│                                                                             │
-│ Headers (JSON, optional)                                                    │
-│ ┌─────────────────────────────────────────────────────────────────────────┐ │
-│ │ {                                                                       │ │
-│ │   "Accept": "application/json"                                         │ │
-│ │ }                                                                       │ │
-│ └─────────────────────────────────────────────────────────────────────────┘ │
-│                                                                             │
-│ Body (JSON, optional; shown for non‑GET/HEAD)                               │
-│ ┌─────────────────────────────────────────────────────────────────────────┐ │
-│ │ { }                                                                     │ │
-│ └─────────────────────────────────────────────────────────────────────────┘ │
-│                                                                             │
-│ [Run Test]                                             [Cancel]             │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-Run state:
-  - Button shows spinner (Loader2). Inputs disabled during request.
-
-Validation:
-  - Endpoint must start with "/". Headers/Body must be valid JSON if provided.
-  - All requests are POSTed to server test route (Node runtime, CSRF, Admin).
++----------------------------------------------------------------------------------+
+| Organization Settings / Integrations                                             |
+|----------------------------------------------------------------------------------|
+|                                                                                  |
+|  Notion [Card]                                                                   |
+|  --------------------------------------------------------------------------------|
+|  Title: Notion    [Badge: Connected]   [Badge: Type: Public]                    |
+|  Account: Acme Corp Workspace                                                   |
+|  Last updated: 2025-10-25 12:34                                                 |
+|                                                                                  |
+|  Actions:  [ Test Connection ]   [ Disconnect ]   [ Connect ▼ ]                 |
+|           (Reconnect available if status == error)                               |
+|                                                                                  |
+|  Scopes: read:databases, read:pages (if available)                               |
+|                                                                                  |
++----------------------------------------------------------------------------------+
 ```
 
-## Screen: Test Connection (Results)
+### 4) Organization Integrations Settings (Connected: Internal)
 
 ```
-┌──────────────────────────── Test Reddit Connection ──────────────────────────┐
-│ Status: ✓ Success   HTTP: 200   Correlation ID: 1f9c9a3c0a2b4e9a            │
-│                                                                             │
-│ Response                                                                    │
-│ ┌─────────────────────────────────────────────────────────────────────────┐ │
-│ │ {                                                                       │ │
-│ │   "name": "u_myreddit",                                               │ │
-│ │   "id": "t2_abcd1234",                                              │ │
-│ │   "comment_karma": 1234,                                              │ │
-│ │   "link_karma": 567                                                   │ │
-│ │ }                                                                       │ │
-│ └─────────────────────────────────────────────────────────────────────────┘ │
-│                                                                             │
-│ [Close]                                   [View logs in Integration Usage]   │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-Error example (mapped guidance):
-  - 401 → “Reddit auth expired. Reconnect.” + “Reconnect” CTA
-  - 403 → “Permission denied”
-  - 404 → “Not found”
-  - 429 → “Rate limited”
++----------------------------------------------------------------------------------+
+| Organization Settings / Integrations                                             |
+|----------------------------------------------------------------------------------|
+|                                                                                  |
+|  Notion [Card]                                                                   |
+|  --------------------------------------------------------------------------------|
+|  Title: Notion    [Badge: Connected]   [Badge: Type: Internal]                  |
+|  Account: Acme Corp Workspace                                                   |
+|  Last updated: 2025-10-25 12:34                                                 |
+|                                                                                  |
+|  Actions:  [ Test Connection ]   [ Update Token ]   [ Disconnect ]              |
+|                                                                                  |
+|  Note: Ensure required pages/databases are shared with the integration in Notion.|
+|                                                                                  |
++----------------------------------------------------------------------------------+
 ```
 
-## Screen: Integration Usage (Correlate Results)
+### 5) Update Token (Internal) Dialog
 
 ```
-┌────────────────────────────── Integration Usage ─────────────────────────────┐
-│ Filters: Provider [All ▾ | Reddit | Notion]  Search [1f9c9a3c...] [Search]  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ Time                Provider   Method  Endpoint           Status  HTTP  Lat. │
-│ 2025-10-24 10:05    reddit     GET     /api/v1/me         ok      200   145ms│
-│ 2025-10-24 10:01    reddit     GET     /api/v1/me         error   401   130ms│
-└─────────────────────────────────────────────────────────────────────────────┘
-
-Notes:
-- Users can paste the correlation ID from the modal to locate the log entry.
++----------------------------------- Dialog: Update Notion Token -----------------------------------------+
+|                                                                                                          |
+|  Title: Update Notion Token                                                                              |
+|  Description: Rotate your Notion Internal Integration token.                                             |
+|                                                                                                          |
+|  [ New Token (required)                           ]                                                      |
+|      helper: Paste your new Notion internal integration token.                                          |
+|                                                                                                          |
+|  [ Cancel ]                                         [ Update ]                                           |
+|                                                                                                          |
++----------------------------------------------------------------------------------------------------------+
 ```
 
-## Accessibility & Patterns
+### 6) OAuth Flow Touchpoints (Public)
 
 ```
-- Buttons have clear labels and focus states.
-- Toasts confirm success/errors and do not obstruct form controls.
-- Only Admin/Superadmin can see the Test Connection button and call the test API.
-- No secrets or tokens are exposed to the client; all network calls happen server‑side.
-- Follow shadcn Dialog guidance; restore pointer events only when a dialog is opened from a menu.
+User clicks: Connect ▼ -> Connect with OAuth (Public)
+	↓
+[ POST /api/orgs/:slug/integrations/notion/authorize ]
+	↓ redirect
+[ Notion OAuth consent ]
+	↓ redirect back
+[ GET /api/integrations/notion/callback ]  -> Success toast -> Return to Integrations page
+```
+
+### 7) Test Connection Dialog (Existing)
+
+```
++---------------------------------------- Dialog: Test Connection ----------------------------------------+
+|                                                                                                          |
+|  Preview: GET https://api.notion.com/v1/users/me                                                         |
+|                                                                                                          |
+|  Method: [GET v]   Endpoint: [/users/me___________]   Headers: { ... }                                   |
+|  Body (for non-GET): { }                                                                                 |
+|                                                                                                          |
+|  [ Run Test ]   [ Close ]                                                                                |
+|                                                                                                          |
+|  Response:                                                                                               |
+|    - Success / Error badge, HTTP status                                                                  |
+|    - JSON response body (truncated/pretty)                                                               |
+|    - Correlation ID (if logging enabled)                                                                 |
+|                                                                                                          |
++----------------------------------------------------------------------------------------------------------+
 ```

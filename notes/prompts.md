@@ -4,7 +4,7 @@
 
 ```
 ./worktrees.sh setup \
-  --branches feat/org_app_integration \
+  --branches feat/org_notion_integration \
   --db-url postgresql://pi:password@localhost:5432/nextboilerplate
 ```
 
@@ -17,7 +17,7 @@
 ## merge
 
 ```
-./worktrees.sh merge --branches feat/org_app_integration --into main
+./worktrees.sh merge --branches feat/org_notion_integration --into main
 ```
 
 # create wireframes based on plan

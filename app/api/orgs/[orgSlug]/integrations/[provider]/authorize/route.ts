@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { getOrgBySlug, requireAdminOrSuperadmin } from "@/lib/org-helpers";
 import { validateCsrf } from "@/lib/csrf";
 import { env } from "@/lib/env";
+import { db } from "@/lib/db";
 import {
   isIntegrationAllowed,
   getNotionVariantFlags,
@@ -76,6 +77,26 @@ export async function POST(
         return NextResponse.json(
           { error: "Notion public OAuth is not enabled" },
           { status: 400 }
+        );
+      }
+
+      // Check if a Notion integration already exists (prevent switching variants)
+      const existingIntegration = await db.organizationIntegration.findUnique({
+        where: {
+          organizationId_provider: {
+            organizationId: org.id,
+            provider: "notion",
+          },
+        },
+      });
+
+      if (existingIntegration) {
+        return NextResponse.json(
+          {
+            error:
+              "A Notion integration already exists for this organization. Disconnect it before switching the connection type.",
+          },
+          { status: 409 }
         );
       }
     }

@@ -138,6 +138,17 @@ const envSchema = z.object({
   NOTION_CLIENT_ID: z.string().optional(),
   NOTION_CLIENT_SECRET: z.string().optional(),
   NOTION_API_VERSION: z.string().default("2022-06-28"),
+
+  // LinkedIn Integration
+  LINKEDIN_CLIENT_ID: z.string().optional(),
+  LINKEDIN_CLIENT_SECRET: z.string().optional(),
+  LINKEDIN_SCOPES: z.string().default("r_liteprofile w_member_social offline_access"),
+
+  // WordPress Integration
+  WORDPRESS_ALLOW_HTTP_DEV: z
+    .string()
+    .transform((val) => val === "true")
+    .default("false"),
 })
   .refine(
     (data) => {
@@ -228,6 +239,24 @@ const envSchema = z.object({
     {
       message: "NOTION_CLIENT_ID and NOTION_CLIENT_SECRET are required when notion_public is in INTEGRATIONS_ALLOWED",
       path: ["NOTION_CLIENT_ID"],
+    }
+  )
+  .refine(
+    (data) => {
+      // If integrations are enabled and linkedin is allowed, validate LinkedIn OAuth credentials
+      if (data.INTEGRATIONS_ENABLED) {
+        const allowed = data.INTEGRATIONS_ALLOWED.split(",").map((p) => p.trim());
+        if (allowed.includes("linkedin")) {
+          if (!data.LINKEDIN_CLIENT_ID || !data.LINKEDIN_CLIENT_SECRET) {
+            return false;
+          }
+        }
+      }
+      return true;
+    },
+    {
+      message: "LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET are required when linkedin is in INTEGRATIONS_ALLOWED",
+      path: ["LINKEDIN_CLIENT_ID"],
     }
   );
 

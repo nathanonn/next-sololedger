@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { IntegrationTestDialog } from "@/components/features/integrations/integration-test-dialog";
 import { NotionInternalConnectDialog } from "@/components/features/integrations/notion-internal-connect-dialog";
+import { WordPressInternalConnectDialog } from "@/components/features/integrations/wordpress-internal-connect-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -58,6 +59,9 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
     displayName: string;
   } | null>(null);
   const [notionInternalDialog, setNotionInternalDialog] = useState<{
+    mode: "connect" | "update";
+  } | null>(null);
+  const [wordpressInternalDialog, setWordpressInternalDialog] = useState<{
     mode: "connect" | "update";
   } | null>(null);
 
@@ -256,8 +260,16 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>
+                  ) : integration.provider === "wordpress" ? (
+                    // WordPress uses internal connection dialog
+                    <Button
+                      onClick={() => setWordpressInternalDialog({ mode: integration.status === "error" ? "update" : "connect" })}
+                      disabled={connectingProvider === integration.provider}
+                    >
+                      {integration.status === "error" ? "Reconnect" : "Connect"}
+                    </Button>
                   ) : (
-                    // Standard connect button for non-Notion or Notion without variants
+                    // Standard connect button for OAuth providers (Reddit, LinkedIn)
                     <Button
                       onClick={() => handleConnect(integration.provider)}
                       disabled={connectingProvider === integration.provider}
@@ -288,6 +300,14 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
                         onClick={() => setNotionInternalDialog({ mode: "update" })}
                       >
                         Update Token
+                      </Button>
+                    )}
+                    {integration.provider === "wordpress" && (
+                      <Button
+                        variant="outline"
+                        onClick={() => setWordpressInternalDialog({ mode: "update" })}
+                      >
+                        Update Credentials
                       </Button>
                     )}
                     <Button
@@ -375,6 +395,27 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
           mode={notionInternalDialog.mode}
           onSuccess={() => {
             setNotionInternalDialog(null);
+            fetchIntegrations();
+          }}
+        />
+      )}
+
+      {/* WordPress internal connect/update dialog */}
+      {wordpressInternalDialog && (
+        <WordPressInternalConnectDialog
+          open={!!wordpressInternalDialog}
+          onOpenChange={(open) => {
+            if (!open) {
+              setWordpressInternalDialog(null);
+              setTimeout(() => {
+                document.body.style.pointerEvents = "";
+              }, 300);
+            }
+          }}
+          orgSlug={orgSlug}
+          mode={wordpressInternalDialog.mode}
+          onSuccess={() => {
+            setWordpressInternalDialog(null);
             fetchIntegrations();
           }}
         />

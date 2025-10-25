@@ -199,6 +199,124 @@ export async function notionRequest(
 }
 
 /**
+ * Make authenticated request to LinkedIn API
+ */
+export async function linkedinRequest(
+  orgId: string,
+  path: string,
+  options: RequestOptions = {}
+): Promise<Response> {
+  const connection = await getOrgIntegration(orgId, "linkedin");
+  const config = getProviderConfig("linkedin");
+
+  const url = new URL(path, config.baseUrl);
+  if (options.query) {
+    Object.entries(options.query).forEach(([key, value]) => {
+      url.searchParams.set(key, value);
+    });
+  }
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${connection.accessToken}`,
+    ...config.defaultHeaders,
+    ...options.headers,
+  };
+
+  const fetchOptions: RequestInit = {
+    method: options.method || "GET",
+    headers,
+  };
+
+  if (options.body) {
+    fetchOptions.body = JSON.stringify(options.body);
+  }
+
+  const response = await fetch(url.toString(), fetchOptions);
+
+  // Handle 401 by attempting token refresh
+  if (response.status === 401 && config.supportsRefresh) {
+    await refreshAccessToken("linkedin", connection.id);
+
+    // Retry request with new token
+    const refreshed = await getOrgIntegration(orgId, "linkedin");
+    headers.Authorization = `Bearer ${refreshed.accessToken}`;
+    return fetch(url.toString(), { ...fetchOptions, headers });
+  }
+
+  return response;
+}
+
+/**
+ * Make authenticated request to WordPress API
+ */
+export async function wordpressRequest(
+  orgId: string,
+  path: string,
+  options: RequestOptions = {}
+): Promise<Response> {
+  const connection = await getOrgIntegration(orgId, "wordpress");
+
+  // We stored username:password in encryptedAccessToken
+  // The siteUrl is in accountId field
+  const integration = await db.organizationIntegration.findUnique({
+    where: {
+      organizationId_provider: {
+        organizationId: orgId,
+        provider: "wordpress",
+      },
+    },
+  });
+
+  if (!integration || !integration.accountId) {
+    throw new Error("WordPress integration not properly configured");
+  }
+
+  const wpSiteUrl = integration.accountId; // Site URL stored as accountId
+
+  // Build full URL
+  const url = new URL(path, wpSiteUrl);
+  if (options.query) {
+    Object.entries(options.query).forEach(([key, value]) => {
+      url.searchParams.set(key, value);
+    });
+  }
+
+  // Build Basic Auth header from credentials
+  const basicAuthToken = Buffer.from(connection.accessToken).toString("base64");
+
+  const headers: Record<string, string> = {
+    Authorization: `Basic ${basicAuthToken}`,
+    "Content-Type": "application/json",
+    ...options.headers,
+  };
+
+  const fetchOptions: RequestInit = {
+    method: options.method || "GET",
+    headers,
+  };
+
+  if (options.body) {
+    fetchOptions.body = JSON.stringify(options.body);
+  }
+
+  const response = await fetch(url.toString(), fetchOptions);
+
+  // WordPress doesn't support refresh, so 401 means user needs to reconnect
+  if (response.status === 401) {
+    await db.organizationIntegration.update({
+      where: { id: connection.id },
+      data: { status: "error" },
+    });
+
+    throw new Error(
+      "WordPress authorization failed. Please update your credentials."
+    );
+  }
+
+  return response;
+}
+
+/**
  * Log integration API call (respects INTEGRATIONS_USAGE_LOGGING_ENABLED)
  */
 export async function logIntegrationCall(params: {

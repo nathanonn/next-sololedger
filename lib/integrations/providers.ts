@@ -5,7 +5,7 @@ import { env } from "@/lib/env";
  * Defines supported providers and their OAuth/API parameters
  */
 
-export type IntegrationProvider = "reddit" | "notion";
+export type IntegrationProvider = "reddit" | "notion" | "linkedin" | "wordpress";
 
 export type ProviderConfig = {
   displayName: string;
@@ -41,6 +41,27 @@ export const PROVIDER_INFO: Record<IntegrationProvider, ProviderConfig> = {
       "Notion-Version": env.NOTION_API_VERSION,
       "Content-Type": "application/json",
     },
+    supportsRefresh: false,
+  },
+  linkedin: {
+    displayName: "LinkedIn",
+    baseUrl: "https://api.linkedin.com/v2",
+    authorizeUrl: "https://www.linkedin.com/oauth/v2/authorization",
+    tokenUrl: "https://www.linkedin.com/oauth/v2/accessToken",
+    defaultScopes: env.LINKEDIN_SCOPES,
+    defaultHeaders: {
+      "X-Restli-Protocol-Version": "2.0.0",
+      "Content-Type": "application/json",
+    },
+    supportsRefresh: true,
+  },
+  wordpress: {
+    displayName: "WordPress",
+    baseUrl: "", // Determined per-site at runtime
+    authorizeUrl: "", // Not OAuth
+    tokenUrl: "", // Not OAuth
+    defaultScopes: "",
+    defaultHeaders: {},
     supportsRefresh: false,
   },
 };
@@ -91,7 +112,7 @@ export function getAllowedIntegrations(): IntegrationProvider[] {
   for (const item of allowed) {
     if (item === "notion_public" || item === "notion_internal") {
       providers.add("notion");
-    } else if (item in PROVIDER_INFO) {
+    } else if (item === "linkedin" || item === "wordpress" || item === "reddit") {
       providers.add(item as IntegrationProvider);
     }
   }

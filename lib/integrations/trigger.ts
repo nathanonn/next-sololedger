@@ -3,6 +3,8 @@ import type { IntegrationProvider } from "@/lib/integrations/providers";
 import {
   redditRequest,
   notionRequest,
+  linkedinRequest,
+  wordpressRequest,
   logIntegrationCall,
 } from "@/lib/integrations/client";
 
@@ -69,6 +71,20 @@ export async function callIntegration(
       });
     } else if (provider === "notion") {
       response = await notionRequest(orgId, endpoint, {
+        method,
+        headers,
+        query,
+        body,
+      });
+    } else if (provider === "linkedin") {
+      response = await linkedinRequest(orgId, endpoint, {
+        method,
+        headers,
+        query,
+        body,
+      });
+    } else if (provider === "wordpress") {
+      response = await wordpressRequest(orgId, endpoint, {
         method,
         headers,
         query,
@@ -222,6 +238,22 @@ function parseProviderError(
     const error = data as { message?: string; code?: string };
     const code = error.code || `API_ERROR_${status}`;
     const message = error.message || "Notion API error";
+    return createError(code, message, status, data);
+  }
+
+  if (provider === "linkedin") {
+    const error = data as { message?: string; serviceErrorCode?: number };
+    const message = error.message || "LinkedIn API error";
+    const code = error.serviceErrorCode
+      ? `LINKEDIN_ERROR_${error.serviceErrorCode}`
+      : `API_ERROR_${status}`;
+    return createError(code, message, status, data);
+  }
+
+  if (provider === "wordpress") {
+    const error = data as { message?: string; code?: string; data?: { status?: number } };
+    const code = error.code || `API_ERROR_${status}`;
+    const message = error.message || "WordPress API error";
     return createError(code, message, status, data);
   }
 

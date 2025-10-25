@@ -74,6 +74,8 @@ export async function buildAuthorizeUrl(
     params.set("scope", config.defaultScopes);
   } else if (provider === "notion") {
     params.set("owner", "workspace");
+  } else if (provider === "linkedin") {
+    params.set("scope", config.defaultScopes);
   }
 
   const url = `${config.authorizeUrl}?${params.toString()}`;
@@ -235,7 +237,7 @@ export async function revokeIntegration(
 
   const config = getProviderConfig(provider);
 
-  // Attempt to revoke with provider (Reddit supports this)
+  // Attempt to revoke with provider (Reddit supports this, LinkedIn may not)
   if (config.revokeUrl && provider === "reddit") {
     try {
       const accessToken = decryptSecret(integration.encryptedAccessToken);
@@ -249,6 +251,11 @@ export async function revokeIntegration(
       console.error(`Failed to revoke ${provider} token:`, error);
       // Continue with local deletion even if revocation fails
     }
+  }
+
+  // LinkedIn and other providers: just delete locally and log
+  if (provider === "linkedin" || provider === "wordpress") {
+    console.log(`Revoking ${provider} integration (local deletion only)`);
   }
 
   // Delete integration from database
@@ -265,6 +272,10 @@ function getClientId(provider: IntegrationProvider): string {
       return env.REDDIT_CLIENT_ID || "";
     case "notion":
       return env.NOTION_CLIENT_ID || "";
+    case "linkedin":
+      return env.LINKEDIN_CLIENT_ID || "";
+    case "wordpress":
+      return ""; // WordPress doesn't use OAuth
   }
 }
 
@@ -274,6 +285,10 @@ function getClientSecret(provider: IntegrationProvider): string {
       return env.REDDIT_CLIENT_SECRET || "";
     case "notion":
       return env.NOTION_CLIENT_SECRET || "";
+    case "linkedin":
+      return env.LINKEDIN_CLIENT_SECRET || "";
+    case "wordpress":
+      return ""; // WordPress doesn't use OAuth
   }
 }
 
@@ -309,7 +324,7 @@ async function fetchToken(
     headers["Authorization"] = `Basic ${auth}`;
     headers["User-Agent"] = config.defaultHeaders["User-Agent"];
   } else {
-    // Notion uses client_id/client_secret in body
+    // Notion and LinkedIn use client_id/client_secret in body
     body.set("client_id", clientId);
     body.set("client_secret", clientSecret);
   }
@@ -342,7 +357,7 @@ async function fetchAccountInfo(
   const config = getProviderConfig(provider);
 
   let endpoint: string;
-  let headers: Record<string, string> = {
+  const headers: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,
     ...config.defaultHeaders,
   };
@@ -354,6 +369,11 @@ async function fetchAccountInfo(
     case "notion":
       endpoint = `${config.baseUrl}/users/me`;
       break;
+    case "linkedin":
+      endpoint = `${config.baseUrl}/me`;
+      break;
+    case "wordpress":
+      throw new Error("WordPress does not use OAuth account fetching");
   }
 
   const response = await fetch(endpoint, { headers });
@@ -369,12 +389,24 @@ async function fetchAccountInfo(
       accountId: data.id,
       accountName: data.name,
     };
-  } else {
-    // Notion
+  } else if (provider === "notion") {
     return {
       accountId: data.bot?.id || data.id,
       accountName: data.bot?.workspace_name || data.name || "Notion Workspace",
     };
+  } else if (provider === "linkedin") {
+    // LinkedIn returns member URN and localized name
+    const memberId = data.id || data.sub; // 'sub' is in newer LinkedIn API responses
+    const firstName = data.localizedFirstName || data.firstName?.localized?.en_US || "";
+    const lastName = data.localizedLastName || data.lastName?.localized?.en_US || "";
+    const fullName = `${firstName} ${lastName}`.trim() || "LinkedIn User";
+
+    return {
+      accountId: memberId,
+      accountName: fullName,
+    };
+  } else {
+    throw new Error(`Unsupported provider: ${provider}`);
   }
 }
 

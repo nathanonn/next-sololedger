@@ -16,6 +16,7 @@ This document contains text-based wireframes and ASCII flow diagrams for the boi
 10. Admin vs Member Access Summary
 11. CSRF Validation Path
 12. OTP & Invitation Rate Limiting
+13. App Integrations (Providers, OAuth, Test, Disconnect, Disabled)
 
 ---
 
@@ -288,4 +289,140 @@ Notes:
 
 ---
 
+## 13. App Integrations (Providers, OAuth, Test, Disconnect, Disabled)
+
+### Entry and Providers Grid (Desktop)
+
+```
+Settings / Organization / Integrations
+-------------------------------------------------------------------------------------
+[ Banner: Connected <Provider> as <AccountName> ]  or  [ Banner: Error: <reason> ]
+-------------------------------------------------------------------------------------
+| Reddit                              | Notion (Public OAuth)       | LinkedIn        |
+|-----------------------------------------------------------------------------------|
+| Status: [ Connected ✓ / Disconnected / Error ]                  Account: <name>   |
+| Last Updated: <timestamp>           Scope: <scopes when available>                |
+|                                                                                   |
+| [ Test ] [ Disconnect ]   (Connected)    | [ Connect ] (Disconnected)             |
+-------------------------------------------------------------------------------------
+| WordPress (Internal Connect)                                                   |
+|---------------------------------------------------------------------------------|
+| Status: [ Connected ✓ / Disconnected / Error ]                                 |
+| Site: <hostname or —>   Last Updated: <timestamp>                               |
+|                                                                                 |
+| [ Connect ]  (or [ Test ] [ Disconnect ] when connected)                        |
+-------------------------------------------------------------------------------------
+
+Notes
+- Admins/superadmins see action buttons; members see read-only cards (no actions).
+- Notion variants: show Public OAuth label; Internal App appears as a separate Notion variant when allowed.
+- Error status shows only [Disconnect] (no dedicated Reconnect button).
+```
+
+### Entry and Providers (Mobile — Stacked Cards)
+
+```
+Settings / Organization / Integrations
+-------------------------------------------------------------------------------------
+[ Banner (success/error) ]
+-------------------------------------------------------------------------------------
+[Card] Reddit — Status [Connected ✓]  Account <name>  Last Updated <time>
+Actions: [ Test ]  [ Disconnect ]
+
+[Card] Notion (Public OAuth) — Status [Disconnected]
+Actions: [ Connect ]
+
+[Card] LinkedIn — Status [Error]
+Actions: [ Disconnect ]
+
+[Card] WordPress (Internal Connect) — Status [Disconnected]  Site: —
+Actions: [ Connect ]
+```
+
+### OAuth Connect Flow (Callback Banner)
+
+```
+User clicks [Connect] → POST authorize → Redirect to provider → Consent → Callback
+
+Callback: /api/integrations/[provider]/callback?code&state
+	- Validate state (single-use, short-lived) and PKCE
+	- Exchange code for tokens; fetch account info
+	- Upsert integration; audit integration.connected
+	- Redirect back to /o/[orgSlug]/settings/organization/integrations
+
+On return page
+	[ Success Banner ] Connected <Provider> as "<AccountName>"
+	[ Error Banner ] OAuth error: <provider_code>
+```
+
+### Test Connection (Modal)
+
+```
+Test Connection: <Provider>
+-------------------------------------------
+Method   [ GET v ]
+Endpoint [ /relative/path ]
+Headers  [ {"User-Agent":"..."} ]
+Query    [ { } ]
+Body     [ { } ]
+-------------------------------------------
+[ Run Test ]
+-------------------------------------------
+Result:
+HTTP: <status>   Correlation ID: <id> [Copy]
+{ JSON response snippet }
+
+Error example
+Error: <CODE> (<HTTP status>)
+Message: <message>
+Correlation ID: <id> [Copy]
+```
+
+### Connect WordPress (Modal)
+
+```
+Connect WordPress
+-------------------------------------------
+Site URL (HTTPS)           [ https://blog.example.com ]
+Username                   [ admin ]
+Application Password       [ ********************** ]
+-------------------------------------------
+[ Cancel ]                 [ Connect ]
+
+Post-submit
+- Require HTTPS; allow HTTP only in development when WORDPRESS_ALLOW_HTTP_DEV=true.
+- On success: Status Connected ✓, Site shows hostname, Account uses site title when available.
+- On 401/invalid site: inline error under fields.
+```
+
+### Disconnect Confirmation (Dialog)
+
+```
+Disconnect Integration
+-------------------------------------------
+Disconnect <Provider> from this organization?
+This revokes access (when supported) and removes local tokens.
+-------------------------------------------
+[ Cancel ]                 [ Disconnect ]
+```
+
+### Disabled / Empty States
+
+```
+Integrations are disabled by environment
+-----------------------------------------------------------------------------------
+This environment has INTEGRATIONS_ENABLED=false or no providers allowed.
+Ask an administrator to configure credentials and allowed providers.
+See docs: App Integrations section.
+
+Variant: No connections yet
+-----------------------------------------------------------------------------------
+No integrations connected yet. Connect a provider to get started.
+Cards below show status and available actions.
+```
+
+---
+
 End of wireframes.
+
+---

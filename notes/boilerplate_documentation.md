@@ -26,6 +26,7 @@ This document is the authoritative, developer-focused manual for the boilerplate
 20. Versioning & Changelog Strategy
 21. FAQs
 22. Glossary
+23. App Integrations
 
 ---
 
@@ -132,6 +133,18 @@ All variables are validated in `lib/env.ts`. Defaults and constraints are enforc
   - `AI_RATE_LIMIT_PER_MIN_ORG` (default 60)
   - `AI_RATE_LIMIT_PER_MIN_IP` (default 120)
   - `AI_ALLOWED_PROVIDERS` (default `openai,gemini,anthropic`)
+- Integrations
+  - Core toggles
+    - `INTEGRATIONS_ENABLED` (default false; features disabled unless explicitly enabled)
+    - `INTEGRATIONS_ALLOWED` (comma-separated allowlist of providers; e.g., `reddit,notion_public,notion_internal,linkedin,wordpress`)
+    - `INTEGRATIONS_USAGE_LOGGING_ENABLED` (default false; persists sanitized call logs when true)
+    - `APP_ENCRYPTION_KEY` (base64-encoded 32 bytes; required when integrations are enabled for token encryption)
+  - Provider credentials (required only for providers included in `INTEGRATIONS_ALLOWED`)
+    - Reddit: `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`, `REDDIT_SCOPES` (e.g., `identity read`)
+    - Notion (Public OAuth): `NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET`, `NOTION_API_VERSION` (e.g., `2022-06-28`)
+    - Notion (Internal App): managed via internal app credentials; document app OAuth details alongside allowed variant
+    - LinkedIn: `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_SCOPES` (e.g., `r_liteprofile`)
+    - WordPress (non‑OAuth): credentials captured at connect time; `WORDPRESS_ALLOW_HTTP_DEV` (default false) allows HTTP only in development
 - Seed/ops
   - `SEED_EMAIL` (used by seed scripts)
 
@@ -139,6 +152,10 @@ Constraints and cross-feature dependencies:
 
 - When `AUTH_ALLOWLIST_ENABLED` is true, `ALLOWED_EMAILS` must be provided.
 - When `AI_FEATURES_ENABLED` is true, `APP_ENCRYPTION_KEY` must be provided.
+- When `INTEGRATIONS_ENABLED` is true:
+  - `APP_ENCRYPTION_KEY` must be provided (AES‑256‑GCM for token encryption).
+  - `INTEGRATIONS_ALLOWED` must be non-empty.
+  - Provider-specific credentials must be present for any OAuth provider included in `INTEGRATIONS_ALLOWED`.
 
 ---
 
@@ -335,6 +352,13 @@ Implementation references:
 - Full authorization happens on the server (Node runtime) via helpers that check `sessionVersion` against the database and enforce org permissions.
 - CSRF checks occur in mutating server routes using Origin/Referer validation.
 
+- Integrations security specifics
+  - All integrations routes run on the Node runtime (never Edge) due to DB/secrets.
+  - Mutating routes (authorize, test, disconnect, and provider-specific connects) enforce CSRF via Origin/Referer checks.
+  - OAuth flows use short-lived, single-use state and PKCE where supported; state is stored server-side with TTL.
+  - Authorization requires organization admin or superadmin; members have read-only access to integration statuses.
+  - Error responses are structured and avoid leaking secrets; a `correlationId` is attached for support.
+
 ---
 
 ## 12. Admin Area
@@ -344,6 +368,7 @@ Overview: superadmin operator access across the system. Admin screens provide:
 - Organizations overview and detail management.
 - Member and invitation management per organization.
 - AI provider keys and model curation for any organization.
+- Integrations management per organization (path: `/o/[orgSlug]/settings/organization/integrations`): list providers, connect (OAuth or internal), test connections, and disconnect. Non-admin members see read-only status.
 
 Policy highlights:
 
@@ -464,6 +489,16 @@ This section outlines what to test rather than how to test.
 - Database
   - Ensure migrations are applied and pgvector is enabled. Verify connection string and connectivity.
 
+- Integrations
+  - “Integrations are disabled” indicates `INTEGRATIONS_ENABLED=false` or an empty `INTEGRATIONS_ALLOWED`.
+  - OAuth denied or canceled: the provider redirected with an error; retry authorization and confirm required scopes.
+  - Invalid or expired state: restart the connect flow; state is short-lived and single-use.
+  - 401/expired tokens: for providers with refresh support, tokens should auto-refresh; if not supported (e.g., Notion internal, WordPress), reconnect.
+  - Missing scopes: ensure provider app and configured scopes match the minimal recommended scopes.
+  - Provider rate limits: wait and retry; consult provider dashboards/logs.
+  - CSRF/Origin errors: verify `APP_URL` and allowed origins; ensure browser is not stripping Referer.
+  - WordPress HTTP blocked: require HTTPS; in development, set `WORDPRESS_ALLOW_HTTP_DEV=true` to permit HTTP for testing.
+
 See `notes/ai-features-setup-guide.md` for additional AI-specific troubleshooting and monitoring tips.
 
 ---
@@ -501,6 +536,81 @@ Maintain a concise "Versioning" note in this document and track detailed changes
 - CSRF — Cross-Site Request Forgery protection via Origin/Referer checks.
 - Curated Models — vetted AI models per provider with known capabilities and safe token caps.
 - Correlation ID — identifier attached to AI generation requests for tracing and analytics.
+- Integration — an external app connection configured per organization (e.g., Reddit, Notion, LinkedIn, WordPress).
+- PKCE — Proof Key for Code Exchange; used in OAuth to mitigate code interception.
+- State (OAuth) — short-lived, single-use token to bind authorization requests to callbacks.
+
+---
+
+## 23. App Integrations
+
+Overview: organization-level external app connections with secure OAuth and non‑OAuth flows, encrypted token storage, optional usage logging, and admin-only actions. Supported providers: Reddit, Notion (Public OAuth and Internal App variants), LinkedIn, and WordPress (non‑OAuth internal connect).
+
+Enablement and posture:
+
+- Disabled by default; enable with `INTEGRATIONS_ENABLED=true`.
+- Strict allowlist with `INTEGRATIONS_ALLOWED` (e.g., `reddit,notion_public,notion_internal,linkedin,wordpress`).
+- Requires `APP_ENCRYPTION_KEY` (base64 32 bytes) for AES‑256‑GCM at-rest encryption.
+- Optional call logging via `INTEGRATIONS_USAGE_LOGGING_ENABLED` (sanitized, redacted fields, correlation IDs).
+
+Permissions and UI:
+
+- Page: Settings → Organization → Integrations at `/o/[orgSlug]/settings/organization/integrations`.
+- Admins and superadmins can connect, test, and disconnect; members see read-only status.
+- Provider cards show status (Connected/Disconnected/Error), account name, scope (where applicable), last updated, and provider notes (e.g., Notion variant, WordPress site URL).
+
+Providers and scopes (description-level):
+
+- Reddit (OAuth + refresh): recommended minimal scopes include identity/read (e.g., `identity read`).
+- Notion (Public OAuth): workspace-level connect; note variant explicitly. Minimal read scope appropriate for your use.
+- Notion (Internal App): internal app credentials; treat as separate variant; no refresh.
+- LinkedIn (OAuth + refresh): minimal user profile scopes (e.g., `r_liteprofile`); additional scopes may require program approvals.
+- WordPress (non‑OAuth): site URL, username, and application password; require HTTPS; allow HTTP only in development with `WORDPRESS_ALLOW_HTTP_DEV=true`.
+
+Security guardrails:
+
+- Node runtime only for all integration routes; never expose secrets to client.
+- CSRF via Origin/Referer checks on all mutating endpoints.
+- OAuth flows use PKCE and short-lived, single-use state stored server-side.
+- Secrets encrypted with AES‑256‑GCM; decrypt just-in-time on server for requests.
+- Structured errors (no secrets) with `correlationId` in responses and logs.
+
+Data model (high-level sketch):
+
+- OrganizationIntegration — one row per organization per provider; fields include connectionType (public/internal), status, account identifiers, encrypted access/refresh tokens, tokenType, expiresAt, scope, and audit timestamps.
+- IntegrationAuthState — short-lived OAuth state (provider, organizationId, userId, codeVerifier for PKCE, expiresAt); single-use.
+- IntegrationCallLog (optional) — request/response metadata with sanitized/truncated bodies, HTTP status, latency, provider, endpoint, and correlationId.
+
+Endpoint contracts (Node runtime):
+
+- GET `/api/orgs/[orgSlug]/integrations` — list providers and status for the organization (reads are allowed for members; actions require admin/superadmin).
+- POST `/api/orgs/[orgSlug]/integrations/[provider]/authorize` — start OAuth; returns an external authorize URL; CSRF-protected; admin/superadmin only.
+- GET `/api/integrations/[provider]/callback?code&state` — global callback; validates state/PKCE, exchanges code, fetches account info, upserts integration, audits `integration.connected`, and redirects back with success/error params.
+- POST `/api/orgs/[orgSlug]/integrations/[provider]/test` — run a small test request against the provider; returns structured result with `correlationId`; CSRF-protected; admin/superadmin only.
+- DELETE `/api/orgs/[orgSlug]/integrations/[provider]` — disconnect; attempt provider revocation where supported; delete local record; audit `integration.disconnected`; CSRF-protected; admin/superadmin only.
+- WordPress internal connect: provider-specific POST endpoint to capture and validate site credentials; stores encrypted tokens/credentials; CSRF-protected; admin/superadmin only.
+
+Usage logging (optional):
+
+- When enabled, logs store sanitized request/response snippets with sensitive keys redacted (e.g., token, secret, password, authorization) plus correlationId and latency.
+
+Troubleshooting (integrations specific):
+
+- OAuth denied/canceled; invalid/expired state; missing scopes; provider rate limits; expired tokens without refresh (reconnect required for providers without refresh); CSRF/Origin mismatches; WordPress HTTP blocked without dev override; LinkedIn feature limits due to program approvals.
+
+References and implementation pointers:
+
+- `lib/secrets.ts` (AES‑256‑GCM helpers)
+- `lib/integrations/providers.ts` (Registry: display names, endpoints, scopes, refresh capability)
+- `lib/integrations/oauth.ts` (Authorize URLs, state/PKCE, code exchange, account info fetch)
+- `lib/integrations/client.ts` (Per‑provider request wrappers, token refresh, error mapping)
+- `lib/integrations/trigger.ts` (Central call orchestration, logging)
+- `app/api/orgs/[orgSlug]/integrations/route.ts` (List providers/status)
+- `app/api/orgs/[orgSlug]/integrations/[provider]/authorize/route.ts` (Start OAuth)
+- `app/api/integrations/[provider]/callback/route.ts` (OAuth callback)
+- `app/api/orgs/[orgSlug]/integrations/[provider]/test/route.ts` (Test endpoint)
+- `app/api/orgs/[orgSlug]/integrations/[provider]/route.ts` (DELETE disconnect)
+- `notes/skills/org_app_integrations.md` and `notes/skills/org_app_integrations_wireframes.md` (Full guidance and UX flows)
 
 ---
 

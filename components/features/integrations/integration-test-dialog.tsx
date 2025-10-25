@@ -40,7 +40,7 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
 // Default test endpoints for each provider
 const DEFAULT_ENDPOINTS: Record<string, string> = {
   reddit: "/api/v1/me",
-  notion: "/users/me",
+  notion: "/v1/users/me",
 };
 
 type TestResult = {
@@ -52,7 +52,15 @@ type TestResult = {
   message?: string;
 };
 
-const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
+const HTTP_METHODS = [
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "HEAD",
+  "OPTIONS",
+] as const;
 
 export function IntegrationTestDialog({
   open,
@@ -62,7 +70,9 @@ export function IntegrationTestDialog({
   displayName,
 }: IntegrationTestDialogProps): React.JSX.Element {
   const [method, setMethod] = useState<string>("GET");
-  const [endpoint, setEndpoint] = useState<string>(DEFAULT_ENDPOINTS[provider] || "/");
+  const [endpoint, setEndpoint] = useState<string>(
+    DEFAULT_ENDPOINTS[provider] || "/"
+  );
   const [headers, setHeaders] = useState<string>("{}");
   const [body, setBody] = useState<string>("{}");
   const [isLoading, setIsLoading] = useState(false);
@@ -194,7 +204,11 @@ export function IntegrationTestDialog({
             {/* Method */}
             <div className="space-y-2">
               <Label htmlFor="method">Method</Label>
-              <Select value={method} onValueChange={setMethod} disabled={isLoading}>
+              <Select
+                value={method}
+                onValueChange={setMethod}
+                disabled={isLoading}
+              >
                 <SelectTrigger id="method">
                   <SelectValue />
                 </SelectTrigger>
@@ -262,7 +276,11 @@ export function IntegrationTestDialog({
                   "Run Test"
                 )}
               </Button>
-              <Button variant="outline" onClick={handleClose} disabled={isLoading}>
+              <Button
+                variant="outline"
+                onClick={handleClose}
+                disabled={isLoading}
+              >
                 Close
               </Button>
             </div>
@@ -274,7 +292,10 @@ export function IntegrationTestDialog({
               <span className="text-sm font-medium">Response</span>
               {result && (
                 <div className="flex items-center gap-2">
-                  <Badge variant={result.ok ? "default" : "destructive"} className="text-xs">
+                  <Badge
+                    variant={result.ok ? "default" : "destructive"}
+                    className="text-xs"
+                  >
                     {result.ok ? "Success" : "Error"}
                   </Badge>
                   {result.httpStatus && (
@@ -313,7 +334,10 @@ export function IntegrationTestDialog({
                 <div className="space-y-3">
                   <div className="text-sm font-medium text-destructive">
                     {(() => {
-                      const friendlyMsg = getErrorMessage(result.code, result.httpStatus);
+                      const friendlyMsg = getErrorMessage(
+                        result.code,
+                        result.httpStatus
+                      );
                       return friendlyMsg ?? result.message ?? "Test failed";
                     })()}
                   </div>

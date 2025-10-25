@@ -57,6 +57,7 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
   const [testDialog, setTestDialog] = useState<{
     provider: string;
     displayName: string;
+    accountId: string | null;
   } | null>(null);
   const [notionInternalDialog, setNotionInternalDialog] = useState<{
     mode: "connect" | "update";
@@ -289,6 +290,7 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
                         setTestDialog({
                           provider: integration.provider,
                           displayName: integration.displayName,
+                          accountId: integration.accountId,
                         })
                       }
                     >
@@ -376,6 +378,11 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
           orgSlug={orgSlug}
           provider={testDialog.provider}
           displayName={testDialog.displayName}
+          baseUrlOverride={
+            testDialog.provider === "wordpress" && testDialog.accountId
+              ? testDialog.accountId
+              : undefined
+          }
         />
       )}
 

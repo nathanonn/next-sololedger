@@ -29,18 +29,22 @@ type IntegrationTestDialogProps = {
   orgSlug: string;
   provider: string;
   displayName: string;
+  baseUrlOverride?: string;
 };
 
 // Client-safe provider base URLs for preview
 const PROVIDER_BASE_URLS: Record<string, string> = {
   reddit: "https://oauth.reddit.com",
   notion: "https://api.notion.com/v1",
+  linkedin: "https://api.linkedin.com/v2",
 };
 
 // Default test endpoints for each provider
 const DEFAULT_ENDPOINTS: Record<string, string> = {
   reddit: "/api/v1/me",
   notion: "/v1/users/me",
+  linkedin: "/me",
+  wordpress: "/wp-json/",
 };
 
 type TestResult = {
@@ -68,6 +72,7 @@ export function IntegrationTestDialog({
   orgSlug,
   provider,
   displayName,
+  baseUrlOverride,
 }: IntegrationTestDialogProps): React.JSX.Element {
   const [method, setMethod] = useState<string>("GET");
   const [endpoint, setEndpoint] = useState<string>(
@@ -78,7 +83,10 @@ export function IntegrationTestDialog({
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
 
-  const baseUrl = PROVIDER_BASE_URLS[provider] || "https://api.example.com";
+  const baseUrl =
+    baseUrlOverride ||
+    PROVIDER_BASE_URLS[provider] ||
+    "https://api.example.com";
   const showBodyField = method !== "GET" && method !== "HEAD";
 
   const handleTest = async (): Promise<void> => {
@@ -197,7 +205,9 @@ export function IntegrationTestDialog({
           <div className="flex-1 space-y-4 overflow-y-auto pr-2">
             {/* Preview */}
             <div className="rounded-md bg-muted p-3 text-sm font-mono">
-              <span className="font-semibold">{method}</span> {baseUrl}
+              {/* remove trailing slash from baseUrl if endpoint starts with slash */}
+              <span className="font-semibold">{method}</span>{" "}
+              {baseUrl.replace(/\/$/, "")}
               {endpoint}
             </div>
 

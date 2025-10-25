@@ -60,18 +60,43 @@ export function isIntegrationAllowed(
 }
 
 /**
+ * Get Notion variant flags from environment
+ * Returns which Notion integration types are enabled
+ */
+export function getNotionVariantFlags(): { public: boolean; internal: boolean } {
+  if (!env.INTEGRATIONS_ENABLED) {
+    return { public: false, internal: false };
+  }
+
+  const allowed = env.INTEGRATIONS_ALLOWED.split(",").map((p) => p.trim());
+
+  return {
+    public: allowed.includes("notion_public"),
+    internal: allowed.includes("notion_internal"),
+  };
+}
+
+/**
  * Get list of allowed integration providers from environment
+ * Collapses notion_public and notion_internal into "notion"
  */
 export function getAllowedIntegrations(): IntegrationProvider[] {
   if (!env.INTEGRATIONS_ENABLED) {
     return [];
   }
 
-  const allowed = env.INTEGRATIONS_ALLOWED.split(",")
-    .map((p) => p.trim())
-    .filter((p) => p in PROVIDER_INFO) as IntegrationProvider[];
+  const allowed = env.INTEGRATIONS_ALLOWED.split(",").map((p) => p.trim());
+  const providers = new Set<IntegrationProvider>();
 
-  return allowed;
+  for (const item of allowed) {
+    if (item === "notion_public" || item === "notion_internal") {
+      providers.add("notion");
+    } else if (item in PROVIDER_INFO) {
+      providers.add(item as IntegrationProvider);
+    }
+  }
+
+  return Array.from(providers);
 }
 
 /**

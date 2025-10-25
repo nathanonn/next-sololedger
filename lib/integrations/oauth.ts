@@ -136,6 +136,7 @@ export async function exchangeCodeForToken(
     create: {
       organizationId: authState.organizationId,
       provider,
+      connectionType: "public",
       status: "connected",
       accountId: accountInfo.accountId,
       accountName: accountInfo.accountName,
@@ -152,6 +153,7 @@ export async function exchangeCodeForToken(
       updatedByUserId: authState.userId,
     },
     update: {
+      connectionType: "public",
       status: "connected",
       accountId: accountInfo.accountId,
       accountName: accountInfo.accountName,

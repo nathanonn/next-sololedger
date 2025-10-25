@@ -1,6 +1,10 @@
 import { randomBytes } from "crypto";
 import type { IntegrationProvider } from "@/lib/integrations/providers";
-import { redditRequest, notionRequest, logIntegrationCall } from "@/lib/integrations/client";
+import {
+  redditRequest,
+  notionRequest,
+  logIntegrationCall,
+} from "@/lib/integrations/client";
 
 /**
  * Main trigger function for calling integrated APIs
@@ -179,7 +183,11 @@ function parseProviderError(
 ): IntegrationError {
   // Common HTTP status codes
   if (status === 401) {
-    return createError("UNAUTHORIZED", "Authentication failed or token expired", status);
+    return createError(
+      "UNAUTHORIZED",
+      "Authentication failed or token expired",
+      status
+    );
   }
 
   if (status === 403) {

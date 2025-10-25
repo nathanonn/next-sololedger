@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
-import { isIntegrationAllowed, PROVIDER_INFO } from "@/lib/integrations/providers";
+import { isIntegrationAllowed } from "@/lib/integrations/providers";
 import { exchangeCodeForToken } from "@/lib/integrations/oauth";
 import type { IntegrationProvider } from "@/lib/integrations/providers";
 

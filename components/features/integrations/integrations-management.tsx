@@ -16,8 +16,15 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
 import { IntegrationTestDialog } from "@/components/features/integrations/integration-test-dialog";
+import { NotionInternalConnectDialog } from "@/components/features/integrations/notion-internal-connect-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type IntegrationProvider = {
   provider: string;
@@ -28,6 +35,8 @@ type IntegrationProvider = {
   accountName: string | null;
   scope: string | null;
   lastUpdated: string | null;
+  variantsAllowed?: { public: boolean; internal: boolean };
+  connectionType?: string | null;
 };
 
 type IntegrationsManagementProps = {
@@ -47,6 +56,9 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
   const [testDialog, setTestDialog] = useState<{
     provider: string;
     displayName: string;
+  } | null>(null);
+  const [notionInternalDialog, setNotionInternalDialog] = useState<{
+    mode: "connect" | "update";
   } | null>(null);
 
   // Fetch integrations
@@ -190,6 +202,11 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
                   {integration.status === "error" && (
                     <Badge variant="destructive">Error</Badge>
                   )}
+                  {integration.provider === "notion" && integration.connectionType && (
+                    <Badge variant="outline">
+                      Type: {integration.connectionType === "public" ? "Public" : "Internal"}
+                    </Badge>
+                  )}
                 </CardTitle>
                 {integration.accountName && (
                   <CardDescription>
@@ -201,19 +218,58 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
                     Last updated: {new Date(integration.lastUpdated).toLocaleString()}
                   </CardDescription>
                 )}
+                {integration.provider === "notion" && integration.connectionType === "internal" && integration.connected && (
+                  <CardDescription className="text-xs mt-2 text-amber-600">
+                    Ensure required pages/databases are shared with the integration in Notion.
+                  </CardDescription>
+                )}
               </div>
               <div className="flex gap-2">
                 {!integration.connected || integration.status === "error" ? (
-                  <Button
-                    onClick={() => handleConnect(integration.provider)}
-                    disabled={connectingProvider === integration.provider}
-                  >
-                    {connectingProvider === integration.provider && (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    )}
-                    {integration.status === "error" ? "Reconnect" : "Connect"}
-                  </Button>
+                  // Not connected or in error state
+                  integration.provider === "notion" && integration.variantsAllowed ? (
+                    // Notion with variants - show dropdown
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button disabled={connectingProvider === integration.provider}>
+                          {connectingProvider === integration.provider && (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          )}
+                          {integration.status === "error" ? "Reconnect" : "Connect"}
+                          <ChevronDown className="ml-2 h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {integration.variantsAllowed.public && (
+                          <DropdownMenuItem onClick={() => handleConnect(integration.provider)}>
+                            {integration.status === "error" && integration.connectionType === "public"
+                              ? "Reconnect with OAuth (Public)"
+                              : "Connect with OAuth (Public)"}
+                          </DropdownMenuItem>
+                        )}
+                        {integration.variantsAllowed.internal && (
+                          <DropdownMenuItem onClick={() => setNotionInternalDialog({ mode: integration.status === "error" && integration.connectionType === "internal" ? "update" : "connect" })}>
+                            {integration.status === "error" && integration.connectionType === "internal"
+                              ? "Update Token (Internal)"
+                              : "Connect with Token (Internal)"}
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    // Standard connect button for non-Notion or Notion without variants
+                    <Button
+                      onClick={() => handleConnect(integration.provider)}
+                      disabled={connectingProvider === integration.provider}
+                    >
+                      {connectingProvider === integration.provider && (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      )}
+                      {integration.status === "error" ? "Reconnect" : "Connect"}
+                    </Button>
+                  )
                 ) : (
+                  // Connected
                   <>
                     <Button
                       variant="outline"
@@ -226,6 +282,14 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
                     >
                       Test Connection
                     </Button>
+                    {integration.provider === "notion" && integration.connectionType === "internal" && (
+                      <Button
+                        variant="outline"
+                        onClick={() => setNotionInternalDialog({ mode: "update" })}
+                      >
+                        Update Token
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       onClick={() =>
@@ -292,6 +356,27 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
           orgSlug={orgSlug}
           provider={testDialog.provider}
           displayName={testDialog.displayName}
+        />
+      )}
+
+      {/* Notion internal connect/update dialog */}
+      {notionInternalDialog && (
+        <NotionInternalConnectDialog
+          open={!!notionInternalDialog}
+          onOpenChange={(open) => {
+            if (!open) {
+              setNotionInternalDialog(null);
+              setTimeout(() => {
+                document.body.style.pointerEvents = "";
+              }, 300);
+            }
+          }}
+          orgSlug={orgSlug}
+          mode={notionInternalDialog.mode}
+          onSuccess={() => {
+            setNotionInternalDialog(null);
+            fetchIntegrations();
+          }}
         />
       )}
     </div>

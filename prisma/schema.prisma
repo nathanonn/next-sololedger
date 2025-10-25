@@ -248,9 +248,11 @@ model OrganizationIntegration {
   id                    String    @id @default(cuid())
   organizationId        String
   provider              String    @db.VarChar(20) // "reddit" | "notion"
+  connectionType        String    @db.VarChar(20) @default("public") // "public" | "internal"
   status                String    @db.VarChar(20) @default("connected") // "connected" | "disconnected" | "error"
   accountId             String?   @db.VarChar(255) // Reddit user id; Notion workspace/bot id
   accountName           String?   @db.VarChar(255) // Reddit username; Notion workspace name
+  workspaceId           String?   @db.VarChar(255) // Notion workspace ID (optional)
   encryptedAccessToken  String    @db.Text // AES-256-GCM encrypted
   encryptedRefreshToken String?   @db.Text // AES-256-GCM encrypted, Reddit only
   tokenType             String?   @db.VarChar(50) // e.g., "bearer"

@@ -3,7 +3,10 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { getOrgBySlug, requireAdminOrSuperadmin } from "@/lib/org-helpers";
 import { validateCsrf } from "@/lib/csrf";
 import { env } from "@/lib/env";
-import { isIntegrationAllowed } from "@/lib/integrations/providers";
+import {
+  isIntegrationAllowed,
+  getNotionVariantFlags,
+} from "@/lib/integrations/providers";
 import { buildAuthorizeUrl } from "@/lib/integrations/oauth";
 import type { IntegrationProvider } from "@/lib/integrations/providers";
 
@@ -64,6 +67,17 @@ export async function POST(
         { error: `Provider "${provider}" is not allowed` },
         { status: 400 }
       );
+    }
+
+    // For Notion, require notion_public to be enabled
+    if (provider === "notion") {
+      const notionVariants = getNotionVariantFlags();
+      if (!notionVariants.public) {
+        return NextResponse.json(
+          { error: "Notion public OAuth is not enabled" },
+          { status: 400 }
+        );
+      }
     }
 
     // Build authorization URL

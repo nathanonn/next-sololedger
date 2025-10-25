@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import {
   getAllowedIntegrations,
+  getNotionVariantFlags,
   PROVIDER_INFO,
 } from "@/lib/integrations/providers";
 
@@ -60,6 +61,7 @@ export async function GET(
       where: { organizationId: org.id },
       select: {
         provider: true,
+        connectionType: true,
         status: true,
         accountId: true,
         accountName: true,
@@ -68,11 +70,14 @@ export async function GET(
       },
     });
 
+    // Get Notion variant flags
+    const notionVariants = getNotionVariantFlags();
+
     // Build provider status map
     const providersWithStatus = allowedProviders.map((provider) => {
       const integration = integrations.find((i) => i.provider === provider);
 
-      return {
+      const baseInfo = {
         provider,
         displayName: PROVIDER_INFO[provider].displayName,
         connected: integration?.status === "connected",
@@ -82,6 +87,17 @@ export async function GET(
         scope: integration?.scope ?? null,
         lastUpdated: integration?.updatedAt ?? null,
       };
+
+      // Add Notion-specific fields
+      if (provider === "notion") {
+        return {
+          ...baseInfo,
+          variantsAllowed: notionVariants,
+          connectionType: integration?.connectionType ?? null,
+        };
+      }
+
+      return baseInfo;
     });
 
     return NextResponse.json({ providers: providersWithStatus });

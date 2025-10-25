@@ -122,7 +122,7 @@ const envSchema = z.object({
     .default("false"),
   INTEGRATIONS_ALLOWED: z
     .string()
-    .default("reddit,notion"),
+    .default("reddit,notion_public,notion_internal"),
   INTEGRATIONS_USAGE_LOGGING_ENABLED: z
     .string()
     .transform((val) => val === "true")
@@ -198,10 +198,26 @@ const envSchema = z.object({
   )
   .refine(
     (data) => {
-      // If integrations are enabled and notion is allowed, validate Notion credentials
+      // Hard-break: reject legacy "notion" in INTEGRATIONS_ALLOWED
       if (data.INTEGRATIONS_ENABLED) {
         const allowed = data.INTEGRATIONS_ALLOWED.split(",").map((p) => p.trim());
         if (allowed.includes("notion")) {
+          return false;
+        }
+      }
+      return true;
+    },
+    {
+      message: 'Legacy "notion" is no longer supported in INTEGRATIONS_ALLOWED. Use "notion_public" and/or "notion_internal" instead.',
+      path: ["INTEGRATIONS_ALLOWED"],
+    }
+  )
+  .refine(
+    (data) => {
+      // If integrations are enabled and notion_public is allowed, validate Notion OAuth credentials
+      if (data.INTEGRATIONS_ENABLED) {
+        const allowed = data.INTEGRATIONS_ALLOWED.split(",").map((p) => p.trim());
+        if (allowed.includes("notion_public")) {
           if (!data.NOTION_CLIENT_ID || !data.NOTION_CLIENT_SECRET) {
             return false;
           }
@@ -210,7 +226,7 @@ const envSchema = z.object({
       return true;
     },
     {
-      message: "NOTION_CLIENT_ID and NOTION_CLIENT_SECRET are required when notion is in INTEGRATIONS_ALLOWED",
+      message: "NOTION_CLIENT_ID and NOTION_CLIENT_SECRET are required when notion_public is in INTEGRATIONS_ALLOWED",
       path: ["NOTION_CLIENT_ID"],
     }
   );

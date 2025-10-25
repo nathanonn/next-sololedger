@@ -4,6 +4,8 @@ Concise, must-know guardrails and references for this repository.
 
 ## Stack & Guardrails
 
+- Framework versions: Next.js 15 (App Router), React 19, TypeScript 5, Tailwind v4
+
 - Styling: Tailwind + shadcn/ui (Radix). Icons: Lucide only.
 - Database: Local PostgreSQL + Prisma ORM. pgvector enabled for embeddings.
 - Auth: Email OTP (Resend) + JWT sessions (access + refresh cookies). bcrypt + jose.
@@ -17,6 +19,7 @@ Concise, must-know guardrails and references for this repository.
 - ❌ Expose secrets or AI calls to client
 - ❌ Add icon libraries other than Lucide
 - ❌ Use cloud databases (local PostgreSQL only)
+- ❌ Handle OAuth or store provider tokens in client; server-only. APP_ENCRYPTION_KEY required when storing tokens.
 
 ## Project Structure (minimal)
 
@@ -26,6 +29,7 @@ app/
   api/
     auth/                        # request-otp, verify-otp, dev-signin, signout, refresh, profile
     orgs/                        # orgs, members, invitations, AI
+    integrations/                # OAuth callbacks, test, disconnect (server-only)
   admin/                         # admin area
   invite/                        # invite landing
   onboarding/create-organization/
@@ -34,7 +38,7 @@ app/
 
 components/
   ui/                            # shadcn components (excluded from tsconfig)
-  features/                      # dashboard, org, admin, ai features
+  features/                      # dashboard, org, admin, ai, integrations features
 
 lib/                             # env, jwt (node/edge), csrf, rate-limit, email, validators,
                                  # auth, auth-helpers, org-helpers, invitation-helpers, utils,
@@ -86,6 +90,12 @@ APP_URL=http://localhost:3000
 ```
 
 See `.env.example` for all variables and defaults.
+
+When enabling AI/Integrations
+
+- APP_ENCRYPTION_KEY is required (AES‑256‑GCM) for storing provider tokens/AI keys.
+- Toggle features via AI_FEATURES_ENABLED / INTEGRATIONS_ENABLED.
+- See wireframes for flows (notes/boilerplate_wireframes.md).
 
 ## Critical UI Patterns
 
@@ -139,6 +149,10 @@ toast("Custom message", {
 
 **Important**: `<Toaster />` is already added to root layout at top-right position. Never add it again.
 
+Integrations Actions (policy)
+
+- Admins/superadmins see action buttons (Connect/Test/Disconnect); members see read-only cards. No dedicated “Reconnect” — show Disconnect on error.
+
 ## Dev Commands (minimal)
 
 ```bash
@@ -152,6 +166,11 @@ npm run dev
 
 - Server-side only. Never expose keys or calls to client.
 - Allowed providers configurable; see notes.
+
+## Integrations (quick note)
+
+- Server-side only for OAuth and token storage; never handle tokens in client. APP_ENCRYPTION_KEY required.
+- OAuth callbacks and connection tests run on Node runtime routes. See wireframes (notes/boilerplate_wireframes.md).
 
 ## References
 

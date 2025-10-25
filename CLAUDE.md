@@ -83,47 +83,50 @@ prisma/
 middleware.ts
 ```
 
+POST /api/orgs/[orgSlug]/ai/generate # Text generation (supports streaming)
+POST /api/orgs/[orgSlug]/ai/keys # Add/verify/remove provider API keys
+POST /api/orgs/[orgSlug]/ai/models # Add/remove curated models; set default
+GET /api/integrations/[provider]/callback # OAuth callback (code+state)
+POST /api/integrations/[provider]/test # Connection test
+POST /api/integrations/[provider]/disconnect # Disconnect and revoke/remove tokens
+
 ## Coding Standards (core)
 
 - Server-first: default Server Components; add `'use client'` only when needed.
 - API routes must set `export const runtime = "nodejs"` for DB access.
-- TypeScript strict: explicit return types; avoid `any`; no `enum`; prefer functional patterns.
-- Naming: files `kebab-case`; components `PascalCase`; functions `camelCase`; constants `UPPER_SNAKE_CASE`.
 - Security red lines: see `AGENTS.md`.
 
 ## Required Environment Variables
 
-```bash
 # Database (required)
+
 DATABASE_URL=postgresql://user:password@localhost:5432/db
 
-# Auth (required)
-JWT_SECRET=<32+ chars, generate with: openssl rand -base64 32>
-JWT_ACCESS_COOKIE_NAME=__access
-JWT_REFRESH_COOKIE_NAME=__session
+JWT_ACCESS_COOKIE_NAME=**access
+JWT_REFRESH_COOKIE_NAME=**session
 ALLOWED_EMAILS=user@example.com,admin@example.com
-
-# Email (required for production OTP)
-RESEND_API_KEY=re_...
 RESEND_FROM_EMAIL=noreply@yourdomain.com
 
 # App (required)
+
 APP_URL=http://localhost:3000
 
 # Dev Mode (optional)
-ENABLE_DEV_PASSWORD_SIGNIN=true      # Enable password signin in dev
-SKIP_PASSWORD_VALIDATION=false        # Skip zxcvbn in set-password (dev only)
 
-# Rate Limiting & Captcha (optional)
-HCAPTCHA_ENABLED=false
+ENABLE_DEV_PASSWORD_SIGNIN=true # Enable password signin in dev
+
+SKIP_PASSWORD_VALIDATION=false # Skip zxcvbn in set-password (dev only)
 HCAPTCHA_SITE_KEY=
 HCAPTCHA_SECRET_KEY=
 
 # Tunables (optional, defaults shown)
+
 OTP_EXP_MINUTES=10
 OTP_LENGTH=6
 BCRYPT_ROUNDS=12
-```
+
+````
+6. ❌ Handle OAuth or store provider tokens in client; server-only. APP_ENCRYPTION_KEY required when storing tokens.
 
 ## Notes
 
@@ -153,7 +156,7 @@ npm run lint         # Run ESLint
 
 npx shadcn@latest add <component>  # Add UI component
 npx prisma studio                   # Open database GUI
-```
+````
 
 ## Red Lines (Never Do)
 

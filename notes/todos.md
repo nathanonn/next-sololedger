@@ -2,4 +2,3 @@
 
 =====
 
-I want to add 2 more app integrations: LinkedIn and WordPress (the open source version). These integrations should allow orgs to connect their LinkedIn and WordPress accounts to the platform, enabling features such as posting updates, fetching analytics, and managing content directly from the platform. Each integration should have its own settings page where orgs can manage their connections and configure any necessary options.

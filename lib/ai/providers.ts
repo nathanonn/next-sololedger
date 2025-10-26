@@ -29,9 +29,9 @@ export const PROVIDER_CAPS: Record<
   AiProvider,
   { maxOutputTokens: number; displayName: string }
 > = {
-  openai: { maxOutputTokens: 16384, displayName: "OpenAI" },
-  gemini: { maxOutputTokens: 8192, displayName: "Google Gemini" },
-  anthropic: { maxOutputTokens: 8192, displayName: "Anthropic" },
+  openai: { maxOutputTokens: 128000, displayName: "OpenAI" },
+  gemini: { maxOutputTokens: 65535, displayName: "Google Gemini" },
+  anthropic: { maxOutputTokens: 64000, displayName: "Anthropic" },
 };
 
 /**
@@ -41,27 +41,15 @@ export const PROVIDER_CAPS: Record<
 export const CURATED_MODELS: Record<AiProvider, CuratedModel[]> = {
   openai: [
     {
-      id: "gpt-4o-mini",
-      label: "GPT-4o Mini",
-      maxOutputTokens: 16384,
-      description: "Fast, cost-effective model for most tasks",
-    },
-    {
-      id: "gpt-4o",
-      label: "GPT-4o",
-      maxOutputTokens: 16384,
-      description: "Advanced reasoning and complex tasks",
-    },
-    {
       id: "gpt-5-mini",
       label: "GPT-5 Mini",
-      maxOutputTokens: 16384,
+      maxOutputTokens: 128000,
       description: "Latest small model with improved capabilities",
     },
     {
       id: "gpt-5",
       label: "GPT-5",
-      maxOutputTokens: 16384,
+      maxOutputTokens: 128000,
       description: "Most capable OpenAI model",
     },
   ],
@@ -69,45 +57,33 @@ export const CURATED_MODELS: Record<AiProvider, CuratedModel[]> = {
     {
       id: "gemini-2.5-flash",
       label: "Gemini 2.5 Flash",
-      maxOutputTokens: 8192,
+      maxOutputTokens: 65535,
       description: "Fast, multimodal model with large context",
     },
     {
       id: "gemini-2.5-pro",
       label: "Gemini 2.5 Pro",
-      maxOutputTokens: 8192,
+      maxOutputTokens: 65535,
       description: "Advanced reasoning with 2M token context",
-    },
-    {
-      id: "gemini-1.5-flash",
-      label: "Gemini 1.5 Flash",
-      maxOutputTokens: 8192,
-      description: "Fast, cost-effective model",
-    },
-    {
-      id: "gemini-1.5-pro",
-      label: "Gemini 1.5 Pro",
-      maxOutputTokens: 8192,
-      description: "High-quality multimodal understanding",
     },
   ],
   anthropic: [
     {
-      id: "claude-3-5-haiku-20241022",
-      label: "Claude 3.5 Haiku",
-      maxOutputTokens: 8192,
+      id: "claude-haiku-4-5-20251001",
+      label: "Claude Haiku 4.5",
+      maxOutputTokens: 64000,
       description: "Fastest Claude model for simple tasks",
     },
     {
-      id: "claude-3-5-sonnet-20241022",
-      label: "Claude 3.5 Sonnet",
-      maxOutputTokens: 8192,
+      id: "claude-sonnet-4-5-20250929",
+      label: "Claude Sonnet 4.5",
+      maxOutputTokens: 64000,
       description: "Balanced performance and speed",
     },
     {
-      id: "claude-sonnet-4-20250514",
-      label: "Claude Sonnet 4",
-      maxOutputTokens: 8192,
+      id: "claude-opus-4-1-20250805",
+      label: "Claude Opus 4.1",
+      maxOutputTokens: 32000,
       description: "Latest Claude with advanced capabilities",
     },
   ],

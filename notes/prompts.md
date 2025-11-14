@@ -4,8 +4,8 @@
 
 ```
 ./worktrees.sh setup \
-  --branches feat/org_linkedin_wp_integration \
-  --db-url postgresql://pi:password@localhost:5432/nextboilerplate
+  --branches feat/first_vibe \
+  --db-url postgresql://pi:password@localhost:5432/nextsololedger
 ```
 
 ## Clean the worktree
@@ -17,7 +17,7 @@
 ## merge
 
 ```
-./worktrees.sh merge --branches feat/org_linkedin_wp_integration --into main
+./worktrees.sh merge --branches feat/first_vibe --into main
 ```
 
 # create wireframes based on plan

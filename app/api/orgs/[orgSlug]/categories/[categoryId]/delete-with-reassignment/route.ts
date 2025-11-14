@@ -55,23 +55,10 @@ export async function POST(
 
     const { replacementCategoryId } = validation.data;
 
-    // Category cannot be reassigned to itself
-    if (categoryId === replacementCategoryId) {
-      return NextResponse.json(
-        { error: "Cannot reassign category to itself" },
-        { status: 400 }
-      );
-    }
-
-    // Get both categories
-    const [categoryToDelete, replacementCategory] = await Promise.all([
-      db.category.findUnique({
-        where: { id: categoryId },
-      }),
-      db.category.findUnique({
-        where: { id: replacementCategoryId },
-      }),
-    ]);
+    // Get category to delete
+    const categoryToDelete = await db.category.findUnique({
+      where: { id: categoryId },
+    });
 
     // Validate category to delete exists and belongs to org
     if (!categoryToDelete || categoryToDelete.organizationId !== org.id) {
@@ -80,6 +67,41 @@ export async function POST(
         { status: 404 }
       );
     }
+
+    // Check how many transactions use this category
+    const transactionCount = await db.transaction.count({
+      where: {
+        organizationId: org.id,
+        categoryId: categoryToDelete.id,
+      },
+    });
+
+    // If no transactions, allow deletion without replacement validation
+    if (transactionCount === 0) {
+      await db.category.delete({
+        where: { id: categoryToDelete.id },
+      });
+
+      return NextResponse.json({
+        success: true,
+        reassignedCount: 0,
+        message: "Category deleted successfully",
+      });
+    }
+
+    // If there are transactions, validate replacement category
+    // Category cannot be reassigned to itself
+    if (categoryId === replacementCategoryId) {
+      return NextResponse.json(
+        { error: "Cannot reassign category to itself" },
+        { status: 400 }
+      );
+    }
+
+    // Get replacement category
+    const replacementCategory = await db.category.findUnique({
+      where: { id: replacementCategoryId },
+    });
 
     // Validate replacement category exists and belongs to org
     if (

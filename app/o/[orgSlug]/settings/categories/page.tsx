@@ -256,8 +256,10 @@ export default function CategoriesManagementPage(): React.JSX.Element {
     if (!categoryToDelete) return;
 
     const categoryUsage = usage.find((u) => u.id === categoryToDelete.id);
+    const hasTransactions = categoryUsage && categoryUsage.transactionCount > 0;
 
-    if (categoryUsage && categoryUsage.transactionCount > 0 && !replacementCategoryId) {
+    // Only require replacement if category has transactions
+    if (hasTransactions && !replacementCategoryId) {
       toast.error("Please select a replacement category");
       return;
     }
@@ -271,6 +273,8 @@ export default function CategoriesManagementPage(): React.JSX.Element {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            // For unused categories, send any valid category ID (the API will ignore it)
+            // For used categories, send the selected replacement
             replacementCategoryId: replacementCategoryId || categoryToDelete.id,
           }),
         }

@@ -126,7 +126,9 @@ export default function VendorsPage() {
         const response = await fetch(`/api/orgs/${orgSlug}/settings/financial`);
         if (response.ok) {
           const data = await response.json();
-          setSettings({ baseCurrency: data.baseCurrency });
+          if (data.settings) {
+            setSettings({ baseCurrency: data.settings.baseCurrency });
+          }
         }
       } catch (error) {
         console.error("Failed to fetch settings:", error);

@@ -113,10 +113,12 @@ export default function AccountsManagementPage(): React.JSX.Element {
         const response = await fetch(`/api/orgs/${orgSlug}/settings/financial`);
         if (response.ok) {
           const data = await response.json();
-          setSettings({
-            baseCurrency: data.baseCurrency,
-            fiscalYearStartMonth: data.fiscalYearStartMonth || 1,
-          });
+          if (data.settings) {
+            setSettings({
+              baseCurrency: data.settings.baseCurrency,
+              fiscalYearStartMonth: data.settings.fiscalYearStartMonth || 1,
+            });
+          }
         }
       } catch (error) {
         console.error("Failed to fetch settings:", error);

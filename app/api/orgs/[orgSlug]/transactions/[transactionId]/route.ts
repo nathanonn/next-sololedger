@@ -257,14 +257,11 @@ export async function PATCH(
       if (data.vendorName && data.vendorName.trim()) {
         const vendorName = data.vendorName.trim();
 
-        // Look for existing vendor (case-insensitive)
+        // Look for existing vendor (case-insensitive via nameLower)
         let vendor = await db.vendor.findFirst({
           where: {
             organizationId: org.id,
-            name: {
-              equals: vendorName,
-              mode: "insensitive",
-            },
+            nameLower: vendorName.toLowerCase(),
           },
         });
 
@@ -274,6 +271,7 @@ export async function PATCH(
             data: {
               organizationId: org.id,
               name: vendorName,
+              nameLower: vendorName.toLowerCase(),
               active: true,
             },
           });

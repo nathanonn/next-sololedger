@@ -206,14 +206,11 @@ export async function POST(
 
     const data = validation.data;
 
-    // Check for existing vendor with same name (case-insensitive)
+    // Check for existing vendor with same name (case-insensitive via nameLower)
     const existingVendor = await db.vendor.findFirst({
       where: {
         organizationId: org.id,
-        name: {
-          equals: data.name,
-          mode: "insensitive",
-        },
+        nameLower: data.name.toLowerCase(),
       },
     });
 
@@ -231,6 +228,7 @@ export async function POST(
       data: {
         organizationId: org.id,
         name: data.name,
+        nameLower: data.name.toLowerCase(),
         email: data.email || null,
         phone: data.phone || null,
         notes: data.notes || null,

@@ -436,6 +436,7 @@ model Vendor {
   id             String        @id @default(cuid())
   organizationId String
   name           String        @db.VarChar(255)
+  nameLower      String        @db.VarChar(255) // Lowercase version for case-insensitive uniqueness
   email          String?       @db.VarChar(255)
   phone          String?       @db.VarChar(50)
   notes          String?       @db.Text
@@ -449,8 +450,8 @@ model Vendor {
   mergedVendors  Vendor[]      @relation("VendorMerge")
   transactions   Transaction[]
 
+  @@unique([organizationId, nameLower]) // Enforce case-insensitive unique vendor names per org
   @@index([organizationId, active])
-  @@index([organizationId, name])
   @@map("vendors")
 }
 

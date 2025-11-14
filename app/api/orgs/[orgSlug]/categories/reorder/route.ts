@@ -95,7 +95,7 @@ export async function POST(
 
     // Group categories by (type, parentId) to ensure reordering is within groups
     const categoryMap = new Map(dbCategories.map((cat) => [cat.id, cat]));
-    const groups = new Map<string, typeof categories>();
+    const groups = new Map<string, Array<{ id: string; sortOrder: number }>>();
 
     for (const category of categories) {
       const dbCat = categoryMap.get(category.id);
@@ -103,16 +103,33 @@ export async function POST(
 
       const groupKey = `${dbCat.type}:${dbCat.parentId ?? "null"}`;
       const existing = groups.get(groupKey) || [];
-      existing.push(category);
+      existing.push({ id: category.id, sortOrder: category.sortOrder });
       groups.set(groupKey, existing);
+    }
+
+    // For each group, reassign sortOrder sequentially (0, 1, 2, ...)
+    // This ensures no gaps or duplicates and validates sibling-level ordering
+    const updates: Array<{ id: string; sortOrder: number }> = [];
+
+    for (const groupCategories of groups.values()) {
+      // Sort by the requested sortOrder
+      groupCategories.sort((a, b) => a.sortOrder - b.sortOrder);
+
+      // Reassign sequential sortOrder values
+      groupCategories.forEach((cat, index) => {
+        updates.push({
+          id: cat.id,
+          sortOrder: index,
+        });
+      });
     }
 
     // Perform updates in a transaction
     await db.$transaction(
-      categories.map((cat) =>
+      updates.map((update) =>
         db.category.update({
-          where: { id: cat.id },
-          data: { sortOrder: cat.sortOrder },
+          where: { id: update.id },
+          data: { sortOrder: update.sortOrder },
         })
       )
     );

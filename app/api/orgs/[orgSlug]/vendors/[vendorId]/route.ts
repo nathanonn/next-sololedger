@@ -73,10 +73,7 @@ export async function PATCH(
       const duplicateVendor = await db.vendor.findFirst({
         where: {
           organizationId: org.id,
-          name: {
-            equals: data.name,
-            mode: "insensitive",
-          },
+          nameLower: data.name.toLowerCase(),
           id: { not: vendorId },
         },
       });
@@ -95,13 +92,17 @@ export async function PATCH(
     // Build update data
     const updateData: {
       name?: string;
+      nameLower?: string;
       email?: string | null;
       phone?: string | null;
       notes?: string | null;
       active?: boolean;
     } = {};
 
-    if (data.name !== undefined) updateData.name = data.name;
+    if (data.name !== undefined) {
+      updateData.name = data.name;
+      updateData.nameLower = data.name.toLowerCase();
+    }
     if (data.email !== undefined) updateData.email = data.email || null;
     if (data.phone !== undefined) updateData.phone = data.phone || null;
     if (data.notes !== undefined) updateData.notes = data.notes || null;

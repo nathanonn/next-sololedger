@@ -46,7 +46,7 @@ Read the codebase, and help me come up with a plan to implement everything above
 
 Make sure to include a short description for this plan in paragrah format at the beginning of the plan.
 
-IMPORTANT: DON'T WRITE OR EDIT ANY FILES.
+IMPORTANT: DON'T WRITE OR EDIT ANY FILES UNTIL I TELL YOU TO.
 
 Use web search if you need to find solutions to problems you encounter, or look for the latest documentation.
 
@@ -59,4 +59,4 @@ Always mark each question with a number, like 1/, 2/, 3/, etc. so that I can eas
 
 For each question, add your recommendation (with reason why) below each options. This would help me in making a better decision.
 
-Once you are 95% confident you can complete this task successfully, put the plan at @notes/plan.md.
+Once you are 95% confident you can complete this task successfully, put the plan in a code block so that I can easily copy it.

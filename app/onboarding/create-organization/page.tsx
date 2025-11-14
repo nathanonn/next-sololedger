@@ -80,14 +80,14 @@ export default function CreateOrganizationPage(): React.JSX.Element {
       const result = await response.json();
 
       if (!response.ok) {
-        toast.error(result.error || "Failed to create workspace");
+        toast.error(result.error || "Failed to create business");
         return;
       }
 
-      toast.success("Workspace created successfully");
+      toast.success("Business created successfully");
 
-      // Redirect to new organization dashboard
-      router.push(`/o/${result.organization.slug}/dashboard`);
+      // Redirect to onboarding step 2: Business Details
+      router.push(`/onboarding/${result.organization.slug}/business`);
     } catch {
       toast.error("Network error. Please try again.");
     } finally {
@@ -99,18 +99,21 @@ export default function CreateOrganizationPage(): React.JSX.Element {
     <div className="min-h-screen flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Create your workspace</CardTitle>
+          <div className="text-sm text-muted-foreground mb-2">
+            Step 1 of 4
+          </div>
+          <CardTitle>Create your business</CardTitle>
           <CardDescription>
-            Get started by creating your first workspace
+            Set up a business to track your Sololedger data
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Workspace Name</Label>
+              <Label htmlFor="name">Business Name</Label>
               <Input
                 id="name"
-                placeholder="My Workspace"
+                placeholder="My Business"
                 {...form.register("name")}
                 disabled={isLoading}
               />
@@ -122,11 +125,11 @@ export default function CreateOrganizationPage(): React.JSX.Element {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="slug">Workspace URL</Label>
+              <Label htmlFor="slug">Business URL</Label>
               <div className="flex items-center gap-2">
                 <Input
                   id="slug"
-                  placeholder="my-workspace"
+                  placeholder="my-business"
                   {...form.register("slug")}
                   disabled={isLoading}
                   className="font-mono text-sm"
@@ -139,7 +142,7 @@ export default function CreateOrganizationPage(): React.JSX.Element {
               )}
               <p className="text-xs text-muted-foreground">
                 {typeof window !== "undefined" &&
-                  `${window.location.origin}/o/${form.watch("slug") || "your-workspace"}`}
+                  `${window.location.origin}/o/${form.watch("slug") || "your-business"}`}
               </p>
               <p className="text-xs text-muted-foreground">
                 Tip: You can&apos;t change the slug later.
@@ -148,7 +151,7 @@ export default function CreateOrganizationPage(): React.JSX.Element {
 
             <div className="flex gap-2 pt-4">
               <Button type="submit" disabled={isLoading} className="flex-1">
-                {isLoading ? "Creating..." : "Create workspace"}
+                {isLoading ? "Creating..." : "Continue"}
               </Button>
             </div>
           </form>

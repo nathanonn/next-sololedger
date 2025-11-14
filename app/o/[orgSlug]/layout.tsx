@@ -7,7 +7,7 @@ import {
 } from "@/lib/org-helpers";
 import { DashboardShell } from "@/components/features/dashboard/dashboard-shell";
 import { env } from "@/lib/env";
-import { Home, Settings } from "lucide-react";
+import { Home, Settings, Building2, Receipt, Wallet, Tags } from "lucide-react";
 import { db } from "@/lib/db";
 
 /**
@@ -53,6 +53,37 @@ export default async function OrgLayout({
     : membership?.role || "member";
   const isAdminOrSuperadmin = userRole === "admin" || userRole === "superadmin";
 
+  // Onboarding guard: redirect to onboarding if not complete
+  // Superadmins can bypass for debugging
+  if (!org.onboardingComplete && !userIsSuperadmin) {
+    // Get organization settings to determine which step to redirect to
+    const settings = await db.organizationSettings.findUnique({
+      where: { organizationId: org.id },
+    });
+
+    // Determine next incomplete step
+    if (!settings) {
+      // No settings yet, redirect to business details (step 2)
+      redirect(`/onboarding/${orgSlug}/business`);
+    } else if (!settings.baseCurrency || !settings.fiscalYearStartMonth) {
+      // Financial config incomplete, redirect to step 3
+      redirect(`/onboarding/${orgSlug}/financial`);
+    } else {
+      // Check if categories exist
+      const categoryCount = await db.category.count({
+        where: { organizationId: org.id },
+      });
+
+      if (categoryCount === 0) {
+        // No categories, redirect to step 4
+        redirect(`/onboarding/${orgSlug}/categories`);
+      } else {
+        // All steps done but not marked complete, redirect to categories to finish
+        redirect(`/onboarding/${orgSlug}/categories`);
+      }
+    }
+  }
+
   // Compute canCreateOrganizations
   let canCreateOrganizations = false;
   if (userIsSuperadmin) {
@@ -68,9 +99,9 @@ export default async function OrgLayout({
   // Build sections and pages with org-scoped URLs
   const sections = [
     {
-      id: "main",
-      label: "Main",
-      icon: <Home className="h-4 w-4" />,
+      id: "business",
+      label: "Business",
+      icon: <Building2 className="h-4 w-4" />,
     },
     {
       id: "settings",
@@ -81,12 +112,34 @@ export default async function OrgLayout({
 
   // Build all pages (will be filtered below)
   const allPages = [
+    // Business section
     {
       id: "dashboard",
       label: "Dashboard",
       href: `/o/${orgSlug}/dashboard`,
-      sectionId: "main",
+      sectionId: "business",
     },
+    {
+      id: "transactions",
+      label: "Transactions",
+      href: `/o/${orgSlug}/transactions`,
+      sectionId: "business",
+    },
+    {
+      id: "accounts",
+      label: "Accounts",
+      href: `/o/${orgSlug}/settings/accounts`,
+      sectionId: "business",
+      adminOnly: true, // Only admins can manage accounts
+    },
+    {
+      id: "categories",
+      label: "Categories",
+      href: `/o/${orgSlug}/settings/categories`,
+      sectionId: "business",
+      // Members can manage categories
+    },
+    // Settings section
     {
       id: "profile",
       label: "Profile",

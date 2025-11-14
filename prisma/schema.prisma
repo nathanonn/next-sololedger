@@ -34,6 +34,7 @@ model User {
   aiGenerationLogs       AiGenerationLog[] @relation("AiGenerationLogs")
   createdIntegrations    OrganizationIntegration[] @relation("IntegrationCreatedBy")
   updatedIntegrations    OrganizationIntegration[] @relation("IntegrationUpdatedBy")
+  transactions           Transaction[] @relation("TransactionCreator")
 
   @@index([email])
   @@index([defaultOrganizationId])
@@ -90,23 +91,28 @@ model AuditLog {
 
 // Organization: tenant isolation boundary
 model Organization {
-  id          String   @id @default(cuid())
-  name        String   @db.VarChar(255)
-  slug        String   @unique @db.VarChar(50)
-  createdById String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  name                 String   @db.VarChar(255)
+  slug                 String   @unique @db.VarChar(50)
+  createdById          String
+  onboardingComplete   Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
-  createdBy             User                     @relation("OrganizationCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy             User                        @relation("OrganizationCreator", fields: [createdById], references: [id], onDelete: Restrict)
   memberships           Membership[]
   invitations           Invitation[]
   auditLogs             AuditLog[]
-  defaultForUsers       User[]                   @relation("UserDefaultOrganization")
+  defaultForUsers       User[]                      @relation("UserDefaultOrganization")
   aiApiKeys             OrganizationAiApiKey[]
   aiModels              OrganizationAiModel[]
   aiGenerationLogs      AiGenerationLog[]
   aiSettings            OrganizationAiSettings?
   integrations          OrganizationIntegration[]
+  settings              OrganizationSettings?
+  accounts              Account[]
+  categories            Category[]
+  transactions          Transaction[]
 
   @@index([slug])
   @@index([createdById])
@@ -310,4 +316,152 @@ model IntegrationCallLog {
   @@index([organizationId, provider, createdAt])
   @@index([organizationId, correlationId])
   @@map("integration_call_logs")
+}
+
+// ============================================================================
+// Sololedger Models & Enums
+// ============================================================================
+
+// Sololedger enums
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionStatus {
+  DRAFT
+  POSTED
+}
+
+enum CategoryType {
+  INCOME
+  EXPENSE
+}
+
+enum DateFormat {
+  DD_MM_YYYY
+  MM_DD_YYYY
+  YYYY_MM_DD
+}
+
+enum DecimalSeparator {
+  DOT
+  COMMA
+}
+
+enum ThousandsSeparator {
+  COMMA
+  DOT
+  SPACE
+  NONE
+}
+
+// OrganizationSettings: business details and financial configuration
+model OrganizationSettings {
+  id                     String             @id @default(cuid())
+  organizationId         String             @unique
+  businessType           String             @db.VarChar(100) // "Freelance", "Consulting", "Agency", "SaaS", "Other"
+  businessTypeOther      String?            @db.VarChar(255)
+  address                String?            @db.Text
+  phone                  String?            @db.VarChar(50)
+  email                  String?            @db.VarChar(255)
+  taxId                  String?            @db.VarChar(100)
+  baseCurrency           String             @db.VarChar(3) // ISO 4217
+  fiscalYearStartMonth   Int                @default(1) // 1-12
+  dateFormat             DateFormat         @default(YYYY_MM_DD)
+  decimalSeparator       DecimalSeparator   @default(DOT)
+  thousandsSeparator     ThousandsSeparator @default(COMMA)
+  isOnboardingComplete   Boolean            @default(false)
+  softDeletedAt          DateTime?
+  isTaxRegistered        Boolean?
+  defaultTaxRate         Decimal?           @db.Decimal(5, 2)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("organization_settings")
+}
+
+// Account: where money lives (bank, cash, payment services)
+model Account {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String   @db.VarChar(255)
+  description    String?  @db.Text
+  isDefault      Boolean  @default(false)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([organizationId])
+  @@index([organizationId, active])
+  @@map("accounts")
+}
+
+// Category: income/expense classification with hierarchy
+model Category {
+  id            String       @id @default(cuid())
+  organizationId String
+  parentId      String?
+  name          String       @db.VarChar(255)
+  type          CategoryType
+  color         String?      @db.VarChar(50)
+  icon          String?      @db.VarChar(50)
+  sortOrder     Int          @default(0)
+  includeInPnL  Boolean      @default(true)
+  active        Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent       Category?     @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children     Category[]    @relation("CategoryHierarchy")
+  transactions Transaction[]
+
+  @@index([organizationId])
+  @@index([organizationId, type, active])
+  @@index([parentId])
+  @@map("categories")
+}
+
+// Transaction: income or expense entry with FX support
+model Transaction {
+  id                   String            @id @default(cuid())
+  organizationId       String
+  accountId            String
+  categoryId           String
+  userId               String
+  type                 TransactionType
+  status               TransactionStatus @default(POSTED)
+  amountOriginal       Decimal           @db.Decimal(18, 2)
+  currencyOriginal     String            @db.VarChar(3)
+  exchangeRateToBase   Decimal           @db.Decimal(18, 8)
+  amountBase           Decimal           @db.Decimal(18, 2)
+  date                 DateTime
+  description          String            @db.Text
+  vendorName           String?           @db.VarChar(255)
+  tags                 String?           @db.Text
+  notes                String?           @db.Text
+  deletedAt            DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  account      Account       @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category     Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  user         User          @relation("TransactionCreator", fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([organizationId, date])
+  @@index([organizationId, type, status])
+  @@index([organizationId, deletedAt])
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([userId])
+  @@map("transactions")
 }

@@ -19,7 +19,6 @@ export default function EditTransactionPage(): React.JSX.Element {
   const orgSlug = params.orgSlug as string;
   const transactionId = params.id as string;
   const [isLoading, setIsLoading] = React.useState(true);
-  const [orgId, setOrgId] = React.useState<string>("");
   const [settings, setSettings] = React.useState<{ baseCurrency: string } | null>(null);
   const [categories, setCategories] = React.useState<Array<{ id: string; name: string; type: "INCOME" | "EXPENSE" }>>([]);
   const [accounts, setAccounts] = React.useState<Array<{ id: string; name: string; isDefault: boolean }>>([]);
@@ -40,28 +39,17 @@ export default function EditTransactionPage(): React.JSX.Element {
   React.useEffect(() => {
     async function loadData() {
       try {
-        // Load org
-        const orgsResponse = await fetch("/api/orgs");
-        const orgsData = await orgsResponse.json();
-        const org = orgsData.organizations?.find(
-          (o: { slug: string }) => o.slug === orgSlug
-        );
-
-        if (!org) {
-          toast.error("Organization not found");
-          router.push("/");
-          return;
-        }
-
-        setOrgId(org.id);
-
         // Load settings
         const settingsResponse = await fetch(
-          `/api/orgs/${org.id}/settings/financial`
+          `/api/orgs/${orgSlug}/settings/financial`
         );
         if (settingsResponse.ok) {
           const settingsData = await settingsResponse.json();
           setSettings(settingsData.settings);
+        } else if (settingsResponse.status === 404) {
+          toast.error("Organization not found");
+          router.push("/");
+          return;
         } else {
           toast.error("Failed to load organization settings");
           return;
@@ -69,7 +57,7 @@ export default function EditTransactionPage(): React.JSX.Element {
 
         // Load transaction
         const transactionResponse = await fetch(
-          `/api/orgs/${org.id}/transactions/${transactionId}`
+          `/api/orgs/${orgSlug}/transactions/${transactionId}`
         );
         if (transactionResponse.ok) {
           const transactionData = await transactionResponse.json();
@@ -96,7 +84,7 @@ export default function EditTransactionPage(): React.JSX.Element {
 
         // Load categories
         const categoriesResponse = await fetch(
-          `/api/orgs/${org.id}/categories`
+          `/api/orgs/${orgSlug}/categories`
         );
         if (categoriesResponse.ok) {
           const categoriesData = await categoriesResponse.json();
@@ -107,7 +95,7 @@ export default function EditTransactionPage(): React.JSX.Element {
 
         // Load accounts
         const accountsResponse = await fetch(
-          `/api/orgs/${org.id}/accounts`
+          `/api/orgs/${orgSlug}/accounts`
         );
         if (accountsResponse.ok) {
           const accountsData = await accountsResponse.json();
@@ -201,7 +189,6 @@ export default function EditTransactionPage(): React.JSX.Element {
         </CardHeader>
         <CardContent>
           <TransactionForm
-            orgId={orgId}
             orgSlug={orgSlug}
             settings={settings}
             categories={categories}

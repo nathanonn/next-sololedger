@@ -49,7 +49,6 @@ interface TransactionData {
 }
 
 interface TransactionFormProps {
-  orgId: string;
   orgSlug: string;
   settings: OrgSettings;
   categories: Category[];
@@ -68,7 +67,6 @@ const CURRENCIES = [
 ];
 
 export function TransactionForm({
-  orgId,
   orgSlug,
   settings,
   categories,
@@ -187,8 +185,8 @@ export function TransactionForm({
 
       const response = await fetch(
         transactionId
-          ? `/api/orgs/${orgId}/transactions/${transactionId}`
-          : `/api/orgs/${orgId}/transactions`,
+          ? `/api/orgs/${orgSlug}/transactions/${transactionId}`
+          : `/api/orgs/${orgSlug}/transactions`,
         {
           method: transactionId ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },

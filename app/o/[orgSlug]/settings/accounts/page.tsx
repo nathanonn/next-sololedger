@@ -42,7 +42,6 @@ export default function AccountsManagementPage(): React.JSX.Element {
   const orgSlug = params.orgSlug as string;
   const [isLoading, setIsLoading] = React.useState(false);
   const [isInitialLoading, setIsInitialLoading] = React.useState(true);
-  const [orgId, setOrgId] = React.useState<string>("");
   const [accounts, setAccounts] = React.useState<Account[]>([]);
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false);
   const [editingAccount, setEditingAccount] = React.useState<Account | null>(
@@ -59,20 +58,7 @@ export default function AccountsManagementPage(): React.JSX.Element {
   React.useEffect(() => {
     async function loadOrgAndAccounts() {
       try {
-        const orgsResponse = await fetch("/api/orgs");
-        const orgsData = await orgsResponse.json();
-        const org = orgsData.organizations?.find(
-          (o: { slug: string }) => o.slug === orgSlug
-        );
-
-        if (!org) {
-          toast.error("Organization not found");
-          router.push("/");
-          return;
-        }
-
-        setOrgId(org.id);
-        await loadAccounts(org.id);
+        await loadAccounts();
       } catch (error) {
         console.error("Error loading organization:", error);
         toast.error("Failed to load organization");
@@ -85,15 +71,18 @@ export default function AccountsManagementPage(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgSlug, router]);
 
-  async function loadAccounts(id: string) {
+  async function loadAccounts() {
     try {
-      const response = await fetch(`/api/orgs/${id}/accounts`);
+      const response = await fetch(`/api/orgs/${orgSlug}/accounts`);
       if (response.ok) {
         const data = await response.json();
         setAccounts(data.accounts || []);
       } else if (response.status === 403) {
         toast.error("Admin access required to manage accounts");
         router.push(`/o/${orgSlug}/dashboard`);
+      } else if (response.status === 404) {
+        toast.error("Organization not found");
+        router.push("/");
       }
     } catch (error) {
       console.error("Error loading accounts:", error);
@@ -133,8 +122,8 @@ export default function AccountsManagementPage(): React.JSX.Element {
 
       const response = await fetch(
         editingAccount
-          ? `/api/orgs/${orgId}/accounts/${editingAccount.id}`
-          : `/api/orgs/${orgId}/accounts`,
+          ? `/api/orgs/${orgSlug}/accounts/${editingAccount.id}`
+          : `/api/orgs/${orgSlug}/accounts`,
         {
           method: editingAccount ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
@@ -161,7 +150,7 @@ export default function AccountsManagementPage(): React.JSX.Element {
       resetForm();
 
       // Reload accounts
-      await loadAccounts(orgId);
+      await loadAccounts();
     } catch {
       toast.error("Network error. Please try again.");
     } finally {

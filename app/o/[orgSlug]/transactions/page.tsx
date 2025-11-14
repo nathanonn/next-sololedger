@@ -49,7 +49,6 @@ export default function TransactionsPage(): React.JSX.Element {
   const orgSlug = params.orgSlug as string;
   const [isLoading, setIsLoading] = React.useState(false);
   const [isInitialLoading, setIsInitialLoading] = React.useState(true);
-  const [orgId, setOrgId] = React.useState<string>("");
   const [settings, setSettings] = React.useState<OrgSettings | null>(null);
   const [transactions, setTransactions] = React.useState<Transaction[]>([]);
 
@@ -64,30 +63,20 @@ export default function TransactionsPage(): React.JSX.Element {
   React.useEffect(() => {
     async function loadOrgAndTransactions() {
       try {
-        const orgsResponse = await fetch("/api/orgs");
-        const orgsData = await orgsResponse.json();
-        const org = orgsData.organizations?.find(
-          (o: { slug: string }) => o.slug === orgSlug
+        // Load settings
+        const settingsResponse = await fetch(
+          `/api/orgs/${orgSlug}/settings/financial`
         );
-
-        if (!org) {
+        if (settingsResponse.ok) {
+          const settingsData = await settingsResponse.json();
+          setSettings(settingsData.settings);
+        } else if (settingsResponse.status === 404) {
           toast.error("Organization not found");
           router.push("/");
           return;
         }
 
-        setOrgId(org.id);
-
-        // Load settings
-        const settingsResponse = await fetch(
-          `/api/orgs/${org.id}/settings/financial`
-        );
-        if (settingsResponse.ok) {
-          const settingsData = await settingsResponse.json();
-          setSettings(settingsData.settings);
-        }
-
-        await loadTransactions(org.id);
+        await loadTransactions();
       } catch (error) {
         console.error("Error loading organization:", error);
         toast.error("Failed to load organization");
@@ -100,7 +89,7 @@ export default function TransactionsPage(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgSlug, router]);
 
-  async function loadTransactions(id: string) {
+  async function loadTransactions() {
     try {
       setIsLoading(true);
 
@@ -112,7 +101,7 @@ export default function TransactionsPage(): React.JSX.Element {
       if (dateToFilter) params.append("dateTo", dateToFilter);
 
       const response = await fetch(
-        `/api/orgs/${id}/transactions?${params.toString()}`
+        `/api/orgs/${orgSlug}/transactions?${params.toString()}`
       );
 
       if (response.ok) {
@@ -133,7 +122,7 @@ export default function TransactionsPage(): React.JSX.Element {
 
     try {
       const response = await fetch(
-        `/api/orgs/${orgId}/transactions/${transactionId}`,
+        `/api/orgs/${orgSlug}/transactions/${transactionId}`,
         {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
@@ -147,7 +136,7 @@ export default function TransactionsPage(): React.JSX.Element {
       }
 
       toast.success("Transaction deleted");
-      await loadTransactions(orgId);
+      await loadTransactions();
     } catch {
       toast.error("Network error. Please try again.");
     }
@@ -263,7 +252,7 @@ export default function TransactionsPage(): React.JSX.Element {
           </div>
 
           <div className="flex gap-2 mt-4">
-            <Button onClick={() => loadTransactions(orgId)} disabled={isLoading}>
+            <Button onClick={() => loadTransactions()} disabled={isLoading}>
               {isLoading ? "Loading..." : "Apply Filters"}
             </Button>
             <Button
@@ -274,7 +263,7 @@ export default function TransactionsPage(): React.JSX.Element {
                 setDateFromFilter("");
                 setDateToFilter("");
                 setSearchFilter("");
-                loadTransactions(orgId);
+                loadTransactions();
               }}
             >
               Clear

@@ -50,7 +50,6 @@ export default function CategoriesManagementPage(): React.JSX.Element {
   const orgSlug = params.orgSlug as string;
   const [isLoading, setIsLoading] = React.useState(false);
   const [isInitialLoading, setIsInitialLoading] = React.useState(true);
-  const [orgId, setOrgId] = React.useState<string>("");
   const [categories, setCategories] = React.useState<Category[]>([]);
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false);
   const [editingCategory, setEditingCategory] = React.useState<Category | null>(
@@ -71,20 +70,7 @@ export default function CategoriesManagementPage(): React.JSX.Element {
   React.useEffect(() => {
     async function loadOrgAndCategories() {
       try {
-        const orgsResponse = await fetch("/api/orgs");
-        const orgsData = await orgsResponse.json();
-        const org = orgsData.organizations?.find(
-          (o: { slug: string }) => o.slug === orgSlug
-        );
-
-        if (!org) {
-          toast.error("Organization not found");
-          router.push("/");
-          return;
-        }
-
-        setOrgId(org.id);
-        await loadCategories(org.id);
+        await loadCategories();
       } catch (error) {
         console.error("Error loading organization:", error);
         toast.error("Failed to load organization");
@@ -97,12 +83,15 @@ export default function CategoriesManagementPage(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgSlug, router]);
 
-  async function loadCategories(id: string) {
+  async function loadCategories() {
     try {
-      const response = await fetch(`/api/orgs/${id}/categories`);
+      const response = await fetch(`/api/orgs/${orgSlug}/categories`);
       if (response.ok) {
         const data = await response.json();
         setCategories(data.categories || []);
+      } else if (response.status === 404) {
+        toast.error("Organization not found");
+        router.push("/");
       }
     } catch (error) {
       console.error("Error loading categories:", error);
@@ -145,8 +134,8 @@ export default function CategoriesManagementPage(): React.JSX.Element {
 
       const response = await fetch(
         editingCategory
-          ? `/api/orgs/${orgId}/categories/${editingCategory.id}`
-          : `/api/orgs/${orgId}/categories`,
+          ? `/api/orgs/${orgSlug}/categories/${editingCategory.id}`
+          : `/api/orgs/${orgSlug}/categories`,
         {
           method: editingCategory ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
@@ -174,7 +163,7 @@ export default function CategoriesManagementPage(): React.JSX.Element {
       resetForm();
 
       // Reload categories
-      await loadCategories(orgId);
+      await loadCategories();
     } catch {
       toast.error("Network error. Please try again.");
     } finally {

@@ -53,15 +53,31 @@ export default function CategorySetupPage(): React.JSX.Element {
   const [newCategoryIncludePnL, setNewCategoryIncludePnL] =
     React.useState(true);
 
+  // Prevent double-calling seed in React Strict Mode
+  const hasSeedAttempted = React.useRef(false);
+
   // Load organization and categories
   React.useEffect(() => {
     async function loadOrgAndCategories() {
       try {
-        // Seed default categories if none exist
-        await fetch(`/api/orgs/${orgSlug}/categories/seed`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        });
+        // Seed default categories if none exist (only once)
+        if (!hasSeedAttempted.current) {
+          hasSeedAttempted.current = true;
+
+          // Get CSRF token from cookie
+          const csrfToken = document.cookie
+            .split("; ")
+            .find((row) => row.startsWith("csrf-token="))
+            ?.split("=")[1];
+
+          await fetch(`/api/orgs/${orgSlug}/categories/seed`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(csrfToken && { "x-csrf-token": csrfToken }),
+            },
+          });
+        }
 
         // Load categories
         await loadCategories();

@@ -57,57 +57,141 @@ export async function POST(
       });
     }
 
-    // Create default categories
+    // Create default categories (tailored for solopreneurs, freelancers, agencies)
     const defaultCategories = [
       // Income categories
       {
-        name: "General Income",
+        name: "Service Revenue",
         type: "INCOME" as const,
         includeInPnL: true,
         sortOrder: 0,
+      },
+      {
+        name: "Consulting Income",
+        type: "INCOME" as const,
+        includeInPnL: true,
+        sortOrder: 1,
+      },
+      {
+        name: "Product Sales",
+        type: "INCOME" as const,
+        includeInPnL: true,
+        sortOrder: 2,
+      },
+      {
+        name: "Recurring Revenue",
+        type: "INCOME" as const,
+        includeInPnL: true,
+        sortOrder: 3,
+      },
+      {
+        name: "Affiliate Income",
+        type: "INCOME" as const,
+        includeInPnL: true,
+        sortOrder: 4,
+      },
+      {
+        name: "Other Income",
+        type: "INCOME" as const,
+        includeInPnL: true,
+        sortOrder: 5,
       },
       {
         name: "Tax Collected",
         type: "INCOME" as const,
         includeInPnL: true,
-        sortOrder: 1,
+        sortOrder: 6,
       },
       {
         name: "Owner Contributions",
         type: "INCOME" as const,
         includeInPnL: false,
-        sortOrder: 2,
+        sortOrder: 7,
       },
       {
         name: "Transfers In",
         type: "INCOME" as const,
         includeInPnL: false,
-        sortOrder: 3,
+        sortOrder: 8,
       },
       // Expense categories
       {
-        name: "General Expense",
+        name: "Software & Subscriptions",
         type: "EXPENSE" as const,
         includeInPnL: true,
         sortOrder: 0,
       },
       {
-        name: "Tax Paid",
+        name: "Professional Services",
         type: "EXPENSE" as const,
         includeInPnL: true,
         sortOrder: 1,
       },
       {
+        name: "Marketing & Advertising",
+        type: "EXPENSE" as const,
+        includeInPnL: true,
+        sortOrder: 2,
+      },
+      {
+        name: "Office & Workspace",
+        type: "EXPENSE" as const,
+        includeInPnL: true,
+        sortOrder: 3,
+      },
+      {
+        name: "Equipment & Tech",
+        type: "EXPENSE" as const,
+        includeInPnL: true,
+        sortOrder: 4,
+      },
+      {
+        name: "Education & Training",
+        type: "EXPENSE" as const,
+        includeInPnL: true,
+        sortOrder: 5,
+      },
+      {
+        name: "Contractor Payments",
+        type: "EXPENSE" as const,
+        includeInPnL: true,
+        sortOrder: 6,
+      },
+      {
+        name: "Travel & Meals",
+        type: "EXPENSE" as const,
+        includeInPnL: true,
+        sortOrder: 7,
+      },
+      {
+        name: "Insurance",
+        type: "EXPENSE" as const,
+        includeInPnL: true,
+        sortOrder: 8,
+      },
+      {
+        name: "Taxes & Licenses",
+        type: "EXPENSE" as const,
+        includeInPnL: true,
+        sortOrder: 9,
+      },
+      {
+        name: "Other Expenses",
+        type: "EXPENSE" as const,
+        includeInPnL: true,
+        sortOrder: 10,
+      },
+      {
         name: "Owner Drawings",
         type: "EXPENSE" as const,
         includeInPnL: false,
-        sortOrder: 2,
+        sortOrder: 11,
       },
       {
         name: "Transfers Out",
         type: "EXPENSE" as const,
         includeInPnL: false,
-        sortOrder: 3,
+        sortOrder: 12,
       },
     ];
 

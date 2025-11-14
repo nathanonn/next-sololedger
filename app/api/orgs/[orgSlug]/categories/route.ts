@@ -3,18 +3,18 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
-import { requireMembership, scopeTenant } from "@/lib/org-helpers";
+import { requireMembership, scopeTenant, getOrgBySlug } from "@/lib/org-helpers";
 
 export const runtime = "nodejs";
 
 /**
- * GET /api/orgs/[orgId]/categories
+ * GET /api/orgs/[orgSlug]/categories
  * List all categories for an organization
  * Members and admins can view
  */
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ orgId: string }> }
+  {  params }: { params: Promise<{ orgSlug: string }> }
 ): Promise<Response> {
   try {
     const user = await getCurrentUser();
@@ -22,11 +22,17 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId } = await params;
+    const { orgSlug } = await params;
+
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
 
     // Require membership
     try {
-      await requireMembership(user.id, orgId);
+      await requireMembership(user.id, org.id);
     } catch {
       return NextResponse.json(
         { error: "Access denied" },
@@ -36,7 +42,7 @@ export async function GET(
 
     // Get all categories for this organization
     const categories = await db.category.findMany({
-      where: scopeTenant({}, orgId),
+      where: scopeTenant({}, org.id),
       orderBy: [{ type: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
       include: {
         parent: {
@@ -59,13 +65,13 @@ export async function GET(
 }
 
 /**
- * POST /api/orgs/[orgId]/categories
+ * POST /api/orgs/[orgSlug]/categories
  * Create a new category
  * Members and admins can create
  */
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ orgId: string }> }
+  {  params }: { params: Promise<{ orgSlug: string }> }
 ): Promise<Response> {
   try {
     // CSRF validation
@@ -79,11 +85,17 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId } = await params;
+    const { orgSlug } = await params;
+
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
 
     // Require membership (members and admins can manage categories)
     try {
-      await requireMembership(user.id, orgId);
+      await requireMembership(user.id, org.id);
     } catch {
       return NextResponse.json(
         { error: "Access denied" },
@@ -120,7 +132,7 @@ export async function POST(
         where: { id: data.parentId },
       });
 
-      if (!parent || parent.organizationId !== orgId) {
+      if (!parent || parent.organizationId !== org.id) {
         return NextResponse.json(
           { error: "Parent category not found" },
           { status: 400 }
@@ -138,7 +150,7 @@ export async function POST(
     // Create category
     const category = await db.category.create({
       data: {
-        organizationId: orgId,
+        organizationId: org.id,
         name: data.name,
         type: data.type,
         parentId: data.parentId || null,

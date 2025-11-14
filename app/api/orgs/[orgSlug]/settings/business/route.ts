@@ -3,18 +3,18 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
-import { requireAdminOrSuperadmin } from "@/lib/org-helpers";
+import { requireAdminOrSuperadmin, getOrgBySlug } from "@/lib/org-helpers";
 
 export const runtime = "nodejs";
 
 /**
- * PATCH /api/orgs/[orgId]/settings/business
+ * PATCH /api/orgs/[orgSlug]/settings/business
  * Update business settings for an organization
  * Admin-only access
  */
 export async function PATCH(
   request: Request,
-  { params }: { params: Promise<{ orgId: string }> }
+  {  params }: { params: Promise<{ orgSlug: string }> }
 ): Promise<Response> {
   try {
     // CSRF validation
@@ -28,11 +28,17 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId } = await params;
+    const { orgSlug } = await params;
+
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
 
     // Require admin or superadmin access
     try {
-      await requireAdminOrSuperadmin(user.id, orgId);
+      await requireAdminOrSuperadmin(user.id, org.id);
     } catch {
       return NextResponse.json(
         { error: "Admin access required" },
@@ -80,16 +86,16 @@ export async function PATCH(
     // Update organization and settings in transaction
     const result = await db.$transaction(async (tx) => {
       // Update organization name
-      const org = await tx.organization.update({
-        where: { id: orgId },
+      const updatedOrg = await tx.organization.update({
+        where: { id: org.id },
         data: { name: data.businessName },
       });
 
       // Upsert organization settings
       const settings = await tx.organizationSettings.upsert({
-        where: { organizationId: orgId },
+        where: { organizationId: org.id },
         create: {
-          organizationId: orgId,
+          organizationId: org.id,
           businessType: data.businessType,
           businessTypeOther: data.businessTypeOther || null,
           address: data.address || null,
@@ -109,7 +115,7 @@ export async function PATCH(
         },
       });
 
-      return { org, settings };
+      return { org: updatedOrg, settings };
     });
 
     return NextResponse.json({
@@ -133,12 +139,12 @@ export async function PATCH(
 }
 
 /**
- * GET /api/orgs/[orgId]/settings/business
+ * GET /api/orgs/[orgSlug]/settings/business
  * Get business settings for an organization
  */
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ orgId: string }> }
+  {  params }: { params: Promise<{ orgSlug: string }> }
 ): Promise<Response> {
   try {
     const user = await getCurrentUser();
@@ -146,11 +152,17 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId } = await params;
+    const { orgSlug } = await params;
+
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
 
     // Require admin or superadmin access
     try {
-      await requireAdminOrSuperadmin(user.id, orgId);
+      await requireAdminOrSuperadmin(user.id, org.id);
     } catch {
       return NextResponse.json(
         { error: "Admin access required" },
@@ -159,14 +171,14 @@ export async function GET(
     }
 
     // Get organization and settings
-    const org = await db.organization.findUnique({
-      where: { id: orgId },
+    const orgWithSettings = await db.organization.findUnique({
+      where: { id: org.id },
       include: {
         settings: true,
       },
     });
 
-    if (!org) {
+    if (!orgWithSettings) {
       return NextResponse.json(
         { error: "Organization not found" },
         { status: 404 }
@@ -175,17 +187,17 @@ export async function GET(
 
     return NextResponse.json({
       organization: {
-        id: org.id,
-        name: org.name,
+        id: orgWithSettings.id,
+        name: orgWithSettings.name,
       },
-      settings: org.settings
+      settings: orgWithSettings.settings
         ? {
-            businessType: org.settings.businessType,
-            businessTypeOther: org.settings.businessTypeOther,
-            address: org.settings.address,
-            phone: org.settings.phone,
-            email: org.settings.email,
-            taxId: org.settings.taxId,
+            businessType: orgWithSettings.settings.businessType,
+            businessTypeOther: orgWithSettings.settings.businessTypeOther,
+            address: orgWithSettings.settings.address,
+            phone: orgWithSettings.settings.phone,
+            email: orgWithSettings.settings.email,
+            taxId: orgWithSettings.settings.taxId,
           }
         : null,
     });

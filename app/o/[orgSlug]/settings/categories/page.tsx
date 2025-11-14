@@ -182,9 +182,6 @@ export default function CategoriesManagementPage(): React.JSX.Element {
     }
   }
 
-  const incomeCategories = categories.filter((c) => c.type === "INCOME");
-  const expenseCategories = categories.filter((c) => c.type === "EXPENSE");
-
   // Get parent options based on type
   const parentOptions = categories.filter(
     (c) =>

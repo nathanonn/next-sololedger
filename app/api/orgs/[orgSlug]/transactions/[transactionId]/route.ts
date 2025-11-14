@@ -3,17 +3,17 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
-import { requireMembership } from "@/lib/org-helpers";
+import { requireMembership, getOrgBySlug } from "@/lib/org-helpers";
 
 export const runtime = "nodejs";
 
 /**
- * GET /api/orgs/[orgId]/transactions/[transactionId]
+ * GET /api/orgs/[orgSlug]/transactions/[transactionId]
  * Get a single transaction
  */
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ orgId: string; transactionId: string }> }
+  { params }: { params: Promise<{ orgSlug: string; transactionId: string }> }
 ): Promise<Response> {
   try {
     const user = await getCurrentUser();
@@ -21,11 +21,17 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId, transactionId } = await params;
+    const { orgSlug, transactionId } = await params;
+
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
 
     // Require membership
     try {
-      await requireMembership(user.id, orgId);
+      await requireMembership(user.id, org.id);
     } catch {
       return NextResponse.json(
         { error: "Access denied" },
@@ -42,7 +48,7 @@ export async function GET(
       },
     });
 
-    if (!transaction || transaction.organizationId !== orgId) {
+    if (!transaction || transaction.organizationId !== org.id) {
       return NextResponse.json(
         { error: "Transaction not found" },
         { status: 404 }
@@ -67,12 +73,12 @@ export async function GET(
 }
 
 /**
- * PATCH /api/orgs/[orgId]/transactions/[transactionId]
+ * PATCH /api/orgs/[orgSlug]/transactions/[transactionId]
  * Update a transaction
  */
 export async function PATCH(
   request: Request,
-  { params }: { params: Promise<{ orgId: string; transactionId: string }> }
+  { params }: { params: Promise<{ orgSlug: string; transactionId: string }> }
 ): Promise<Response> {
   try {
     // CSRF validation
@@ -86,11 +92,17 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId, transactionId } = await params;
+    const { orgSlug, transactionId } = await params;
+
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
 
     // Require membership
     try {
-      await requireMembership(user.id, orgId);
+      await requireMembership(user.id, org.id);
     } catch {
       return NextResponse.json(
         { error: "Access denied" },
@@ -104,7 +116,7 @@ export async function PATCH(
       include: { category: true },
     });
 
-    if (!existing || existing.organizationId !== orgId) {
+    if (!existing || existing.organizationId !== org.id) {
       return NextResponse.json(
         { error: "Transaction not found" },
         { status: 404 }
@@ -123,7 +135,11 @@ export async function PATCH(
       type: z.enum(["INCOME", "EXPENSE"]).optional(),
       status: z.enum(["DRAFT", "POSTED"]).optional(),
       amountOriginal: z.number().positive().optional(),
-      currencyOriginal: z.string().length(3).toUpperCase().optional(),
+      currencyOriginal: z
+        .string()
+        .length(3)
+        .transform((val) => val.toUpperCase())
+        .optional(),
       exchangeRateToBase: z.number().positive().optional(),
       date: z
         .string()
@@ -163,13 +179,12 @@ export async function PATCH(
     }
 
     // If category is being changed, validate it
-    let finalCategoryId = existing.categoryId;
     if (data.categoryId) {
       const category = await db.category.findUnique({
         where: { id: data.categoryId },
       });
 
-      if (!category || category.organizationId !== orgId) {
+      if (!category || category.organizationId !== org.id) {
         return NextResponse.json(
           { error: "Category not found" },
           { status: 400 }
@@ -184,8 +199,6 @@ export async function PATCH(
           { status: 400 }
         );
       }
-
-      finalCategoryId = data.categoryId;
     } else if (data.type && data.type !== existing.type) {
       // Type changed but category didn't - need to verify category type still matches
       const category = await db.category.findUnique({
@@ -209,7 +222,7 @@ export async function PATCH(
         where: { id: data.accountId },
       });
 
-      if (!account || account.organizationId !== orgId) {
+      if (!account || account.organizationId !== org.id) {
         return NextResponse.json(
           { error: "Account not found" },
           { status: 400 }
@@ -218,14 +231,14 @@ export async function PATCH(
     }
 
     // Recalculate base amount if needed
-    let amountBase = existing.amountBase;
-    const finalAmountOriginal = data.amountOriginal ?? Number(existing.amountOriginal);
-    const finalExchangeRate = data.exchangeRateToBase ?? Number(existing.exchangeRateToBase);
+    const needsRecalculation =
+      data.amountOriginal !== undefined || data.exchangeRateToBase !== undefined;
 
-    if (
-      data.amountOriginal !== undefined ||
-      data.exchangeRateToBase !== undefined
-    ) {
+    let amountBase: number | undefined = undefined;
+
+    if (needsRecalculation) {
+      const finalAmountOriginal = data.amountOriginal ?? Number(existing.amountOriginal);
+      const finalExchangeRate = data.exchangeRateToBase ?? Number(existing.exchangeRateToBase);
       amountBase = finalAmountOriginal * finalExchangeRate;
     }
 
@@ -256,7 +269,7 @@ export async function PATCH(
           vendorName: data.vendorName,
         }),
         ...(data.notes !== undefined && { notes: data.notes }),
-        amountBase,
+        ...(amountBase !== undefined && { amountBase }),
       },
       include: {
         category: true,
@@ -275,12 +288,12 @@ export async function PATCH(
 }
 
 /**
- * DELETE /api/orgs/[orgId]/transactions/[transactionId]
+ * DELETE /api/orgs/[orgSlug]/transactions/[transactionId]
  * Soft delete a transaction
  */
 export async function DELETE(
   request: Request,
-  { params }: { params: Promise<{ orgId: string; transactionId: string }> }
+  { params }: { params: Promise<{ orgSlug: string; transactionId: string }> }
 ): Promise<Response> {
   try {
     // CSRF validation
@@ -294,11 +307,17 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId, transactionId } = await params;
+    const { orgSlug, transactionId } = await params;
+
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
 
     // Require membership
     try {
-      await requireMembership(user.id, orgId);
+      await requireMembership(user.id, org.id);
     } catch {
       return NextResponse.json(
         { error: "Access denied" },
@@ -311,7 +330,7 @@ export async function DELETE(
       where: { id: transactionId },
     });
 
-    if (!existing || existing.organizationId !== orgId) {
+    if (!existing || existing.organizationId !== org.id) {
       return NextResponse.json(
         { error: "Transaction not found" },
         { status: 404 }

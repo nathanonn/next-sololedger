@@ -7,7 +7,7 @@ import {
 } from "@/lib/org-helpers";
 import { DashboardShell } from "@/components/features/dashboard/dashboard-shell";
 import { env } from "@/lib/env";
-import { Home, Settings, Building2, Receipt, Wallet, Tags } from "lucide-react";
+import { Settings, Building2 } from "lucide-react";
 import { db } from "@/lib/db";
 
 /**

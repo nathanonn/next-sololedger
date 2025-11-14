@@ -3,18 +3,18 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
-import { requireMembership } from "@/lib/org-helpers";
+import { requireMembership, getOrgBySlug } from "@/lib/org-helpers";
 
 export const runtime = "nodejs";
 
 /**
- * PATCH /api/orgs/[orgId]/categories/[categoryId]
+ * PATCH /api/orgs/[orgSlug]/categories/[categoryId]
  * Update a category
  * Members and admins can update
  */
 export async function PATCH(
   request: Request,
-  { params }: { params: Promise<{ orgId: string; categoryId: string }> }
+  { params }: { params: Promise<{ orgSlug: string; categoryId: string }> }
 ): Promise<Response> {
   try {
     // CSRF validation
@@ -28,11 +28,17 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId, categoryId } = await params;
+    const { orgSlug, categoryId } = await params;
+
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
 
     // Require membership
     try {
-      await requireMembership(user.id, orgId);
+      await requireMembership(user.id, org.id);
     } catch {
       return NextResponse.json(
         { error: "Access denied" },
@@ -45,7 +51,7 @@ export async function PATCH(
       where: { id: categoryId },
     });
 
-    if (!existing || existing.organizationId !== orgId) {
+    if (!existing || existing.organizationId !== org.id) {
       return NextResponse.json(
         { error: "Category not found" },
         { status: 404 }
@@ -80,7 +86,7 @@ export async function PATCH(
         where: { id: data.parentId },
       });
 
-      if (!parent || parent.organizationId !== orgId) {
+      if (!parent || parent.organizationId !== org.id) {
         return NextResponse.json(
           { error: "Parent category not found" },
           { status: 400 }

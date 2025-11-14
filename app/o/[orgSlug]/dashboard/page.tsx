@@ -364,7 +364,7 @@ export default async function DashboardPage({
                     >
                       {transaction.type === "INCOME" ? "+" : "-"}
                       {formatCurrency(
-                        transaction.amountBase,
+                        Number(transaction.amountBase),
                         settings.baseCurrency,
                         settings.decimalSeparator,
                         settings.thousandsSeparator

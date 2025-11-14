@@ -2,18 +2,18 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
-import { requireMembership } from "@/lib/org-helpers";
+import { requireMembership, getOrgBySlug } from "@/lib/org-helpers";
 
 export const runtime = "nodejs";
 
 /**
- * POST /api/orgs/[orgId]/complete-onboarding
+ * POST /api/orgs/[orgSlug]/complete-onboarding
  * Mark onboarding as complete for an organization
  * Validates that all required setup is done
  */
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ orgId: string }> }
+  {  params }: { params: Promise<{ orgSlug: string }> }
 ): Promise<Response> {
   try {
     // CSRF validation
@@ -27,11 +27,17 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId } = await params;
+    const { orgSlug } = await params;
+
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
 
     // Require membership
     try {
-      await requireMembership(user.id, orgId);
+      await requireMembership(user.id, org.id);
     } catch {
       return NextResponse.json(
         { error: "Access denied" },
@@ -42,7 +48,7 @@ export async function POST(
     // Validate that at least one income and one expense category exist
     const incomeCategories = await db.category.count({
       where: {
-        organizationId: orgId,
+        organizationId: org.id,
         type: "INCOME",
         active: true,
       },
@@ -50,7 +56,7 @@ export async function POST(
 
     const expenseCategories = await db.category.count({
       where: {
-        organizationId: orgId,
+        organizationId: org.id,
         type: "EXPENSE",
         active: true,
       },
@@ -67,17 +73,17 @@ export async function POST(
     }
 
     // Mark organization as onboarding complete
-    const org = await db.organization.update({
-      where: { id: orgId },
+    const updatedOrg = await db.organization.update({
+      where: { id: org.id },
       data: { onboardingComplete: true },
     });
 
     return NextResponse.json({
       success: true,
       organization: {
-        id: org.id,
-        slug: org.slug,
-        onboardingComplete: org.onboardingComplete,
+        id: updatedOrg.id,
+        slug: updatedOrg.slug,
+        onboardingComplete: updatedOrg.onboardingComplete,
       },
     });
   } catch (error) {

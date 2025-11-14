@@ -143,7 +143,6 @@ export default function FinancialConfigPage(): React.JSX.Element {
 
   // Format date preview
   const getDatePreview = (): string => {
-    const today = new Date();
     const day = "31";
     const month = "01";
     const year = "2025";

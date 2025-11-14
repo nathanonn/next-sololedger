@@ -3,18 +3,18 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
-import { requireAdminOrSuperadmin } from "@/lib/org-helpers";
+import { requireAdminOrSuperadmin, getOrgBySlug } from "@/lib/org-helpers";
 
 export const runtime = "nodejs";
 
 /**
- * PATCH /api/orgs/[orgId]/accounts/[accountId]
+ * PATCH /api/orgs/[orgSlug]/accounts/[accountId]
  * Update an account
  * Admin-only access
  */
 export async function PATCH(
   request: Request,
-  { params }: { params: Promise<{ orgId: string; accountId: string }> }
+  { params }: { params: Promise<{ orgSlug: string; accountId: string }> }
 ): Promise<Response> {
   try {
     // CSRF validation
@@ -28,11 +28,17 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId, accountId } = await params;
+    const { orgSlug, accountId } = await params;
+
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
 
     // Require admin access
     try {
-      await requireAdminOrSuperadmin(user.id, orgId);
+      await requireAdminOrSuperadmin(user.id, org.id);
     } catch {
       return NextResponse.json(
         { error: "Admin access required" },
@@ -45,7 +51,7 @@ export async function PATCH(
       where: { id: accountId },
     });
 
-    if (!existing || existing.organizationId !== orgId) {
+    if (!existing || existing.organizationId !== org.id) {
       return NextResponse.json(
         { error: "Account not found" },
         { status: 404 }
@@ -76,7 +82,7 @@ export async function PATCH(
     if (data.isDefault === true) {
       await db.account.updateMany({
         where: {
-          organizationId: orgId,
+          organizationId: org.id,
           isDefault: true,
           id: { not: accountId },
         },

@@ -3,18 +3,18 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
-import { requireMembership, scopeTenant } from "@/lib/org-helpers";
+import { requireMembership, getOrgBySlug } from "@/lib/org-helpers";
 
 export const runtime = "nodejs";
 
 /**
- * GET /api/orgs/[orgId]/transactions
+ * GET /api/orgs/[orgSlug]/transactions
  * List transactions with optional filters
  * Members and admins can view
  */
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ orgId: string }> }
+  {  params }: { params: Promise<{ orgSlug: string }> }
 ): Promise<Response> {
   try {
     const user = await getCurrentUser();
@@ -22,11 +22,17 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId } = await params;
+    const { orgSlug } = await params;
+
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
 
     // Require membership
     try {
-      await requireMembership(user.id, orgId);
+      await requireMembership(user.id, org.id);
     } catch {
       return NextResponse.json(
         { error: "Access denied" },
@@ -43,7 +49,7 @@ export async function GET(
 
     // Build where clause
     const where: Record<string, unknown> = {
-      organizationId: orgId,
+      organizationId: org.id,
       deletedAt: null,
     };
 
@@ -86,13 +92,13 @@ export async function GET(
 }
 
 /**
- * POST /api/orgs/[orgId]/transactions
+ * POST /api/orgs/[orgSlug]/transactions
  * Create a new transaction
  * Members and admins can create
  */
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ orgId: string }> }
+  {  params }: { params: Promise<{ orgSlug: string }> }
 ): Promise<Response> {
   try {
     // CSRF validation
@@ -106,11 +112,17 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId } = await params;
+    const { orgSlug } = await params;
+
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
 
     // Require membership
     try {
-      await requireMembership(user.id, orgId);
+      await requireMembership(user.id, org.id);
     } catch {
       return NextResponse.json(
         { error: "Access denied" },
@@ -123,7 +135,10 @@ export async function POST(
       type: z.enum(["INCOME", "EXPENSE"]),
       status: z.enum(["DRAFT", "POSTED"]),
       amountOriginal: z.number().positive("Amount must be greater than 0"),
-      currencyOriginal: z.string().length(3).toUpperCase(),
+      currencyOriginal: z
+        .string()
+        .length(3)
+        .transform((val) => val.toUpperCase()),
       exchangeRateToBase: z.number().positive(),
       date: z.string().refine((val) => !isNaN(Date.parse(val)), {
         message: "Invalid date",
@@ -165,7 +180,7 @@ export async function POST(
       where: { id: data.categoryId },
     });
 
-    if (!category || category.organizationId !== orgId) {
+    if (!category || category.organizationId !== org.id) {
       return NextResponse.json(
         { error: "Category not found" },
         { status: 400 }
@@ -185,7 +200,7 @@ export async function POST(
       where: { id: data.accountId },
     });
 
-    if (!account || account.organizationId !== orgId) {
+    if (!account || account.organizationId !== org.id) {
       return NextResponse.json(
         { error: "Account not found" },
         { status: 400 }
@@ -198,7 +213,7 @@ export async function POST(
     // Create transaction
     const transaction = await db.transaction.create({
       data: {
-        organizationId: orgId,
+        organizationId: org.id,
         userId: user.id,
         type: data.type,
         status: data.status,

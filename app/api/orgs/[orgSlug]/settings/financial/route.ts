@@ -3,18 +3,18 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
-import { requireAdminOrSuperadmin } from "@/lib/org-helpers";
+import { requireAdminOrSuperadmin, requireMembership, getOrgBySlug } from "@/lib/org-helpers";
 
 export const runtime = "nodejs";
 
 /**
- * PATCH /api/orgs/[orgId]/settings/financial
+ * PATCH /api/orgs/[orgSlug]/settings/financial
  * Update financial configuration for an organization
  * Admin-only access
  */
 export async function PATCH(
   request: Request,
-  { params }: { params: Promise<{ orgId: string }> }
+  { params }: { params: Promise<{ orgSlug: string }> }
 ): Promise<Response> {
   try {
     // CSRF validation
@@ -28,11 +28,17 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId } = await params;
+    const { orgSlug } = await params;
+
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
 
     // Require admin or superadmin access
     try {
-      await requireAdminOrSuperadmin(user.id, orgId);
+      await requireAdminOrSuperadmin(user.id, org.id);
     } catch {
       return NextResponse.json(
         { error: "Admin access required" },
@@ -45,7 +51,7 @@ export async function PATCH(
       baseCurrency: z
         .string()
         .length(3, "Currency code must be 3 characters")
-        .toUpperCase(),
+        .transform((val) => val.toUpperCase()),
       fiscalYearStartMonth: z
         .number()
         .int()
@@ -97,9 +103,9 @@ export async function PATCH(
 
     // Upsert organization settings
     const settings = await db.organizationSettings.upsert({
-      where: { organizationId: orgId },
+      where: { organizationId: org.id },
       create: {
-        organizationId: orgId,
+        organizationId: org.id,
         businessType: "Other", // Will be updated in business step
         baseCurrency: data.baseCurrency,
         fiscalYearStartMonth: data.fiscalYearStartMonth,
@@ -136,12 +142,12 @@ export async function PATCH(
 }
 
 /**
- * GET /api/orgs/[orgId]/settings/financial
+ * GET /api/orgs/[orgSlug]/settings/financial
  * Get financial configuration for an organization
  */
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ orgId: string }> }
+  {  params }: { params: Promise<{ orgSlug: string }> }
 ): Promise<Response> {
   try {
     const user = await getCurrentUser();
@@ -149,21 +155,27 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId } = await params;
+    const { orgSlug } = await params;
 
-    // Require admin or superadmin access
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
+
+    // Require membership (members need to read settings for formatting)
     try {
-      await requireAdminOrSuperadmin(user.id, orgId);
+      await requireMembership(user.id, org.id);
     } catch {
       return NextResponse.json(
-        { error: "Admin access required" },
+        { error: "Access denied" },
         { status: 403 }
       );
     }
 
     // Get organization settings
     const settings = await db.organizationSettings.findUnique({
-      where: { organizationId: orgId },
+      where: { organizationId: org.id },
     });
 
     if (!settings) {

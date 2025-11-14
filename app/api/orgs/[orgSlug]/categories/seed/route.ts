@@ -2,18 +2,18 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
-import { requireMembership } from "@/lib/org-helpers";
+import { requireMembership, getOrgBySlug } from "@/lib/org-helpers";
 
 export const runtime = "nodejs";
 
 /**
- * POST /api/orgs/[orgId]/categories/seed
+ * POST /api/orgs/[orgSlug]/categories/seed
  * Seed default categories for an organization
  * Only creates if no categories exist yet
  */
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ orgId: string }> }
+  {  params }: { params: Promise<{ orgSlug: string }> }
 ): Promise<Response> {
   try {
     // CSRF validation
@@ -27,11 +27,17 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId } = await params;
+    const { orgSlug } = await params;
+
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
 
     // Require membership
     try {
-      await requireMembership(user.id, orgId);
+      await requireMembership(user.id, org.id);
     } catch {
       return NextResponse.json(
         { error: "Access denied" },
@@ -41,7 +47,7 @@ export async function POST(
 
     // Check if categories already exist
     const existingCount = await db.category.count({
-      where: { organizationId: orgId },
+      where: { organizationId: org.id },
     });
 
     if (existingCount > 0) {
@@ -110,7 +116,7 @@ export async function POST(
       defaultCategories.map((cat) =>
         db.category.create({
           data: {
-            organizationId: orgId,
+            organizationId: org.id,
             name: cat.name,
             type: cat.type,
             includeInPnL: cat.includeInPnL,

@@ -3,18 +3,18 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
-import { requireAdminOrSuperadmin, scopeTenant } from "@/lib/org-helpers";
+import { requireAdminOrSuperadmin, scopeTenant, getOrgBySlug } from "@/lib/org-helpers";
 
 export const runtime = "nodejs";
 
 /**
- * GET /api/orgs/[orgId]/accounts
+ * GET /api/orgs/[orgSlug]/accounts
  * List all accounts for an organization
  * Admin-only access
  */
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ orgId: string }> }
+  {  params }: { params: Promise<{ orgSlug: string }> }
 ): Promise<Response> {
   try {
     const user = await getCurrentUser();
@@ -22,11 +22,17 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId } = await params;
+    const { orgSlug } = await params;
+
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
 
     // Require admin access
     try {
-      await requireAdminOrSuperadmin(user.id, orgId);
+      await requireAdminOrSuperadmin(user.id, org.id);
     } catch {
       return NextResponse.json(
         { error: "Admin access required" },
@@ -36,7 +42,7 @@ export async function GET(
 
     // Get all accounts for this organization
     const accounts = await db.account.findMany({
-      where: scopeTenant({}, orgId),
+      where: scopeTenant({}, org.id),
       orderBy: [{ isDefault: "desc" }, { name: "asc" }],
     });
 
@@ -51,13 +57,13 @@ export async function GET(
 }
 
 /**
- * POST /api/orgs/[orgId]/accounts
+ * POST /api/orgs/[orgSlug]/accounts
  * Create a new account
  * Admin-only access
  */
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ orgId: string }> }
+  {  params }: { params: Promise<{ orgSlug: string }> }
 ): Promise<Response> {
   try {
     // CSRF validation
@@ -71,11 +77,17 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { orgId } = await params;
+    const { orgSlug } = await params;
+
+    // Get organization
+    const org = await getOrgBySlug(orgSlug);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
 
     // Require admin access
     try {
-      await requireAdminOrSuperadmin(user.id, orgId);
+      await requireAdminOrSuperadmin(user.id, org.id);
     } catch {
       return NextResponse.json(
         { error: "Admin access required" },
@@ -106,7 +118,7 @@ export async function POST(
     // If setting as default, clear default flag from other accounts
     if (data.isDefault) {
       await db.account.updateMany({
-        where: { organizationId: orgId, isDefault: true },
+        where: { organizationId: org.id, isDefault: true },
         data: { isDefault: false },
       });
     }
@@ -114,7 +126,7 @@ export async function POST(
     // Create account
     const account = await db.account.create({
       data: {
-        organizationId: orgId,
+        organizationId: org.id,
         name: data.name,
         description: data.description || null,
         isDefault: data.isDefault,

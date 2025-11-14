@@ -161,6 +161,34 @@ Always convert `Decimal` to `Number`: `const total = Number(decimal) * rate`
 
 Pattern: Load org on mount → get `orgId` → fetch lookups → show form with loading states → submit to `/api/orgs/${orgId}/resource`
 
+### SelectItem Value Rule
+
+**NEVER** use empty string `""` as a SelectItem value. Shadcn's Select component doesn't handle empty values properly. Instead:
+
+- Use a meaningful string like `"root"`, `"none"`, `"default"`, etc.
+- Update all related logic to handle the placeholder value correctly
+- Convert the placeholder value back to `null` in the submission logic if needed
+
+```typescript
+// ❌ WRONG - Don't use empty string
+<SelectItem value="">No selection</SelectItem>
+
+// ✅ CORRECT - Use meaningful placeholder value
+<SelectItem value="none">No selection</SelectItem>
+<SelectItem value="root">No parent (root level)</SelectItem>
+<SelectItem value="default">Use default setting</SelectItem>
+
+// Handle in form submission
+const handleSubmit = (values) => {
+  const processedValues = {
+    ...values,
+    parentId: values.parentId === 'root' ? null : values.parentId,
+    category: values.category === 'none' ? null : values.category
+  };
+  // Submit processedValues
+};
+```
+
 ## Required Environment Variables
 
 # Database (required)

@@ -23,6 +23,8 @@ Generated: 2025-11-14
 - [ ] Vendor management screen with totals (by date range)
 - [ ] Merge duplicate vendors (choose primary, reassign transactions)
 
+- No vendors found. Press Enter to create "Vendor_Name"
+
 ## Accounts
 
 - [ ] Account balances by selectable date range (base currency)

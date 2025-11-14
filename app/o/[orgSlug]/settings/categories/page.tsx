@@ -120,11 +120,11 @@ export default function CategoriesManagementPage(): React.JSX.Element {
   // Form state
   const [formName, setFormName] = React.useState("");
   const [formType, setFormType] = React.useState<"INCOME" | "EXPENSE">("INCOME");
-  const [formParentId, setFormParentId] = React.useState<string>("");
+  const [formParentId, setFormParentId] = React.useState<string>("root");
   const [formIncludePnL, setFormIncludePnL] = React.useState(true);
   const [formActive, setFormActive] = React.useState(true);
   const [formColor, setFormColor] = React.useState<string>("");
-  const [formIcon, setFormIcon] = React.useState<string>("");
+  const [formIcon, setFormIcon] = React.useState<string>("none");
 
   // Load categories and usage
   React.useEffect(() => {
@@ -173,11 +173,11 @@ export default function CategoriesManagementPage(): React.JSX.Element {
   function resetForm() {
     setFormName("");
     setFormType("INCOME");
-    setFormParentId("");
+    setFormParentId("root");
     setFormIncludePnL(true);
     setFormActive(true);
     setFormColor("");
-    setFormIcon("");
+    setFormIcon("none");
     setEditingCategory(null);
   }
 
@@ -190,11 +190,11 @@ export default function CategoriesManagementPage(): React.JSX.Element {
   function openEditDialog(category: Category) {
     setFormName(category.name);
     setFormType(category.type);
-    setFormParentId(category.parentId || "");
+    setFormParentId(category.parentId || "root");
     setFormIncludePnL(category.includeInPnL);
     setFormActive(category.active);
     setFormColor(category.color || "");
-    setFormIcon(category.icon || "");
+    setFormIcon(category.icon || "none");
     setEditingCategory(category);
     setIsAddDialogOpen(true);
   }
@@ -224,11 +224,11 @@ export default function CategoriesManagementPage(): React.JSX.Element {
           body: JSON.stringify({
             name: formName,
             ...(editingCategory ? {} : { type: formType }),
-            parentId: formParentId || null,
+            parentId: formParentId === "root" ? null : formParentId,
             includeInPnL: formIncludePnL,
             active: formActive,
             color: formColor || null,
-            icon: formIcon || null,
+            icon: formIcon === "none" ? null : formIcon,
           }),
         }
       );
@@ -577,7 +577,7 @@ export default function CategoriesManagementPage(): React.JSX.Element {
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="root">None</SelectItem>
                   {parentOptions.map((cat) => (
                     <SelectItem key={cat.id} value={cat.id}>
                       {cat.name}
@@ -613,7 +613,7 @@ export default function CategoriesManagementPage(): React.JSX.Element {
                   <SelectValue placeholder="Select an icon" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                   {ICONS.map((icon) => (
                     <SelectItem key={icon} value={icon}>
                       {icon}

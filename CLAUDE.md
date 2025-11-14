@@ -96,6 +96,71 @@ POST /api/integrations/[provider]/disconnect # Disconnect and revoke/remove toke
 - API routes must set `export const runtime = "nodejs"` for DB access.
 - Security red lines: see `AGENTS.md`.
 
+## Multi-Tenant Patterns (Sololedger)
+
+### API Route Structure
+
+Standard flow: `getCurrentUser()` → `getOrgBySlug()` → permission check → query with `org.id`
+
+Always filter soft-deleted records: `where: { organizationId: org.id, deletedAt: null }`
+
+### Permission Layers
+
+- **requireMembership**: GET endpoints (members need read access)
+- **requireAdminOrSuperadmin**: PATCH/POST/DELETE endpoints (write/config operations)
+
+Example: Financial settings GET = `requireMembership` (members need formatting), PATCH = `requireAdminOrSuperadmin`
+
+### Route Parameters
+
+- ✅ Always use `[orgSlug]` for org routes (never mix with `[orgId]`)
+- Pattern: `[orgSlug]` → `getOrgBySlug()` → use `org.id` for DB queries
+
+### Zod Patterns
+
+```typescript
+// ❌ WRONG
+currencyCode: z.string().length(3).toUpperCase()
+
+// ✅ CORRECT
+currencyCode: z.string().length(3).transform((val) => val.toUpperCase())
+```
+
+### Prisma Decimals
+
+Always convert `Decimal` to `Number`: `const total = Number(decimal) * rate`
+
+### Soft Deletes
+
+- Add `deletedAt DateTime?` to models
+- Always filter: `deletedAt: null`
+- Delete: `update({ data: { deletedAt: new Date() } })`
+
+### Financial Rules
+
+- YTD based on fiscal year (`fiscalYearStartMonth`), not calendar year
+- Decimal separator ≠ thousands separator
+- Store: `amountOriginal`, `currencyOriginal`, `exchangeRateToBase`, `amountBase`
+- Recalculate: `amountBase = amountOriginal × exchangeRateToBase`
+
+### Transaction Validation
+
+- Amount must be positive
+- Category type must match transaction type (INCOME/EXPENSE)
+- POSTED = no future dates, DRAFT = future OK
+- Always validate category type matches on create/update
+
+### Multi-Step Onboarding
+
+1. Add `onboardingComplete: boolean` flag
+2. Layout guard redirects to next incomplete step
+3. Show step indicators ("Step 2 of 4")
+4. Final step sets `onboardingComplete: true`
+
+### Client Forms
+
+Pattern: Load org on mount → get `orgId` → fetch lookups → show form with loading states → submit to `/api/orgs/${orgId}/resource`
+
 ## Required Environment Variables
 
 # Database (required)

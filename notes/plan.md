@@ -1,579 +1,309 @@
-Sololedger Milestone 1 – Implementation Plan
-
-1. Prisma schema & migrations
-
-1.1 Add Sololedger enums
-
-- Add enums to `prisma/schema.prisma`:
-  - `TransactionType { INCOME, EXPENSE }`
-  - `TransactionStatus { DRAFT, POSTED }`
-  - `CategoryType { INCOME, EXPENSE }`
-  - `DateFormat { DD_MM_YYYY, MM_DD_YYYY, YYYY_MM_DD }` (default: `YYYY_MM_DD`)
-  - `DecimalSeparator { DOT, COMMA }` (default: `DOT`)
-  - `ThousandsSeparator { COMMA, DOT, SPACE, NONE }` (default: `COMMA`)
-- Ensure enums are later usable in TypeScript via `@prisma/client` types.
-
-  1.2 Extend Organization model for Sololedger
-
-- In `prisma/schema.prisma`:
-  - Extend `Organization` with:
-    - Optional 1:1 `OrganizationSettings` relation:
-      - `settings OrganizationSettings?`
-    - 1:N relations:
-      - `accounts Account[]`
-      - `categories Category[]`
-      - `transactions Transaction[]`
-- Do not change existing auth/AI/integrations relations.
-
-  1.3 Add OrganizationSettings model
-
-- Add `OrganizationSettings`:
-  - PK: `id String @id @default(cuid())`
-  - FK: `organizationId String @unique`
-  - Relation: `organization Organization @relation(fields: [organizationId], references: [id])`
-  - Business details fields:
-    - `businessType String` (e.g. "Freelance", "Consulting", "Agency", "SaaS", "Other")
-    - `businessTypeOther String?` (required in UI when type == Other)
-    - `address String?`
-    - `phone String?`
-    - `email String?`
-    - `taxId String?`
-  - Financial configuration:
-    - `baseCurrency String` (ISO, e.g. "MYR")
-    - `fiscalYearStartMonth Int` (1–12, default 1)
-    - `dateFormat DateFormat @default(YYYY_MM_DD)`
-    - `decimalSeparator DecimalSeparator @default(DOT)`
-    - `thousandsSeparator ThousandsSeparator @default(COMMA)`
-  - Metadata:
-    - `createdAt DateTime @default(now())`
-    - `updatedAt DateTime @updatedAt`
-  - Optional future-proof fields (prepare for requirements):
-    - `isOnboardingComplete Boolean @default(false)`
-    - `softDeletedAt DateTime?` (for future org-level archival if needed)
-    - Optional tax-related placeholders to support Section 5 later (e.g. `isTaxRegistered Boolean?`, `defaultTaxRate Decimal? @db.Decimal(5, 2)`).
-
-  1.4 Add Account model
-
-- Add `Account`:
-  - PK: `id String @id @default(cuid())`
-  - FK: `organizationId String`
-  - Relation: `organization Organization @relation(fields: [organizationId], references: [id])`
-  - Fields:
-    - `name String`
-    - `description String?`
-    - `isDefault Boolean @default(false)`
-    - `active Boolean @default(true)`
-    - `createdAt DateTime @default(now())`
-    - `updatedAt DateTime @updatedAt`
-  - Relation:
-    - `transactions Transaction[]`
-- Enforce single default per org in application logic (not DB constraint).
-
-  1.5 Add Category model
-
-- Add `Category`:
-  - PK: `id String @id @default(cuid())`
-  - FK: `organizationId String`
-  - Relation to org:
-    - `organization Organization @relation(fields: [organizationId], references: [id])`
-  - Hierarchy:
-    - `parentId String?`
-    - Self-relation:
-      - `parent Category? @relation("CategoryHierarchy", fields: [parentId], references: [id])`
-      - `children Category[] @relation("CategoryHierarchy")`
-  - Fields:
-    - `name String`
-    - `type CategoryType`
-    - `color String?` (store hex or Tailwind token)
-    - `icon String?` (Lucide icon name)
-    - `sortOrder Int @default(0)`
-    - `includeInPnL Boolean @default(true)`
-    - `active Boolean @default(true)`
-    - `createdAt DateTime @default(now())`
-    - `updatedAt DateTime @updatedAt`
-  - Relation:
-    - `transactions Transaction[]`
-
-  1.6 Add Transaction model
-
-- Add `Transaction`:
-  - PK: `id String @id @default(cuid())`
-  - FKs:
-    - `organizationId String`
-    - `accountId String`
-    - `categoryId String`
-    - `userId String` (creator/last editor; link to `User` if desired)
-  - Relations:
-    - `organization Organization @relation(fields: [organizationId], references: [id])`
-    - `account Account @relation(fields: [accountId], references: [id])`
-    - `category Category @relation(fields: [categoryId], references: [id])`
-    - Optionally: `user User @relation(fields: [userId], references: [id])` (if you want full relation now)
-  - Core fields:
-    - `type TransactionType`
-    - `status TransactionStatus @default(POSTED)`
-  - Amount & FX:
-    - `amountOriginal Decimal @db.Decimal(18, 2)`
-    - `currencyOriginal String`
-    - `exchangeRateToBase Decimal @db.Decimal(18, 8)`
-    - `amountBase Decimal @db.Decimal(18, 2)`
-  - Other fields:
-    - `date DateTime`
-    - `description String`
-    - Optional:
-      - `vendorName String?` (pre-vendor model placeholder)
-      - `tags String?` (for future tagging)
-      - `notes String?`
-  - Soft delete:
-    - `deletedAt DateTime?`
-  - Timestamps:
-    - `createdAt DateTime @default(now())`
-    - `updatedAt DateTime @updatedAt`
-
-  1.7 Add optional Organization flag for onboarding
-
-- In `Organization`:
-  - Add `onboardingStatus String @default("pending")` or `onboardingComplete Boolean @default(false)`:
-    - Used to gate access to business dashboard and transactional features.
-    - Relates to Section 4 onboarding being mandatory.
-
-  1.8 Run migrations
-
-- Run:
-  - `npx prisma generate`
-  - `npx prisma migrate dev --name sololedger_initial`
-- Verify generated client types for new models & enums.
-
----
-
-2. Onboarding flow (multi-step, mandatory)
-
-2.1 Onboarding data model decisions
-
-- Use existing `Organization` for business-level tenant.
-- Store extended business details + financial settings in `OrganizationSettings`.
-- Consider `onboardingComplete` or equivalent flag on `Organization` or `OrganizationSettings`.
-  - Example: `OrganizationSettings` presence + `onboardingComplete = true` indicates completed onboarding.
-
-  2.2 Refactor/create onboarding routes structure
-
-- Keep initial org creation (name + slug) as the first action (`/api/orgs` + `app/onboarding/create-organization`), but integrate it into a multi-step experience:
-  - Step 1: create org (Workspace/Business identity).
-  - Step 2: Business details.
-  - Step 3: Financial configuration.
-  - Step 4: Category setup.
-
-  2.3 Update /api/orgs POST to mark onboarding state
-
-- After creating an Organization:
-  - Ensure an initial `onboardingComplete = false` flag.
-  - Optionally create a minimal `OrganizationSettings` stub with `baseCurrency` and other fields null or default placeholders OR leave settings creation to next step’s API route.
-  - Return both `organization.id` and `slug` to the frontend to drive subsequent steps.
-
-  2.4 Rework CreateOrganizationPage to function as Step 1
-
-- In `app/onboarding/create-organization/page.tsx`:
-  - Keep current form (name + slug) but:
-    - Update copy from "Workspace" to "Business" for user-facing text.
-    - On success, redirect not to `/o/[slug]/dashboard` but to onboarding Step 2, e.g. `/onboarding/[orgId]/business` or `/onboarding/[orgSlug]/business`.
-  - Use personalized text if user name is available (fetch minimal profile if needed).
-  - This page serves as onboarding Step 1 of 4, with visible progress indicator.
-
-  2.5 Implement Business Details step (Step 2)
-
-- New route, e.g. `app/onboarding/[orgSlug]/business/page.tsx`:
-  - Fields:
-    - `businessName` (must sync with `Organization.name`)
-    - `businessType` (dropdown: Freelance, Consulting, Agency, SaaS, Other)
-    - Conditional free-text `businessTypeOther` when type == Other.
-    - Optional: address, phone, email, tax ID.
-  - Behavior:
-    - Pre-fill `businessName` with existing `Organization.name` but allow edits (updates Organization).
-    - Validate: name non-empty; type selected; if type == Other, require `businessTypeOther`.
-    - Use "Save & Continue" which:
-      - Upserts `OrganizationSettings` with these fields.
-      - Updates `Organization.name` if changed.
-      - Persists even if user navigates away.
-    - Block navigation to next step until required fields valid.
-  - Backend:
-    - Add API route (e.g. `app/api/orgs/[orgId]/settings/business/route.ts`) to handle upsert of `OrganizationSettings` and update of `Organization.name`.
-  - UI:
-    - Show progress indicator: "Step 2 of 4 – Business details".
-    - Use existing form UI components and Sonner toasts.
-
-  2.6 Implement Financial Configuration step (Step 3)
-
-- New route, e.g. `app/onboarding/[orgSlug]/financial/page.tsx`:
-  - Fields:
-    - `baseCurrency`:
-      - Use curated searchable select with at least MYR & USD; place MYR at top.
-      - Provide a small curated list (MYR, USD, EUR, GBP, SGD, etc.) plus an "Other" option that reveals a text input.
-    - `fiscalYearStartMonth` (1–12):
-      - Dropdown of month names with corresponding numeric value.
-      - Default to January (1).
-    - `dateFormat`:
-      - Options: DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD.
-      - Default selection: YYYY-MM-DD.
-      - Show preview (e.g. "Preview: 2025-01-31").
-    - `decimalSeparator` and `thousandsSeparator`:
-      - Dropdowns with allowed options.
-      - Default: DOT for decimals, COMMA for thousands (with preview like "1,234.56").
-  - Validation:
-    - Require base currency and fiscal year start month before allowing "Save & Continue".
-  - Behavior:
-    - Save/Update fields on `OrganizationSettings` via API route (e.g. `app/api/orgs/[orgId]/settings/financial/route.ts`).
-    - "Save & Continue" moves to Category Setup step.
-  - Additional: store user’s choices for future formatting usage (date & number).
-  - Progress indicator: "Step 3 of 4 – Financial configuration".
-
-  2.7 Implement Category Setup step (Step 4)
-
-- New route, e.g. `app/onboarding/[orgSlug]/categories/page.tsx`:
-  - On first visit:
-    - Seed default categories for the organization via backend if not already seeded:
-      - Income:
-        - "General Income" (includeInPnL = true)
-        - "Tax Collected" (includeInPnL = true or configurable)
-        - "Owner Contributions" (includeInPnL = false)
-        - "Transfers In" (includeInPnL = false)
-      - Expense:
-        - "General Expense" (includeInPnL = true)
-        - "Tax Paid" (includeInPnL = true)
-        - "Owner Drawings" (includeInPnL = false)
-        - "Transfers Out" (includeInPnL = false)
-    - Ensure at least one income and one expense category exist.
-  - UI capabilities (scope-limited for milestone 1):
-    - List categories (flat or simple parent/child without drag-and-drop).
-    - Create/Edit form:
-      - Fields: name, type (Income/Expense), optional parent, includeInPnL, optional color/icon.
-    - For this milestone, skip drag-and-drop reordering and usage analytics; only allow simple CRUD where possible.
-  - Validation:
-    - Before finishing onboarding:
-      - Check that at least one active income and one active expense category exist.
-  - Backend:
-    - API routes under `app/api/orgs/[orgId]/categories` for list/create/update.
-    - Enforce org scoping and membership checks.
-
-  2.8 Completing onboarding
-
-- When user clicks "Finish" on Category step:
-  - Mark organization as fully onboarded:
-    - Set `Organization.onboardingComplete = true` (or similar).
-  - Redirect to business dashboard: `/o/[orgSlug]/dashboard`.
-- Ensure onboarding flows are mandatory:
-  - For any request into `/o/[orgSlug]/...` for an org where onboarding not complete:
-    - Redirect to the next incomplete onboarding step (business, financial, or categories).
-
-  2.9 Routing guard for onboarding vs dashboard
-
-- Add a server-side guard in:
-  - `app/o/[orgSlug]/layout.tsx` or middleware logic that:
-    - Fetches org + settings.
-    - If `onboardingComplete` is false:
-      - Redirect to appropriate onboarding route.
-- Ensure superadmins can bypass for debugging if needed (optional).
-
----
-
-3. Accounts & Categories management (post-onboarding, basic admin views)
-
-3.1 Navigation: Business section
-
-- Extend existing org dashboard shell:
-  - Add "Business" or "Sololedger" section in org-scoped navigation with items:
-    - "Dashboard" → `/o/[orgSlug]/dashboard`
-    - "Transactions" → `/o/[orgSlug]/transactions`
-    - "Accounts" → `/o/[orgSlug]/settings/accounts`
-    - "Categories" → `/o/[orgSlug]/settings/categories`
-- Ensure nav highlights based on current route.
-
-  3.2 Accounts management UI
-
-- Route: `app/o/[orgSlug]/settings/accounts/page.tsx`
-- Server-side component fetching:
-  - Use helper like `getCurrentUserAndOrg` to validate membership and role.
-  - Only allow access for admins (Owners/Admins).
-- Features:
-  - List all accounts with columns: name, description, isDefault, active, createdAt.
-  - Provide "New Account" button:
-    - Open dialog or dedicated subpage for form (name, description, isDefault, active).
-  - Edit account:
-    - Use dialog or `/o/[orgSlug]/settings/accounts/[accountId]` page.
-  - Enforce single default per business in application logic:
-    - When setting an account’s `isDefault` to true, ensure all others get `isDefault = false` in the same transaction.
-- Backend:
-  - API routes under `app/api/orgs/[orgId]/accounts`:
-    - `GET`: list accounts (admin only).
-    - `POST`: create account (admin only).
-    - `PATCH`: update account by id (admin only).
-  - Use `scopeTenant` helper to ensure isolation.
-
-  3.3 Categories management UI
-
-- Route: `app/o/[orgSlug]/settings/categories/page.tsx`
-- Access:
-  - Owners/Admins and Members can manage categories per requirements:
-    - Admins & Members: can add/edit/delete categories.
-    - Enforce via `membership.role` check.
-- Features (v1 scope):
-  - List categories grouped by type (Income / Expense).
-  - For now, simple list with parent category name in a column (no drag-and-drop).
-  - Create/Edit forms:
-    - Fields: name, type, parent (optional), includeInPnL, active, color, icon.
-  - Soft behavior for delete (if implementing immediately):
-    - If category has transactions, show a non-functional note for now OR implement minimal "set inactive" behavior.
-    - Full replacement flow can be deferred but prepare API shape to support it later.
-- Backend:
-  - API routes: `app/api/orgs/[orgId]/categories`:
-    - `GET`: list categories (all members).
-    - `POST`: create category (members+admins).
-    - `PATCH`: update category (members+admins).
-  - Enforce type invariants and org scoping.
-
-  3.4 Ensure “at least one income + one expense category”
-
-- On:
-  - Completing onboarding, and
-  - Access to `/o/[orgSlug]/transactions`
-- Add guard:
-  - Check existence of at least one active income and one active expense category.
-  - If missing:
-    - Show a UI prompt on dashboard / transactions page to go to Categories settings.
-
----
-
-4. Transactions page: manual entry & listing
-
-4.1 Route and access
-
-- Route: `app/o/[orgSlug]/transactions/page.tsx`
-- Access control:
-  - Owners/Admins and Members both allowed (per permissions).
-  - Use `getCurrentUserAndOrg` and membership role.
-- Load necessary data:
-  - Organization `OrganizationSettings` (for baseCurrency and formats).
-  - Active accounts and categories for selects.
-- Decide UI pattern:
-  - List view + inline creation form or top-of-page form.
-  - Editing pattern per choice:
-    - Use dedicated edit page: `/o/[orgSlug]/transactions/[id]/page.tsx`.
-
-  4.2 Transaction creation form
-
-- Fields:
-  - Type: income/expense (`TransactionType`).
-  - Amount (positive number).
-  - Currency:
-    - Default to base currency from `OrganizationSettings`.
-    - Allow selecting another currency (small curated list + text input).
-  - Date:
-    - Use date picker, formatted according to `dateFormat`.
-  - Description (text).
-  - Category (dropdown filtered by type).
-  - Account (dropdown).
-  - Status: Draft / Posted (`TransactionStatus`).
-  - Optional: vendorName, notes.
-- Validation:
-  - Amount > 0.
-  - Date:
-    - For Draft: allow future dates with a warning.
-    - For Posted: block future dates (per choice).
-  - Category type matches transaction type.
-- FX behavior:
-  - When currency == baseCurrency:
-    - Set `exchangeRateToBase = 1.0`.
-  - When currency != baseCurrency:
-    - Require a numeric rate field:
-      - Prefill 1.0 as a placeholder.
-      - Allow override by user.
-    - Calculate `amountBase = amountOriginal * exchangeRateToBase`.
-  - For this milestone:
-    - Do not call external FX APIs yet.
-    - Keep design future-friendly to integrate automatic rates later.
-
-  4.3 Backend: transaction CRUD API
-
-- Routes: `app/api/orgs/[orgId]/transactions` + subroutes:
-  - `GET`: list transactions with support for:
-    - Date range filter.
-    - Type filter.
-    - Status filter.
-    - Exclude `deletedAt` entries.
-  - `POST`: create new transaction:
-    - Validate all business rules.
-    - Set `amountBase` based on `amountOriginal * exchangeRateToBase`.
-    - Use `user.id` from session as `userId`.
-  - `PATCH`/`PUT`: update existing transaction by id:
-    - Allow editing all mutable fields.
-    - Recalculate `amountBase` if amount, currency, or rate changed.
-    - Enforce future date + categoryType/type rules.
-  - `DELETE`: soft delete:
-    - Set `deletedAt` instead of deleting row.
-- All operations:
-  - Scope by `organizationId`.
-  - Enforce membership and role.
-
-  4.4 List view UI
-
-- Table showing non-deleted transactions for current filters:
-  - Columns:
-    - Date (formatted per `dateFormat`).
-    - Description.
-    - Type (Income/Expense).
-    - Category.
-    - Account.
-    - `amountBase` with number formatting (currency, decimals, thousands).
-    - Status badge (Draft / Posted).
-  - Basic filters:
-    - Date range (from–to).
-    - Type (income/expense).
-    - Status (draft/posted).
-- Actions:
-  - "Add Transaction" button opens create form (inline or separate).
-  - Each row:
-    - "Edit" → link to `/o/[orgSlug]/transactions/[id]`.
-    - "Delete" → soft delete (set `deletedAt`).
-
-  4.5 Edit transaction page
-
-- Route: `app/o/[orgSlug]/transactions/[id]/page.tsx`
-- Behavior:
-  - Load transaction and related lists (accounts, categories).
-  - Use same form component as create, pre-populated with values.
-  - Enforce same validations:
-    - Future date rule: allowed for Draft, blocked for Posted.
-    - Category type matches transaction type.
-  - Allow toggling Draft/Posted and adjusting amounts.
-
----
-
-5. Business dashboard (per organization)
-
-5.1 Route and access
-
-- Route: `app/o/[orgSlug]/dashboard/page.tsx`
-- Access:
-  - Owners/Admins and Members.
-  - Guard by `onboardingComplete` flag; redirect to onboarding if false.
-- Data needed:
-  - Organization and `OrganizationSettings` (baseCurrency, fiscalYearStartMonth).
-  - YTD (Year-To-Date) range:
-    - Compute based on fiscalYearStartMonth and current date.
-  - Transactions:
-    - Posted only (`status = POSTED`, `deletedAt IS NULL`) within YTD range.
-
-  5.2 Metrics calculations
-
-- YTD Income:
-  - Sum of `amountBase` for Posted Income transactions where category.includeInPnL = true.
-- YTD Expenses:
-  - Sum of `amountBase` for Posted Expense transactions where category.includeInPnL = true.
-- YTD Profit/Loss:
-  - Income - Expenses.
-- Account balances:
-  - For each active account:
-    - Income sum (Posted, not deleted) minus Expense sum in base currency.
-    - For milestone 1:
-      - All categories affect balances (ignore special owner/transfer P&L semantics for now).
-- Recent activity:
-  - Last 10–20 transactions (including both Draft and Posted).
-  - Show type, category, account, amountBase, status.
-
-  5.3 Dashboard UI
-
-- Layout:
-  - Top row cards:
-    - "YTD Income"
-    - "YTD Expenses"
-    - "YTD Profit/Loss"
-  - Section: "Accounts"
-    - Table of accounts with current balances.
-  - Section: "Recent activity"
-    - Table of last 10–20 transactions, with status badges and quick "Edit" link.
-- Scope:
-  - For this milestone, omit charts (Income vs Expense by month, category breakdown) or include minimal placeholder summary; full charting can be phase 2.
-
----
-
-6. Permissions & UX polish
-
-6.1 Role-based behavior (per org)
-
-- Reuse existing `Membership` roles:
-  - Treat `role = "admin"` as Owner/Admin equivalent for that business.
-  - `role = "member"` as Member.
-- Enforce:
-  - Owners/Admins:
-    - Full access to everything within that business (settings, accounts, categories, transactions).
-  - Members:
-    - Can view dashboard & reports.
-    - Can create/edit/delete transactions.
-    - Can manage categories (per requirements).
-    - Cannot manage accounts.
-    - Cannot change core business financial settings (base currency, fiscal year, tax settings).
-- Implementation:
-  - For each API route and page:
-    - Use `getCurrentUserAndOrg` to get user, org, membership.
-    - Add helpers:
-      - `requireOrgAdmin` (admin only).
-      - `requireOrgMember` (member or admin).
-    - Apply correct helper depending on endpoint.
-
-  6.2 Onboarding gating UX
-
-- Ensure that users:
-  - After creating a new business:
-    - Are redirected into onboarding steps 2–4 and cannot access `/o/[orgSlug]/dashboard`, `/transactions`, etc. until `onboardingComplete` is true.
-  - After completing onboarding:
-    - Land on `/o/[orgSlug]/dashboard`.
-  - When switching businesses:
-    - If another business is not yet fully onboarded, redirect them into its incomplete step.
-
-  6.3 Wording and UI copy
-
-- Replace "Workspace" with "Business" in user-facing copy wherever relevant:
-  - Onboarding pages.
-  - Dashboard headings.
-  - Navigation labels.
-- Keep internal code using "organization" naming for models, types, and paths.
-
-  6.4 Hiding unrelated boilerplate sections
-
-- In the main org navigation:
-  - De-emphasize or hide admin/AI/integrations sections for standard Sololedger flows.
-  - Keep them available for superadmin/system-level operations if needed.
-- Optionally:
-  - Show a "Sololedger" or "Business" primary section first in the sidebar for clarity.
-
----
-
-7. Cross-cutting concerns & future readiness
-
-7.1 Formatting utilities
-
-- Implement reusable formatting helpers (server-side / shared):
-  - Date formatting based on `OrganizationSettings.dateFormat`.
-  - Number formatting with decimal & thousands separators from settings.
-- Apply these in:
-  - Transactions list.
-  - Dashboard cards and tables.
-
-  7.2 Audit logging (future)
-
-- For this milestone:
-  - Optionally log key events related to Sololedger to existing `AuditLog` or plan a dedicated activity log model later.
-- Keep code structured such that adding a detailed activity log (Section 16) is straightforward:
-  - Wrap critical operations (create/update/delete transaction, change business settings) into helper functions where logging can be added later.
-
-  7.3 Vendors, documents, AI, imports, reporting
-
-- Keep model and UI designs open for:
-  - Vendors:
-    - For now, store `vendorName` string on `Transaction`, but design in a way that a `Vendor` model can be introduced later without breaking.
-  - Documents & AI processing:
-    - Ensure `Transaction` has clear identifier and relations so linking documents is easy later.
-  - Imports and exports:
-    - Design transaction API to support bulk operations in future.
-  - Reporting:
-    - P&L and other reports can be built on top of `Transaction.amountBase`, category type, `includeInPnL`, and `OrganizationSettings` fiscal year configuration.
-
----
+Sololedger Enhancements Plan – Categories, Business Settings, Vendors, Accounts
+
+This plan extends Sololedger’s core ledger with richer master data and settings: categories gain delete-with-reassignment, color/icon configuration, drag-and-drop ordering, and usage analytics; business settings get post-onboarding business and financial UIs (with a safe base-currency change flow and member read-only access); vendors become first-class entities with APIs, autocomplete, auto-create, and merge; and accounts gain date-range balances with click-through to filtered transaction lists. The changes build on existing Prisma models, org-scoped APIs, and settings/transactions UIs, and respect your permissions model.
+
+PHASE 0 – Foundations & Model Updates
+0.1 Confirm and align Category model in `schema.prisma`
+    - Ensure fields: `id`, `organizationId`, `name`, `type` ("INCOME"/"EXPENSE"), `parentId`, `color`, `icon`, `sortOrder`, `includeInPnL`, `active`, timestamps.
+    - Verify or add useful indexes, especially `(organizationId, type, parentId, sortOrder)` and `(organizationId, type)`.
+
+0.2 Introduce Vendor model in `schema.prisma`
+    - Add `Vendor`:
+        - `id` (cuid), `organizationId` (FK → Organization), `name` (varchar, required).
+        - Contact fields: `email?`, `phone?`, `notes?`.
+        - `active` boolean (default true).
+        - `mergedIntoId?` (nullable self-FK for soft-merge).
+        - `createdAt`, `updatedAt`.
+    - Enforce per-org, case-insensitive unique name: e.g. composite unique on `(organizationId, lower(name))` via Prisma pattern (or equivalent).
+    - Add indexes on `(organizationId, active)` and `(organizationId, name)`.
+
+0.3 Extend Transaction model for vendor linkage and category analytics
+    - Add `vendorId` (nullable FK → Vendor) while keeping existing `vendorName` string.
+    - Confirm fields for category analytics and balances: `organizationId`, `categoryId`, `accountId`, `status` ("DRAFT"/"POSTED"), `amountBase`, `date`.
+    - Add indexes: `(organizationId, categoryId, status, date)`, `(organizationId, vendorId, status, date)`, `(organizationId, accountId, status, date)` to support analytics and balances efficiently.
+
+0.4 Verify Account model and indexes
+    - Confirm fields: `id`, `organizationId`, `name`, `description?`, `isDefault`, `active`, timestamps.
+    - Add index `(organizationId, active)` for listing, and rely on transaction indexes from 0.3 for balance queries.
+
+0.5 Migrations & seeds
+    - Create Prisma migration for Vendor + Transaction updates.
+    - Adjust `prisma/seed.ts` if needed:
+        - Ensure default categories have sensible `sortOrder`.
+        - Optionally seed a couple of vendors for dev/testing.
+    - Run `npx prisma generate` and `npx prisma migrate dev` to apply.
+
+PHASE 1 – Categories: Delete with Reassignment, Color/Icon, Reorder, Analytics
+
+1.1 Backend: Delete category with reassignment (modal-driven flow)
+    - Add endpoint, e.g. `POST /api/orgs/[orgSlug]/categories/[categoryId]/delete-with-reassignment`:
+        - Input: `{ replacementCategoryId: string }`.
+        - Auth: `requireMembership` (members and admins can manage categories per matrix).
+        - Validation:
+            - Both categories must belong to org and be active.
+            - Types must match (INCOME vs EXPENSE).
+            - Category cannot be reassigned to itself.
+        - Implementation (transaction):
+            - Reassign all `Transaction` rows where `categoryId = categoryId` to `replacementCategoryId`.
+            - Delete the category (hard delete) or set `active=false` per your preference; align with `plan.md` (hard delete post-reassignment for simpler lists).
+            - Return `{ reassignedCount }` for UI feedback.
+        - Optional: create an `AuditLog` entry for category deletion/reassignment.
+
+1.2 Backend: Category reorder persistence (sibling-level sort)
+    - Add endpoint `POST /api/orgs/[orgSlug]/categories/reorder`:
+        - Input shape (aligned with sibling-only ordering): array of objects like `{ id, sortOrder }` or per group: `{ parentId, type, orderedIds[] }`.
+        - Auth: `requireMembership`.
+        - Validation:
+            - All categories belong to org.
+            - Reordering is applied per `(type, parentId)` group.
+        - Implementation:
+            - For each group, reassign `sortOrder` sequentially (e.g. 1..N) according to received order.
+            - Use a transaction to ensure all updates apply atomically.
+
+1.3 Backend: Category usage analytics (rolling 12 months + optional range)
+    - Add endpoint `GET /api/orgs/[orgSlug]/categories/usage`:
+        - Query params: `from`, `to` (optional). If omitted, default to last 12 months.
+        - Auth: `requireMembership`.
+        - For each category:
+            - Count of POSTED transactions in range.
+            - Sum of `amountBase` in range.
+            - `lastUsedAt`: max transaction date in range.
+        - Implementation:
+            - Query `Transaction` grouped by `categoryId` with filters on `organizationId`, `status = "POSTED"`, and date range.
+            - Join with `Category` to return enriched data.
+
+1.4 Frontend: Category management UI enhancements (post-onboarding)
+    - In `app/o/[orgSlug]/settings/categories/page.tsx`:
+        - Color/icon editing:
+            - Extend form state with `formColor`, `formIcon`.
+            - In add/edit dialog, add:
+                - Color selector: small fixed palette or text input; persist to `color`.
+                - Icon selector: dropdown of a curated Lucide icon list, storing icon name as string.
+            - Render color swatch and icon in category rows.
+        - Drag-and-drop ordering:
+            - Implement sortable list for categories (per active tab/type) using a DnD helper.
+            - On drop:
+                - Update local array order.
+                - Build payload per `(type, parentId)` group and call `POST /categories/reorder`.
+                - Handle optimistic update with error rollback if needed.
+        - Delete with reassignment:
+            - Add “Delete” action/button on each category row.
+            - On click:
+                - Open modal.
+                - Show warning text and the category name.
+                - If analytics are available (from 1.3), show transaction count and total.
+                - Add a select for replacement category restricted to same type and org (exclude current).
+                - On confirm, call `delete-with-reassignment` endpoint, show success toast, and refresh list + analytics.
+            - For categories with zero usage:
+                - Either allow direct delete via existing `DELETE` or reuse same modal with replacement optional and block only if count>0.
+        - Usage analytics surface:
+            - Optionally add a toggle or small date-range selector near the list.
+            - Show per-category stats (e.g. “23 tx, 12,345.67 MYR, last used 2025-10-15”) in the row subtitle or a hover.
+
+1.5 Frontend: Category dropdown ordering in forms and filters
+    - Ensure category lists in:
+        - `TransactionForm` (`components/features/transactions/transaction-form.tsx`),
+        - onboarding categories page,
+        - any reporting filters,
+      are sorted by `type` and `sortOrder`, with parent/child structure respected.
+    - If API already orders by `type` + `sortOrder`, just use that; otherwise, sort client-side based on returned fields.
+    - Consider rendering parent labels with children indented or prefixed (e.g. “Marketing / Facebook Ads”).
+
+PHASE 2 – Business Settings: Post-Onboarding Info + Base Currency Change
+
+2.1 Backend: Business settings read/write
+    - Adjust `GET /api/orgs/[orgSlug]/settings/business`:
+        - Auth: change from admin-only to `requireMembership` for reads.
+        - Return full business info (name, type, address, phone, email, taxId).
+    - Keep `PATCH /settings/business` admin-only via `requireAdminOrSuperadmin`.
+    - Confirm `OrganizationSettings` has fields: `businessType`, `businessTypeOther`, `address`, `phone`, `email`, `taxId`, `baseCurrency`, `fiscalYearStartMonth`.
+    - Confirm financial settings endpoint (`/settings/financial`) exposes `baseCurrency`, `fiscalYearStartMonth`, `dateFormat`, `decimalSeparator`, `thousandsSeparator`; add any missing fields.
+
+2.2 Frontend: Business Info tab (post-onboarding)
+    - Under `app/o/[orgSlug]/settings/organization/(tabs)`, add `business-info` tab page:
+        - Reuse onboarding `BusinessDetails` form schema (zod) and layout for fields:
+            - Business name, type (with “Other” + extra field), address, phone, email, tax ID.
+        - On mount:
+            - Fetch `GET /settings/business` and populate form.
+        - Behavior:
+            - If user is admin:
+                - Editable form with “Save” button using `PATCH /settings/business`.
+                - Show success/error toasts and revalidate on save.
+            - If user is member:
+                - Render same form but all inputs disabled; hide “Save” button.
+        - Ensure organization name changes flow through to any shared context (likely already via org fetches).
+
+2.3 Frontend: Financial Settings tab + base currency change
+    - Add `financial-settings` tab page:
+        - Show current:
+            - Base currency (code + label).
+            - Fiscal year start month.
+            - Date format, number format.
+        - For admins:
+            - Controls to edit fiscal year and formats via `PATCH /settings/financial`.
+            - “Change base currency” section:
+                - Display current base currency.
+                - “Change base currency” button opens dialog:
+                    - Warning text explaining that:
+                        - Base currency for reporting will change.
+                        - Stored `amountBase` is not recalculated; historical comparisons may be less meaningful.
+                    - Required confirmation (checkbox or text input “CHANGE”).
+                    - Base currency selector (ISO list) with the current value preselected.
+                    - Confirm button that calls `PATCH /settings/financial` with new base currency only.
+                - On success: toast and revalidation of settings; optionally refresh key dashboards.
+        - For members:
+            - Display-only view; hide change controls.
+
+2.4 Shared settings hooks
+    - Implement `useBusinessSettings(orgSlug)` and `useFinancialSettings(orgSlug)`:
+        - Use SWR (or similar) to fetch and cache `GET /settings/business` and `GET /settings/financial`.
+        - Expose `data`, `isLoading`, `error`, and a `mutate` function for refresh.
+    - Use these hooks in:
+        - Onboarding steps (business, financial).
+        - Organization settings tabs (business info, financial).
+
+PHASE 3 – Vendors: Model, APIs, Autocomplete, Auto-Create, Management, Merge
+
+3.1 Backend: Vendor CRUD API
+    - Create `app/api/orgs/[orgSlug]/vendors/route.ts`:
+        - `GET`:
+            - Auth: `requireMembership`.
+            - Query params: `query?` (for autocomplete), `from?`, `to?` (for totals).
+            - Behavior:
+                - If `query` present: filter vendors by case-insensitive match on `name`, limit to e.g. 20 results.
+                - If `from`/`to` present: include aggregated totals per vendor (posted transactions in date range using `amountBase`).
+                - Return `vendors` with fields: id, name, email, phone, notes, active, optional `totals`.
+        - `POST`:
+            - Auth: `requireMembership` (members can manage vendors).
+            - Validate payload: `name` required; email/phone/notes optional.
+            - Enforce per-org, case-insensitive uniqueness (handle conflict gracefully with clear error).
+    - Create `app/api/orgs/[orgSlug]/vendors/[vendorId]/route.ts`:
+        - `PATCH`:
+            - Auth: `requireMembership`.
+            - Allow edits to name, contact fields, `active`.
+            - Validate uniqueness when renaming.
+    - Create `app/api/orgs/[orgSlug]/vendors/merge/route.ts`:
+        - `POST`:
+            - Auth: `requireMembership` (or admin-only if you prefer stricter control).
+            - Input: `{ primaryId: string, ids: string[] }`.
+            - Validation:
+                - `primaryId` belongs to org, is active.
+                - All `ids` belong to same org, are distinct from `primaryId`.
+            - Implementation (transaction):
+                - Update `Transaction` where `vendorId` in `ids` to `primaryId`.
+                - For each secondary vendor:
+                    - Set `active=false`.
+                    - Set `mergedIntoId = primaryId`.
+                - Optionally log merge into `AuditLog`.
+
+3.2 Backend: Auto-create vendor on transaction save
+    - In `POST /api/orgs/[orgSlug]/transactions` and `PATCH /api/orgs/[orgSlug]/transactions/[transactionId]`:
+        - Before creating/updating transaction:
+            - If `vendorId` supplied: use as-is after verifying it belongs to org.
+            - Else if `vendorName` is non-empty:
+                - Look up existing vendor for org by name (case-insensitive).
+                - If found: use its `id` as `vendorId`.
+                - If not found: create new `Vendor` with given name (and possibly no contact info) and set `vendorId`.
+            - Persist `vendorName` along with `vendorId`.
+        - Ensure all operations are scoped by `organizationId`.
+
+3.3 Frontend: Vendor autocomplete on transaction form
+    - In `TransactionForm` component:
+        - Replace plain `Input` for `vendorName` with an autocomplete input:
+            - On typing, debounce and call `GET /vendors?query=...`.
+            - Show dropdown (using e.g. shadcn `Command` or `Popover`) of vendor suggestions.
+            - Selecting a suggestion sets both `vendorName` (for display) and `vendorId` in form state.
+            - If the user types a new name and does not select a suggestion:
+                - Keep `vendorName` string only; on submit, backend auto-creates vendor as per 3.2.
+        - Handle loading/empty states and display basic errors with toasts.
+
+3.4 Frontend: Vendor management screen with totals and merge
+    - Add a route, e.g. `app/o/[orgSlug]/settings/vendors/page.tsx`:
+        - Layout:
+            - Date range selector (default rolling 12 months or fiscal YTD).
+            - Table/list of vendors with:
+                - Name.
+                - Contact details (email, phone).
+                - Active status badge.
+                - Totals for selected period: count of transactions, total base amount (spent/received).
+            - Actions:
+                - Inline edit button for each row to open a dialog for editing vendor metadata.
+                - Toggle active/inactive.
+        - Merge duplicates:
+            - Allow multi-select (checkbox per row).
+            - “Merge vendors” button:
+                - When clicked:
+                    - Ensure at least two vendors selected.
+                    - Open dialog showing selected vendors.
+                    - Require choosing primary vendor (radio/select).
+                    - Show explanation that all transactions will be reassigned and secondaries deactivated but preserved.
+                - On confirm:
+                    - Call `POST /vendors/merge` with primary + secondary IDs.
+                    - On success, refresh vendors list and show toast.
+        - Respect permissions:
+            - Members and admins can view and manage vendors per current rules; adjust if you want merge to be admin-only.
+
+PHASE 4 – Accounts: Date-Range Balances & Click-Through
+
+4.1 Backend: Account balances by date range
+    - Create endpoint `GET /api/orgs/[orgSlug]/accounts/balances`:
+        - Query params: `from`, `to` (required or default).
+        - Auth: `requireMembership`.
+        - Behavior:
+            - For each active account in org:
+                - Compute base currency balance = sum of `amountBase` for POSTED transactions within date range.
+                - Include account meta: id, name, isDefault, active.
+            - Return `accounts` with `balanceBase` and maybe `transactionCount`.
+        - Implementation:
+            - Query `Transaction` grouped by `accountId` with filters on `organizationId`, `status`, and date.
+            - Join or map with `Account` table results.
+
+4.2 Frontend: Accounts balances UI in settings
+    - In `app/o/[orgSlug]/settings/accounts/page.tsx`:
+        - Add date range controls:
+            - Default to fiscal year-to-date (based on `OrganizationSettings.fiscalYearStartMonth`) or last 30 days, per your preference.
+            - Allow user to adjust range.
+        - On change:
+            - Fetch `GET /accounts/balances?from=...&to=...`.
+        - Display:
+            - Extend account rows to show base currency balance for selected range.
+            - Show currency symbol/code from org base currency.
+        - Click-through:
+            - Make each account row clickable (or add “View transactions” link).
+            - On click, navigate to `/o/[orgSlug]/transactions` with query params `accountId`, `from`, `to`.
+            - Update transactions list page to read these query params and initialize filters accordingly (if not already supported).
+
+4.3 Optional: Dashboard accounts widget
+    - Optionally, add an “Accounts overview” widget to the main org dashboard page:
+        - Use the same `accounts/balances` endpoint with a default date range (e.g., “All time” or YTD).
+        - Show top N accounts and total balance.
+        - Rows clickable to the filtered transactions page.
+
+PHASE 5 – Testing, Permissions, and Polish
+
+5.1 Tests and validation
+    - Backend:
+        - Add tests for:
+            - Category delete/reassign.
+            - Category reorder endpoint.
+            - Category usage analytics.
+            - Vendor CRUD, search, merge, and transaction auto-create behavior.
+            - Accounts balances endpoint.
+            - Business and financial settings GET/PATCH with correct role behavior.
+    - Frontend:
+        - Spot-check:
+            - Category drag-and-drop and delete flows.
+            - Business/financial settings screens (admin vs member).
+            - Vendor autocomplete in transaction form (existing vs new vendor).
+            - Vendor merge effect on transactions.
+            - Account balances recalculating correctly when changing date range and click-through to transaction list.
+        - Verify org scoping and that no cross-org leakage occurs.
+
+5.2 Permissions and UX polish
+    - Confirm that:
+        - `requireMembership` and `requireAdminOrSuperadmin` are used consistently according to requirements.
+        - Admin-only UI actions are not visible or are disabled for members.
+    - Polish UX:
+        - Add loading states, empty states (“No vendors found for this period”), and clear error toasts.
+        - Debounce vendor autocomplete and avoid excessive reorder API calls (e.g., save only on drop, not on every drag).
+        - Ensure color/icon choices do not break existing layouts.

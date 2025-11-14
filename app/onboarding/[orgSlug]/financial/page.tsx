@@ -66,7 +66,6 @@ export default function FinancialConfigPage(): React.JSX.Element {
   const orgSlug = params.orgSlug as string;
   const [isLoading, setIsLoading] = React.useState(false);
   const [isInitialLoading, setIsInitialLoading] = React.useState(true);
-  const [orgId, setOrgId] = React.useState<string>("");
 
   const form = useForm<FinancialConfigFormData>({
     resolver: zodResolver(financialConfigSchema),
@@ -89,23 +88,9 @@ export default function FinancialConfigPage(): React.JSX.Element {
   React.useEffect(() => {
     async function loadOrg() {
       try {
-        const orgsResponse = await fetch("/api/orgs");
-        const orgsData = await orgsResponse.json();
-        const org = orgsData.organizations?.find(
-          (o: { slug: string }) => o.slug === orgSlug
-        );
-
-        if (!org) {
-          toast.error("Organization not found");
-          router.push("/onboarding/create-organization");
-          return;
-        }
-
-        setOrgId(org.id);
-
-        // Load existing settings
+        // Load existing settings using orgSlug
         const settingsResponse = await fetch(
-          `/api/orgs/${org.id}/settings/financial`
+          `/api/orgs/${orgSlug}/settings/financial`
         );
 
         if (settingsResponse.ok) {
@@ -129,6 +114,10 @@ export default function FinancialConfigPage(): React.JSX.Element {
               thousandsSeparator: data.settings.thousandsSeparator,
             });
           }
+        } else if (settingsResponse.status === 404) {
+          toast.error("Organization not found");
+          router.push("/onboarding/create-organization");
+          return;
         }
       } catch (error) {
         console.error("Error loading organization:", error);
@@ -222,7 +211,7 @@ export default function FinancialConfigPage(): React.JSX.Element {
         return;
       }
 
-      const response = await fetch(`/api/orgs/${orgId}/settings/financial`, {
+      const response = await fetch(`/api/orgs/${orgSlug}/settings/financial`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

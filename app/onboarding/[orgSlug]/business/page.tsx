@@ -49,7 +49,6 @@ export default function BusinessDetailsPage(): React.JSX.Element {
   const orgSlug = params.orgSlug as string;
   const [isLoading, setIsLoading] = React.useState(false);
   const [isInitialLoading, setIsInitialLoading] = React.useState(true);
-  const [orgId, setOrgId] = React.useState<string>("");
 
   const form = useForm<BusinessDetailsFormData>({
     resolver: zodResolver(businessDetailsSchema),
@@ -70,24 +69,9 @@ export default function BusinessDetailsPage(): React.JSX.Element {
   React.useEffect(() => {
     async function loadOrg() {
       try {
-        // First, get org ID from slug
-        const orgsResponse = await fetch("/api/orgs");
-        const orgsData = await orgsResponse.json();
-        const org = orgsData.organizations?.find(
-          (o: { slug: string }) => o.slug === orgSlug
-        );
-
-        if (!org) {
-          toast.error("Organization not found");
-          router.push("/onboarding/create-organization");
-          return;
-        }
-
-        setOrgId(org.id);
-
-        // Load existing settings
+        // Load existing settings using orgSlug
         const settingsResponse = await fetch(
-          `/api/orgs/${org.id}/settings/business`
+          `/api/orgs/${orgSlug}/settings/business`
         );
 
         if (settingsResponse.ok) {
@@ -102,9 +86,10 @@ export default function BusinessDetailsPage(): React.JSX.Element {
             email: data.settings?.email || "",
             taxId: data.settings?.taxId || "",
           });
-        } else {
-          // No settings yet, just use org name
-          form.setValue("businessName", org.name);
+        } else if (settingsResponse.status === 404) {
+          toast.error("Organization not found");
+          router.push("/onboarding/create-organization");
+          return;
         }
       } catch (error) {
         console.error("Error loading organization:", error);
@@ -127,7 +112,7 @@ export default function BusinessDetailsPage(): React.JSX.Element {
         return;
       }
 
-      const response = await fetch(`/api/orgs/${orgId}/settings/business`, {
+      const response = await fetch(`/api/orgs/${orgSlug}/settings/business`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),

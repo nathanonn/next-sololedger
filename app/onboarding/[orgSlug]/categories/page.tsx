@@ -42,7 +42,6 @@ export default function CategorySetupPage(): React.JSX.Element {
   const orgSlug = params.orgSlug as string;
   const [isLoading, setIsLoading] = React.useState(false);
   const [isInitialLoading, setIsInitialLoading] = React.useState(true);
-  const [orgId, setOrgId] = React.useState<string>("");
   const [categories, setCategories] = React.useState<Category[]>([]);
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false);
   const [addingType, setAddingType] = React.useState<"INCOME" | "EXPENSE">(
@@ -58,28 +57,14 @@ export default function CategorySetupPage(): React.JSX.Element {
   React.useEffect(() => {
     async function loadOrgAndCategories() {
       try {
-        const orgsResponse = await fetch("/api/orgs");
-        const orgsData = await orgsResponse.json();
-        const org = orgsData.organizations?.find(
-          (o: { slug: string }) => o.slug === orgSlug
-        );
-
-        if (!org) {
-          toast.error("Organization not found");
-          router.push("/onboarding/create-organization");
-          return;
-        }
-
-        setOrgId(org.id);
-
         // Seed default categories if none exist
-        await fetch(`/api/orgs/${org.id}/categories/seed`, {
+        await fetch(`/api/orgs/${orgSlug}/categories/seed`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
         });
 
         // Load categories
-        await loadCategories(org.id);
+        await loadCategories();
       } catch (error) {
         console.error("Error loading organization:", error);
         toast.error("Failed to load organization");
@@ -92,12 +77,15 @@ export default function CategorySetupPage(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgSlug, router]);
 
-  async function loadCategories(id: string) {
+  async function loadCategories() {
     try {
-      const response = await fetch(`/api/orgs/${id}/categories`);
+      const response = await fetch(`/api/orgs/${orgSlug}/categories`);
       if (response.ok) {
         const data = await response.json();
         setCategories(data.categories || []);
+      } else if (response.status === 404) {
+        toast.error("Organization not found");
+        router.push("/onboarding/create-organization");
       }
     } catch (error) {
       console.error("Error loading categories:", error);
@@ -113,7 +101,7 @@ export default function CategorySetupPage(): React.JSX.Element {
     try {
       setIsLoading(true);
 
-      const response = await fetch(`/api/orgs/${orgId}/categories`, {
+      const response = await fetch(`/api/orgs/${orgSlug}/categories`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -137,7 +125,7 @@ export default function CategorySetupPage(): React.JSX.Element {
       setIsAddDialogOpen(false);
 
       // Reload categories
-      await loadCategories(orgId);
+      await loadCategories();
     } catch {
       toast.error("Network error. Please try again.");
     } finally {
@@ -148,7 +136,7 @@ export default function CategorySetupPage(): React.JSX.Element {
   async function handleToggleActive(categoryId: string, active: boolean) {
     try {
       const response = await fetch(
-        `/api/orgs/${orgId}/categories/${categoryId}`,
+        `/api/orgs/${orgSlug}/categories/${categoryId}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -162,7 +150,7 @@ export default function CategorySetupPage(): React.JSX.Element {
       }
 
       toast.success(active ? "Category deactivated" : "Category activated");
-      await loadCategories(orgId);
+      await loadCategories();
     } catch {
       toast.error("Network error. Please try again.");
     }
@@ -188,7 +176,7 @@ export default function CategorySetupPage(): React.JSX.Element {
       }
 
       // Complete onboarding
-      const response = await fetch(`/api/orgs/${orgId}/complete-onboarding`, {
+      const response = await fetch(`/api/orgs/${orgSlug}/complete-onboarding`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });

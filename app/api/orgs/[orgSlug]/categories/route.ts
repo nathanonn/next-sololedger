@@ -107,9 +107,9 @@ export async function POST(
     const categorySchema = z.object({
       name: z.string().min(1, "Name is required").max(255),
       type: z.enum(["INCOME", "EXPENSE"]),
-      parentId: z.string().optional(),
-      color: z.string().max(50).optional(),
-      icon: z.string().max(50).optional(),
+      parentId: z.string().nullable().optional(),
+      color: z.string().max(50).nullable().optional(),
+      icon: z.string().max(50).nullable().optional(),
       includeInPnL: z.boolean().default(true),
       active: z.boolean().default(true),
     });

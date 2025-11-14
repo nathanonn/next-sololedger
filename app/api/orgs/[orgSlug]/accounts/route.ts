@@ -98,7 +98,7 @@ export async function POST(
     // Validate request body
     const accountSchema = z.object({
       name: z.string().min(1, "Name is required").max(255),
-      description: z.string().max(1000).optional(),
+      description: z.string().max(1000).nullable().optional(),
       isDefault: z.boolean().default(false),
       active: z.boolean().default(true),
     });

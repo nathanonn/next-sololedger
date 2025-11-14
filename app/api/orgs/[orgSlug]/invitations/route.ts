@@ -135,7 +135,7 @@ export async function POST(
     const inviteSchema = z.object({
       email: z.string().email("Invalid email address"),
       role: z.enum(["admin", "member"]),
-      name: z.string().max(255, "Name too long").optional(),
+      name: z.string().max(255, "Name too long").nullable().optional(),
       sendEmail: z.boolean().optional(),
     });
 

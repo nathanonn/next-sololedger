@@ -146,8 +146,8 @@ export async function POST(
       description: z.string().min(1, "Description is required"),
       categoryId: z.string().min(1, "Category is required"),
       accountId: z.string().min(1, "Account is required"),
-      vendorName: z.string().optional(),
-      notes: z.string().optional(),
+      vendorName: z.string().nullable().optional(),
+      notes: z.string().nullable().optional(),
     });
 
     const body = await request.json();

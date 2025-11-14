@@ -56,11 +56,11 @@ export async function PATCH(
         "SaaS",
         "Other",
       ]),
-      businessTypeOther: z.string().max(255).optional(),
-      address: z.string().max(1000).optional(),
-      phone: z.string().max(50).optional(),
-      email: z.string().email().optional().or(z.literal("")),
-      taxId: z.string().max(100).optional(),
+      businessTypeOther: z.string().max(255).nullable().optional(),
+      address: z.string().max(1000).nullable().optional(),
+      phone: z.string().max(50).nullable().optional(),
+      email: z.string().email().nullable().optional().or(z.literal("")),
+      taxId: z.string().max(100).nullable().optional(),
     });
 
     const body = await request.json();

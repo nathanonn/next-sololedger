@@ -77,6 +77,7 @@ export async function GET(
       include: {
         category: true,
         account: true,
+        vendor: true,
       },
       orderBy: { date: "desc" },
     });
@@ -146,6 +147,7 @@ export async function POST(
       description: z.string().min(1, "Description is required"),
       categoryId: z.string().min(1, "Category is required"),
       accountId: z.string().min(1, "Account is required"),
+      vendorId: z.string().nullable().optional(),
       vendorName: z.string().nullable().optional(),
       notes: z.string().nullable().optional(),
     });
@@ -207,6 +209,52 @@ export async function POST(
       );
     }
 
+    // Handle vendor: use provided vendorId or auto-create from vendorName
+    let finalVendorId = data.vendorId;
+
+    if (!finalVendorId && data.vendorName && data.vendorName.trim()) {
+      // If vendorId not provided but vendorName is, look up or create vendor
+      const vendorName = data.vendorName.trim();
+
+      // Look for existing vendor (case-insensitive)
+      let vendor = await db.vendor.findFirst({
+        where: {
+          organizationId: org.id,
+          name: {
+            equals: vendorName,
+            mode: "insensitive",
+          },
+        },
+      });
+
+      // Create vendor if it doesn't exist
+      if (!vendor) {
+        vendor = await db.vendor.create({
+          data: {
+            organizationId: org.id,
+            name: vendorName,
+            active: true,
+          },
+        });
+      }
+
+      finalVendorId = vendor.id;
+    }
+
+    // Verify vendorId if provided
+    if (finalVendorId) {
+      const vendor = await db.vendor.findUnique({
+        where: { id: finalVendorId },
+      });
+
+      if (!vendor || vendor.organizationId !== org.id) {
+        return NextResponse.json(
+          { error: "Vendor not found" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Calculate base amount
     const amountBase = data.amountOriginal * data.exchangeRateToBase;
 
@@ -225,12 +273,14 @@ export async function POST(
         description: data.description,
         categoryId: data.categoryId,
         accountId: data.accountId,
+        vendorId: finalVendorId || null,
         vendorName: data.vendorName || null,
         notes: data.notes || null,
       },
       include: {
         category: true,
         account: true,
+        vendor: true,
       },
     });
 

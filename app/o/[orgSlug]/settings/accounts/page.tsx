@@ -24,8 +24,9 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
-import { Info } from "lucide-react";
+import { Info, DollarSign, TrendingUp, Calendar } from "lucide-react";
 
 interface Account {
   id: string;
@@ -36,23 +37,93 @@ interface Account {
   createdAt: string;
 }
 
+interface AccountBalance extends Account {
+  balanceBase?: number;
+  transactionCount?: number;
+}
+
+interface OrgSettings {
+  baseCurrency: string;
+  fiscalYearStartMonth: number;
+}
+
 export default function AccountsManagementPage(): React.JSX.Element {
   const params = useParams();
   const router = useRouter();
   const orgSlug = params.orgSlug as string;
   const [isLoading, setIsLoading] = React.useState(false);
   const [isInitialLoading, setIsInitialLoading] = React.useState(true);
-  const [accounts, setAccounts] = React.useState<Account[]>([]);
+  const [accounts, setAccounts] = React.useState<AccountBalance[]>([]);
+  const [settings, setSettings] = React.useState<OrgSettings | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false);
   const [editingAccount, setEditingAccount] = React.useState<Account | null>(
     null
   );
+
+  // Date range state
+  const [dateRange, setDateRange] = React.useState<"30days" | "ytd" | "all">("30days");
+  const [computedFromDate, setComputedFromDate] = React.useState<string>("");
+  const [computedToDate, setComputedToDate] = React.useState<string>("");
 
   // Form state
   const [formName, setFormName] = React.useState("");
   const [formDescription, setFormDescription] = React.useState("");
   const [formIsDefault, setFormIsDefault] = React.useState(false);
   const [formActive, setFormActive] = React.useState(true);
+
+  // Compute date range based on selection
+  React.useEffect(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const toDate = today.toISOString().split("T")[0];
+
+    let fromDate = "";
+
+    if (dateRange === "30days") {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 30);
+      fromDate = from.toISOString().split("T")[0];
+    } else if (dateRange === "ytd" && settings) {
+      // Fiscal year to date
+      const fiscalStart = new Date(
+        today.getFullYear(),
+        settings.fiscalYearStartMonth - 1,
+        1
+      );
+      // If we're before the fiscal year start, use last year's fiscal year
+      if (today < fiscalStart) {
+        fiscalStart.setFullYear(fiscalStart.getFullYear() - 1);
+      }
+      fromDate = fiscalStart.toISOString().split("T")[0];
+    } else if (dateRange === "all") {
+      // Use a date far in the past (e.g., 10 years ago)
+      const from = new Date(today);
+      from.setFullYear(from.getFullYear() - 10);
+      fromDate = from.toISOString().split("T")[0];
+    }
+
+    setComputedFromDate(fromDate);
+    setComputedToDate(toDate);
+  }, [dateRange, settings]);
+
+  // Load settings
+  React.useEffect(() => {
+    async function fetchSettings() {
+      try {
+        const response = await fetch(`/api/orgs/${orgSlug}/settings/financial`);
+        if (response.ok) {
+          const data = await response.json();
+          setSettings({
+            baseCurrency: data.baseCurrency,
+            fiscalYearStartMonth: data.fiscalYearStartMonth || 1,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to fetch settings:", error);
+      }
+    }
+    fetchSettings();
+  }, [orgSlug]);
 
   // Load organization and accounts
   React.useEffect(() => {
@@ -71,6 +142,14 @@ export default function AccountsManagementPage(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgSlug, router]);
 
+  // Reload balances when date range changes
+  React.useEffect(() => {
+    if (computedFromDate && computedToDate && !isInitialLoading) {
+      loadBalances();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [computedFromDate, computedToDate, isInitialLoading]);
+
   async function loadAccounts() {
     try {
       const response = await fetch(`/api/orgs/${orgSlug}/accounts`);
@@ -86,6 +165,34 @@ export default function AccountsManagementPage(): React.JSX.Element {
       }
     } catch (error) {
       console.error("Error loading accounts:", error);
+    }
+  }
+
+  async function loadBalances() {
+    if (!computedFromDate || !computedToDate) return;
+
+    try {
+      const url = new URL(`/api/orgs/${orgSlug}/accounts/balances`, window.location.origin);
+      url.searchParams.set("from", computedFromDate);
+      url.searchParams.set("to", computedToDate);
+
+      const response = await fetch(url.toString());
+      if (response.ok) {
+        const data = await response.json();
+        // Merge balances with existing accounts
+        setAccounts((prev) => {
+          const balanceMap = new Map(
+            data.accounts.map((acc: AccountBalance) => [acc.id, acc])
+          );
+          return prev.map((account) => ({
+            ...account,
+            balanceBase: balanceMap.get(account.id)?.balanceBase || 0,
+            transactionCount: balanceMap.get(account.id)?.transactionCount || 0,
+          }));
+        });
+      }
+    } catch (error) {
+      console.error("Error loading balances:", error);
     }
   }
 
@@ -170,6 +277,16 @@ export default function AccountsManagementPage(): React.JSX.Element {
     );
   }
 
+  // Handle account click to view transactions
+  const handleAccountClick = (accountId: string) => {
+    const query = new URLSearchParams({
+      accountId,
+      from: computedFromDate,
+      to: computedToDate,
+    });
+    router.push(`/o/${orgSlug}/transactions?${query.toString()}`);
+  };
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -179,6 +296,53 @@ export default function AccountsManagementPage(): React.JSX.Element {
           Where your money lives (bank, cash, payment services)
         </p>
       </div>
+
+      {/* Date Range Selector */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5" />
+            Date Range
+          </CardTitle>
+          <CardDescription>
+            Select a date range to view account balances
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-3">
+            <RadioGroup
+              value={dateRange}
+              onValueChange={(v) => setDateRange(v as typeof dateRange)}
+              className="flex flex-wrap gap-4"
+            >
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="30days" id="30days" />
+                <Label htmlFor="30days" className="font-normal">
+                  Last 30 Days
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="ytd" id="ytd" />
+                <Label htmlFor="ytd" className="font-normal">
+                  Fiscal YTD
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="all" id="all" />
+                <Label htmlFor="all" className="font-normal">
+                  All Time
+                </Label>
+              </div>
+            </RadioGroup>
+          </div>
+
+          {computedFromDate && computedToDate && (
+            <div className="text-sm text-muted-foreground">
+              Viewing data from {computedFromDate} to {computedToDate}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Accounts List */}
       <Card>
@@ -285,7 +449,8 @@ export default function AccountsManagementPage(): React.JSX.Element {
               {accounts.map((account) => (
                 <div
                   key={account.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
+                  onClick={() => handleAccountClick(account.id)}
                 >
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
@@ -306,15 +471,27 @@ export default function AccountsManagementPage(): React.JSX.Element {
                         {account.description}
                       </p>
                     )}
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Created{" "}
-                      {new Date(account.createdAt).toLocaleDateString()}
-                    </p>
+                    <div className="flex items-center gap-4 mt-2">
+                      <div className="flex items-center gap-1 text-sm">
+                        <DollarSign className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-medium">
+                          {settings?.baseCurrency}{" "}
+                          {(account.balanceBase || 0).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                        <TrendingUp className="h-4 w-4" />
+                        {account.transactionCount || 0} transactions
+                      </div>
+                    </div>
                   </div>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => openEditDialog(account)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEditDialog(account);
+                    }}
                   >
                     Edit
                   </Button>

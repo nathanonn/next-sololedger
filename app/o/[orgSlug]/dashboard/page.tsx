@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { getYTDRange, formatCurrency, formatDate } from "@/lib/sololedger-formatters";
 import { TrendingUp, TrendingDown, Wallet } from "lucide-react";
+import { AccountsOverviewWidget } from "@/components/features/dashboard/accounts-overview-widget";
 
 /**
  * Business Dashboard
@@ -88,42 +89,6 @@ export default async function DashboardPage({
     .reduce((sum, t) => sum + Number(t.amountBase), 0);
 
   const ytdProfitLoss = ytdIncome - ytdExpenses;
-
-  // Get accounts with balances
-  const accounts = await db.account.findMany({
-    where: {
-      organizationId: org.id,
-    },
-    orderBy: [{ isDefault: "desc" }, { name: "asc" }],
-  });
-
-  // Calculate balances for each account
-  const accountBalances = await Promise.all(
-    accounts.map(async (account) => {
-      const transactions = await db.transaction.findMany({
-        where: {
-          accountId: account.id,
-          deletedAt: null,
-          status: "POSTED",
-        },
-      });
-
-      const income = transactions
-        .filter((t) => t.type === "INCOME")
-        .reduce((sum, t) => sum + Number(t.amountBase), 0);
-
-      const expenses = transactions
-        .filter((t) => t.type === "EXPENSE")
-        .reduce((sum, t) => sum + Number(t.amountBase), 0);
-
-      const balance = income - expenses;
-
-      return {
-        ...account,
-        balance,
-      };
-    })
-  );
 
   // Get recent activity (last 20 transactions)
   const recentTransactions = await db.transaction.findMany({
@@ -219,78 +184,13 @@ export default async function DashboardPage({
       </div>
 
       {/* Account Balances */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Accounts</CardTitle>
-            <CardDescription>Current balances</CardDescription>
-          </div>
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/o/${orgSlug}/settings/accounts`}>
-              Manage accounts
-            </Link>
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {accountBalances.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">
-              No accounts yet.{" "}
-              <Link
-                href={`/o/${orgSlug}/settings/accounts`}
-                className="underline"
-              >
-                Create your first account
-              </Link>
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {accountBalances.map((account) => (
-                <div
-                  key={account.id}
-                  className="flex items-center justify-between p-3 border rounded-lg"
-                >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{account.name}</span>
-                      {account.isDefault && (
-                        <Badge variant="secondary" className="text-xs">
-                          Default
-                        </Badge>
-                      )}
-                      {!account.active && (
-                        <Badge variant="outline" className="text-xs">
-                          Inactive
-                        </Badge>
-                      )}
-                    </div>
-                    {account.description && (
-                      <p className="text-sm text-muted-foreground">
-                        {account.description}
-                      </p>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <div
-                      className={`font-semibold ${
-                        account.balance >= 0
-                          ? "text-green-600"
-                          : "text-red-600"
-                      }`}
-                    >
-                      {formatCurrency(
-                        account.balance,
-                        settings.baseCurrency,
-                        settings.decimalSeparator,
-                        settings.thousandsSeparator
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <AccountsOverviewWidget
+        orgSlug={orgSlug}
+        baseCurrency={settings.baseCurrency}
+        dateRange="ytd"
+        fromDate={startDate.toISOString().split("T")[0]}
+        toDate={endDate.toISOString().split("T")[0]}
+      />
 
       {/* Recent Activity */}
       <Card>

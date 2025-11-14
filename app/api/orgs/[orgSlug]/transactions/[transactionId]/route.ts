@@ -45,6 +45,7 @@ export async function GET(
       include: {
         category: true,
         account: true,
+        vendor: true,
       },
     });
 
@@ -150,6 +151,7 @@ export async function PATCH(
       description: z.string().min(1).optional(),
       categoryId: z.string().optional(),
       accountId: z.string().optional(),
+      vendorId: z.string().nullable().optional(),
       vendorName: z.string().nullable().optional(),
       notes: z.string().nullable().optional(),
     });
@@ -230,6 +232,60 @@ export async function PATCH(
       }
     }
 
+    // Handle vendor: use provided vendorId or auto-create from vendorName
+    let finalVendorId: string | null | undefined = undefined;
+
+    if (data.vendorId !== undefined) {
+      // VendorId explicitly provided (can be null to clear)
+      finalVendorId = data.vendorId;
+
+      // Verify vendorId if not null
+      if (finalVendorId) {
+        const vendor = await db.vendor.findUnique({
+          where: { id: finalVendorId },
+        });
+
+        if (!vendor || vendor.organizationId !== org.id) {
+          return NextResponse.json(
+            { error: "Vendor not found" },
+            { status: 400 }
+          );
+        }
+      }
+    } else if (data.vendorName !== undefined) {
+      // VendorName provided but not vendorId
+      if (data.vendorName && data.vendorName.trim()) {
+        const vendorName = data.vendorName.trim();
+
+        // Look for existing vendor (case-insensitive)
+        let vendor = await db.vendor.findFirst({
+          where: {
+            organizationId: org.id,
+            name: {
+              equals: vendorName,
+              mode: "insensitive",
+            },
+          },
+        });
+
+        // Create vendor if it doesn't exist
+        if (!vendor) {
+          vendor = await db.vendor.create({
+            data: {
+              organizationId: org.id,
+              name: vendorName,
+              active: true,
+            },
+          });
+        }
+
+        finalVendorId = vendor.id;
+      } else {
+        // Empty vendorName provided - clear vendor
+        finalVendorId = null;
+      }
+    }
+
     // Recalculate base amount if needed
     const needsRecalculation =
       data.amountOriginal !== undefined || data.exchangeRateToBase !== undefined;
@@ -265,6 +321,7 @@ export async function PATCH(
           categoryId: data.categoryId,
         }),
         ...(data.accountId !== undefined && { accountId: data.accountId }),
+        ...(finalVendorId !== undefined && { vendorId: finalVendorId }),
         ...(data.vendorName !== undefined && {
           vendorName: data.vendorName,
         }),
@@ -274,6 +331,7 @@ export async function PATCH(
       include: {
         category: true,
         account: true,
+        vendor: true,
       },
     });
 

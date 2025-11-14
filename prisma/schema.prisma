@@ -112,6 +112,7 @@ model Organization {
   settings              OrganizationSettings?
   accounts              Account[]
   categories            Category[]
+  vendors               Vendor[]
   transactions          Transaction[]
 
   @@index([slug])
@@ -425,8 +426,32 @@ model Category {
 
   @@index([organizationId])
   @@index([organizationId, type, active])
+  @@index([organizationId, type, parentId, sortOrder])
   @@index([parentId])
   @@map("categories")
+}
+
+// Vendor: business contacts for transactions
+model Vendor {
+  id             String        @id @default(cuid())
+  organizationId String
+  name           String        @db.VarChar(255)
+  email          String?       @db.VarChar(255)
+  phone          String?       @db.VarChar(50)
+  notes          String?       @db.Text
+  active         Boolean       @default(true)
+  mergedIntoId   String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mergedInto     Vendor?       @relation("VendorMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  mergedVendors  Vendor[]      @relation("VendorMerge")
+  transactions   Transaction[]
+
+  @@index([organizationId, active])
+  @@index([organizationId, name])
+  @@map("vendors")
 }
 
 // Transaction: income or expense entry with FX support
@@ -444,6 +469,7 @@ model Transaction {
   amountBase           Decimal           @db.Decimal(18, 2)
   date                 DateTime
   description          String            @db.Text
+  vendorId             String?
   vendorName           String?           @db.VarChar(255)
   tags                 String?           @db.Text
   notes                String?           @db.Text
@@ -454,14 +480,19 @@ model Transaction {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   account      Account       @relation(fields: [accountId], references: [id], onDelete: Restrict)
   category     Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  vendor       Vendor?       @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   user         User          @relation("TransactionCreator", fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([organizationId])
   @@index([organizationId, date])
   @@index([organizationId, type, status])
+  @@index([organizationId, categoryId, status, date])
+  @@index([organizationId, vendorId, status, date])
+  @@index([organizationId, accountId, status, date])
   @@index([organizationId, deletedAt])
   @@index([accountId])
   @@index([categoryId])
+  @@index([vendorId])
   @@index([userId])
   @@map("transactions")
 }

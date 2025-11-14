@@ -15,6 +15,8 @@ type OrganizationTabsProps = {
   baseHref: string;
   membersCount: number;
   showGeneral?: boolean;
+  showBusinessInfo?: boolean;
+  showFinancial?: boolean;
   showMembers?: boolean;
   showAiKeys?: boolean;
   showAiUsage?: boolean;
@@ -29,6 +31,8 @@ export function OrganizationTabs({
   baseHref,
   membersCount,
   showGeneral = true,
+  showBusinessInfo = true,
+  showFinancial = true,
   showMembers = true,
   showAiKeys = true,
   showAiUsage = true,
@@ -47,6 +51,16 @@ export function OrganizationTabs({
         {showGeneral && (
           <Link href={`${baseHref}/general`}>
             <TabsTrigger value="general">General</TabsTrigger>
+          </Link>
+        )}
+        {showBusinessInfo && (
+          <Link href={`${baseHref}/business-info`}>
+            <TabsTrigger value="business-info">Business Info</TabsTrigger>
+          </Link>
+        )}
+        {showFinancial && (
+          <Link href={`${baseHref}/financial`}>
+            <TabsTrigger value="financial">Financial</TabsTrigger>
           </Link>
         )}
         {showMembers && (

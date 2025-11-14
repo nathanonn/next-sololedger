@@ -139,6 +139,13 @@ export default async function OrgLayout({
       sectionId: "business",
       // Members can manage categories
     },
+    {
+      id: "vendors",
+      label: "Vendors",
+      href: `/o/${orgSlug}/settings/vendors`,
+      sectionId: "business",
+      // Members can manage vendors
+    },
     // Settings section
     {
       id: "profile",

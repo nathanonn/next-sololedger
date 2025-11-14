@@ -3,7 +3,11 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
-import { requireAdminOrSuperadmin, getOrgBySlug } from "@/lib/org-helpers";
+import {
+  requireAdminOrSuperadmin,
+  requireMembership,
+  getOrgBySlug,
+} from "@/lib/org-helpers";
 
 export const runtime = "nodejs";
 
@@ -160,14 +164,11 @@ export async function GET(
       return NextResponse.json({ error: "Organization not found" }, { status: 404 });
     }
 
-    // Require admin or superadmin access
+    // Require membership (members can read business settings)
     try {
-      await requireAdminOrSuperadmin(user.id, org.id);
+      await requireMembership(user.id, org.id);
     } catch {
-      return NextResponse.json(
-        { error: "Admin access required" },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     // Get organization and settings

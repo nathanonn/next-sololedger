@@ -34,6 +34,7 @@ interface Category {
   active: boolean;
   parentId: string | null;
   parent: { id: string; name: string } | null;
+  sortOrder: number;
 }
 
 export default function CategorySetupPage(): React.JSX.Element {
@@ -215,8 +216,12 @@ export default function CategorySetupPage(): React.JSX.Element {
     }
   }
 
-  const incomeCategories = categories.filter((c) => c.type === "INCOME");
-  const expenseCategories = categories.filter((c) => c.type === "EXPENSE");
+  const incomeCategories = categories
+    .filter((c) => c.type === "INCOME")
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const expenseCategories = categories
+    .filter((c) => c.type === "EXPENSE")
+    .sort((a, b) => a.sortOrder - b.sortOrder);
   const hasActiveIncome = incomeCategories.some((c) => c.active);
   const hasActiveExpense = expenseCategories.some((c) => c.active);
   const canFinish = hasActiveIncome && hasActiveExpense;

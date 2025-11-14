@@ -15,19 +15,46 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { toast } from "sonner";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Category {
   id: string;
   name: string;
   type: "INCOME" | "EXPENSE";
+  sortOrder: number;
+  parentId: string | null;
+  parent?: {
+    id: string;
+    name: string;
+  } | null;
 }
 
 interface Account {
   id: string;
   name: string;
   isDefault: boolean;
+}
+
+interface Vendor {
+  id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
 }
 
 interface OrgSettings {
@@ -111,7 +138,16 @@ export function TransactionForm({
   const [vendorName, setVendorName] = React.useState<string>(
     initialData?.vendorName || ""
   );
+  const [vendorId, setVendorId] = React.useState<string | null>(null);
   const [notes, setNotes] = React.useState<string>(initialData?.notes || "");
+
+  // Vendor autocomplete state
+  const [vendorSuggestions, setVendorSuggestions] = React.useState<Vendor[]>(
+    []
+  );
+  const [isVendorSearching, setIsVendorSearching] = React.useState(false);
+  const [vendorPopoverOpen, setVendorPopoverOpen] = React.useState(false);
+  const vendorSearchTimeoutRef = React.useRef<NodeJS.Timeout>();
 
   // Computed values
   const finalCurrency =
@@ -120,8 +156,64 @@ export function TransactionForm({
   const amountBase =
     parseFloat(amountOriginal) * parseFloat(exchangeRate) || 0;
 
-  // Filter categories by type
-  const filteredCategories = categories.filter((c) => c.type === type);
+  // Filter and sort categories by type and sortOrder
+  const filteredCategories = categories
+    .filter((c) => c.type === type)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  // Helper function to format category display name
+  const getCategoryDisplayName = (category: Category): string => {
+    if (category.parent) {
+      return `${category.parent.name} / ${category.name}`;
+    }
+    return category.name;
+  };
+
+  // Debounced vendor search function
+  const searchVendors = React.useCallback(
+    (query: string) => {
+      if (vendorSearchTimeoutRef.current) {
+        clearTimeout(vendorSearchTimeoutRef.current);
+      }
+
+      if (!query.trim()) {
+        setVendorSuggestions([]);
+        setIsVendorSearching(false);
+        return;
+      }
+
+      setIsVendorSearching(true);
+
+      vendorSearchTimeoutRef.current = setTimeout(async () => {
+        try {
+          const response = await fetch(
+            `/api/orgs/${orgSlug}/vendors?query=${encodeURIComponent(query)}`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            setVendorSuggestions(data.vendors || []);
+          } else {
+            setVendorSuggestions([]);
+          }
+        } catch (error) {
+          console.error("Vendor search error:", error);
+          setVendorSuggestions([]);
+        } finally {
+          setIsVendorSearching(false);
+        }
+      }, 300); // 300ms debounce
+    },
+    [orgSlug]
+  );
+
+  // Cleanup on unmount
+  React.useEffect(() => {
+    return () => {
+      if (vendorSearchTimeoutRef.current) {
+        clearTimeout(vendorSearchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Check for future date warning/error
   const selectedDate = new Date(date);
@@ -201,6 +293,7 @@ export function TransactionForm({
             categoryId,
             accountId,
             vendorName: vendorName || null,
+            vendorId: vendorId || null,
             notes: notes || null,
           }),
         }
@@ -404,7 +497,7 @@ export function TransactionForm({
           <SelectContent>
             {filteredCategories.map((c) => (
               <SelectItem key={c.id} value={c.id}>
-                {c.name}
+                {getCategoryDisplayName(c)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -436,16 +529,78 @@ export function TransactionForm({
         </Select>
       </div>
 
-      {/* Vendor Name */}
+      {/* Vendor Name with Autocomplete */}
       <div className="space-y-2">
         <Label htmlFor="vendorName">Vendor Name (optional)</Label>
-        <Input
-          id="vendorName"
-          value={vendorName}
-          onChange={(e) => setVendorName(e.target.value)}
-          placeholder="e.g., Acme Corp"
-          disabled={isLoading}
-        />
+        <Popover open={vendorPopoverOpen} onOpenChange={setVendorPopoverOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              role="combobox"
+              aria-expanded={vendorPopoverOpen}
+              className="w-full justify-between font-normal"
+              disabled={isLoading}
+            >
+              {vendorName || "Select or type vendor name..."}
+              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-full p-0" align="start">
+            <Command shouldFilter={false}>
+              <CommandInput
+                placeholder="Search vendors..."
+                value={vendorName}
+                onValueChange={(value) => {
+                  setVendorName(value);
+                  searchVendors(value);
+                }}
+              />
+              <CommandList>
+                {isVendorSearching && (
+                  <CommandEmpty>Searching...</CommandEmpty>
+                )}
+                {!isVendorSearching && vendorName && vendorSuggestions.length === 0 && (
+                  <CommandEmpty>
+                    No vendors found. Press Enter to create &quot;{vendorName}&quot;
+                  </CommandEmpty>
+                )}
+                {vendorSuggestions.length > 0 && (
+                  <CommandGroup>
+                    {vendorSuggestions.map((vendor) => (
+                      <CommandItem
+                        key={vendor.id}
+                        value={vendor.id}
+                        onSelect={() => {
+                          setVendorName(vendor.name);
+                          setVendorId(vendor.id);
+                          setVendorPopoverOpen(false);
+                        }}
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            vendorId === vendor.id ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                        <div className="flex flex-col">
+                          <span>{vendor.name}</span>
+                          {(vendor.email || vendor.phone) && (
+                            <span className="text-xs text-muted-foreground">
+                              {vendor.email || vendor.phone}
+                            </span>
+                          )}
+                        </div>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                )}
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+        <p className="text-xs text-muted-foreground">
+          Select an existing vendor or type a new name to create one automatically
+        </p>
       </div>
 
       {/* Notes */}

@@ -147,7 +147,7 @@ export function TransactionForm({
   );
   const [isVendorSearching, setIsVendorSearching] = React.useState(false);
   const [vendorPopoverOpen, setVendorPopoverOpen] = React.useState(false);
-  const vendorSearchTimeoutRef = React.useRef<NodeJS.Timeout>();
+  const vendorSearchTimeoutRef = React.useRef<NodeJS.Timeout | undefined>(undefined);
 
   // Computed values
   const finalCurrency =

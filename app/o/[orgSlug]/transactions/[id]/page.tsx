@@ -13,6 +13,14 @@ import {
 import { toast } from "sonner";
 import { TransactionForm } from "@/components/features/transactions/transaction-form";
 
+interface Category {
+  id: string;
+  name: string;
+  type: "INCOME" | "EXPENSE";
+  sortOrder: number;
+  parentId: string | null;
+}
+
 export default function EditTransactionPage(): React.JSX.Element {
   const params = useParams();
   const router = useRouter();
@@ -20,7 +28,7 @@ export default function EditTransactionPage(): React.JSX.Element {
   const transactionId = params.id as string;
   const [isLoading, setIsLoading] = React.useState(true);
   const [settings, setSettings] = React.useState<{ baseCurrency: string } | null>(null);
-  const [categories, setCategories] = React.useState<Array<{ id: string; name: string; type: "INCOME" | "EXPENSE" }>>([]);
+  const [categories, setCategories] = React.useState<Category[]>([]);
   const [accounts, setAccounts] = React.useState<Array<{ id: string; name: string; isDefault: boolean }>>([]);
   const [transaction, setTransaction] = React.useState<{
     type: "INCOME" | "EXPENSE";

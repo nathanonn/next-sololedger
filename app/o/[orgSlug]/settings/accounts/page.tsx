@@ -183,10 +183,10 @@ export default function AccountsManagementPage(): React.JSX.Element {
         const data = await response.json();
         // Merge balances with existing accounts
         setAccounts((prev) => {
-          const balanceMap = new Map(
+          const balanceMap = new Map<string, AccountBalance>(
             data.accounts.map((acc: AccountBalance) => [acc.id, acc])
           );
-          return prev.map((account) => ({
+          return prev.map((account: AccountBalance) => ({
             ...account,
             balanceBase: balanceMap.get(account.id)?.balanceBase || 0,
             transactionCount: balanceMap.get(account.id)?.transactionCount || 0,

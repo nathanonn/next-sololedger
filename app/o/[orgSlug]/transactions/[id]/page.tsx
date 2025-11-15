@@ -114,7 +114,6 @@ export default function EditTransactionPage(): React.JSX.Element {
     }
 
     loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgSlug, transactionId, router]);
 
   if (isLoading || !settings || !transaction) {

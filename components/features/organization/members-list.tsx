@@ -80,7 +80,6 @@ export type MembersListProps = {
 export function MembersList({
   orgSlug,
   orgName,
-  context,
   excludeSuperadmins = false,
   initialPage = 1,
   initialPageSize = 20,

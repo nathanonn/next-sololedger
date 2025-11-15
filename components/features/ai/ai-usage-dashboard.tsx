@@ -122,6 +122,7 @@ export function AiUsageDashboard({
 
   useEffect(() => {
     fetchLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, provider, model, feature, status, search]);
 
   // Handle search

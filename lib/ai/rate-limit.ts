@@ -100,7 +100,6 @@ export async function checkAiRateLimit(
 const ipRequestTracker = new Map<string, number[]>();
 
 function countIpRequests(ip: string, since: Date): number {
-  const now = Date.now();
   const sinceTs = since.getTime();
 
   // Get or create tracker for this IP

@@ -21,7 +21,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
 import { Info, Loader2 } from "lucide-react";
 import { useBusinessSettings } from "@/hooks/use-business-settings";
-import { useMembers } from "@/hooks/use-members";
 
 const businessDetailsSchema = z.object({
   businessName: z.string().min(1, "Business name is required").max(255),
@@ -47,7 +46,6 @@ export default function BusinessInfoPage(): React.JSX.Element {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const { data: settingsData, isLoading, error, refetch } = useBusinessSettings(orgSlug);
-  const { data: membersData } = useMembers(orgSlug, { page: 1, pageSize: 1 });
 
   const form = useForm<BusinessDetailsFormData>({
     resolver: zodResolver(businessDetailsSchema),
@@ -93,7 +91,7 @@ export default function BusinessInfoPage(): React.JSX.Element {
         // A more robust solution would check the user's actual role
         const response = await fetch(`/api/orgs/${orgSlug}/members?page=1&pageSize=1`);
         if (response.ok) {
-          const data = await response.json();
+          await response.json();
           // If we can fetch members, we're likely an admin
           // This is a simplification - in production you'd have a dedicated role check
           setUserRole("admin");
@@ -170,7 +168,7 @@ export default function BusinessInfoPage(): React.JSX.Element {
       <CardHeader>
         <CardTitle>Business Information</CardTitle>
         <CardDescription>
-          Manage your organization's business details and contact information
+          Manage your organization&apos;s business details and contact information
         </CardDescription>
       </CardHeader>
       <CardContent>

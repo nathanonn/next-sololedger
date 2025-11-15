@@ -118,7 +118,7 @@ export function RemoveMemberButton({
           <DialogHeader>
             <DialogTitle>Remove Member</DialogTitle>
             <DialogDescription>
-              Are you sure you want to remove {userEmail} from "{orgName}"?
+              Are you sure you want to remove {userEmail} from &quot;{orgName}&quot;?
               This action cannot be undone.
             </DialogDescription>
           </DialogHeader>

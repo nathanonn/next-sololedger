@@ -406,7 +406,7 @@ function sanitizeAndTruncate(data: unknown): string {
       return json.substring(0, MAX_LENGTH) + "... [truncated]";
     }
     return json;
-  } catch (error) {
+  } catch {
     return "[Failed to serialize]";
   }
 }

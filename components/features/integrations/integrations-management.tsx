@@ -69,6 +69,7 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
   // Fetch integrations
   useEffect(() => {
     fetchIntegrations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Handle OAuth callback messages
@@ -92,6 +93,7 @@ export function IntegrationsManagement({ orgSlug }: IntegrationsManagementProps)
       toast.error(`Connection failed: ${error}`);
       router.replace(`/o/${orgSlug}/settings/organization/integrations`);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   async function fetchIntegrations(): Promise<void> {

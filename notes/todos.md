@@ -4,16 +4,16 @@ Generated: 2025-11-14
 
 ## Categories
 
-- [ ] Delete category with reassignment flow (if has transactions)
-- [ ] Color and icon assignment in UI (post-onboarding)
-- [ ] Drag-and-drop reorder; persist and reflect in dropdowns/reports
-- [ ] Usage analytics per category (count, totals, last used)
+- [x] Delete category with reassignment flow (if has transactions)
+- [x] Color and icon assignment in UI (post-onboarding)
+- [x] Drag-and-drop reorder; persist and reflect in dropdowns/reports
+- [x] Usage analytics per category (count, totals, last used)
 
 ## Business Settings
 
-- [ ] Post-onboarding Business Info UI (address, phone, email, tax ID)
-- [ ] Member read-only view for business info
-- [ ] Base currency change UI with strong warning + explicit confirm
+- [x] Post-onboarding Business Info UI (address, phone, email, tax ID)
+- [x] Member read-only view for business info
+- [x] Base currency change UI with strong warning + explicit confirm
 
 ## Vendors
 

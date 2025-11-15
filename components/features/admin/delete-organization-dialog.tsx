@@ -90,7 +90,7 @@ export function DeleteOrganizationDialog({
         <DialogHeader>
           <DialogTitle>Delete Organization</DialogTitle>
           <DialogDescription>
-            This will permanently delete "{orgName}", remove all memberships and
+            This will permanently delete &quot;{orgName}&quot;, remove all memberships and
             invitations. Audit logs will be retained.
           </DialogDescription>
         </DialogHeader>

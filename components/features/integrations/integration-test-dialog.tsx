@@ -108,7 +108,7 @@ export function IntegrationTestDialog({
       if (headers.trim()) {
         try {
           parsedHeaders = JSON.parse(headers);
-        } catch (error) {
+        } catch {
           toast.error("Invalid JSON in headers field");
           setIsLoading(false);
           return;
@@ -118,7 +118,7 @@ export function IntegrationTestDialog({
       if (showBodyField && body.trim()) {
         try {
           parsedBody = JSON.parse(body);
-        } catch (error) {
+        } catch {
           toast.error("Invalid JSON in body field");
           setIsLoading(false);
           return;

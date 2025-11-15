@@ -74,7 +74,6 @@ export default function NewTransactionPage(): React.JSX.Element {
     }
 
     loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgSlug, router]);
 
   if (isLoading || !settings) {

@@ -52,6 +52,7 @@ export function IntegrationUsageDashboard({ orgSlug }: IntegrationUsageProps): R
 
   useEffect(() => {
     fetchLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider, page]);
 
   async function fetchLogs(): Promise<void> {

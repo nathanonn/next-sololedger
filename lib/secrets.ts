@@ -88,7 +88,7 @@ export function decryptSecret(ciphertext: string): string {
   try {
     const envelopeJson = Buffer.from(ciphertext, "base64").toString("utf8");
     envelope = JSON.parse(envelopeJson) as Envelope;
-  } catch (error) {
+  } catch {
     throw new Error("Invalid envelope format");
   }
 

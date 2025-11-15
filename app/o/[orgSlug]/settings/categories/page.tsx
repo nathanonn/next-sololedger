@@ -37,8 +37,6 @@ import {
   GripVertical,
   Trash2,
   AlertTriangle,
-  TrendingUp,
-  TrendingDown,
 } from "lucide-react";
 
 interface Category {

@@ -29,7 +29,6 @@ export function OrganizationSettingsLayout({
   title,
   description,
   backLink,
-  orgSlug,
   membersCount,
   baseHref,
   maxWidth = "max-w-4xl",

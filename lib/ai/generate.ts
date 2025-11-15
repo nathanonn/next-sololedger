@@ -5,7 +5,6 @@ import type { Prisma } from "@prisma/client";
 import {
   requireOrgAiConfigForFeature,
   AiConfigError,
-  AI_CONFIG_ERROR_CODES,
 } from "@/lib/ai/config";
 import { getOrgProviderClient, type AiProvider } from "@/lib/ai/providers";
 

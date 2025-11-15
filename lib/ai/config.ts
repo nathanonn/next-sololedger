@@ -3,7 +3,6 @@ import {
   type AiProvider,
   clampOutputTokens,
   isCuratedModel,
-  PROVIDER_CAPS,
 } from "@/lib/ai/providers";
 
 /**
@@ -63,7 +62,6 @@ export async function requireOrgAiConfigForFeature(
 ): Promise<ResolvedAiConfig> {
   const {
     orgId,
-    feature,
     requestedMaxOutputTokens = 2048,
     modelName,
     provider,
@@ -130,17 +128,6 @@ async function resolveWithProviderAndModel(
       `Organization does not have an API key configured for provider "${provider}"`
     );
   }
-
-  // Find the model in org's configured models (optional - org may not have added it yet)
-  const orgModel = await db.organizationAiModel.findUnique({
-    where: {
-      organizationId_provider_name: {
-        organizationId: orgId,
-        provider,
-        name: modelName,
-      },
-    },
-  });
 
   // Clamp tokens to provider and model limits
   const clampedTokens = clampOutputTokens(

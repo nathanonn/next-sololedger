@@ -274,16 +274,10 @@ function createError(
   httpStatus?: number,
   originalError?: unknown
 ): IntegrationError {
-  const error: IntegrationError = {
-    code,
-    message,
-    httpStatus,
-    originalError,
-  };
-
   // Add error to Error prototype for proper stack traces
   const err = new Error(message) as Error & IntegrationError;
   err.code = code;
+  err.message = message;
   err.httpStatus = httpStatus;
   err.originalError = originalError;
 

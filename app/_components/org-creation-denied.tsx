@@ -40,7 +40,7 @@ export function OrgCreationDenied(): React.JSX.Element {
         <CardHeader>
           <CardTitle>No Organizations</CardTitle>
           <CardDescription>
-            You don't have access to any organizations yet
+            You don&apos;t have access to any organizations yet
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

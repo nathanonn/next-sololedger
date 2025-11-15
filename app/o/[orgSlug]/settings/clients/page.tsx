@@ -45,7 +45,7 @@ import {
   CircleX,
 } from "lucide-react";
 
-interface Vendor {
+interface Client {
   id: string;
   name: string;
   email: string | null;
@@ -61,11 +61,11 @@ interface OrgSettings {
   baseCurrency: string;
 }
 
-export default function VendorsPage() {
+export default function ClientsPage() {
   const params = useParams();
   const orgSlug = params.orgSlug as string;
 
-  const [vendors, setVendors] = React.useState<Vendor[]>([]);
+  const [clients, setClients] = React.useState<Client[]>([]);
   const [settings, setSettings] = React.useState<OrgSettings | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [dateRange, setDateRange] = React.useState<"ytd" | "12months" | "custom">("12months");
@@ -73,11 +73,11 @@ export default function VendorsPage() {
   const [toDate, setToDate] = React.useState<string>("");
 
   // Selection state
-  const [selectedVendorIds, setSelectedVendorIds] = React.useState<Set<string>>(new Set());
+  const [selectedClientIds, setSelectedClientIds] = React.useState<Set<string>>(new Set());
 
   // Edit dialog state
   const [editDialogOpen, setEditDialogOpen] = React.useState(false);
-  const [editingVendor, setEditingVendor] = React.useState<Vendor | null>(null);
+  const [editingClient, setEditingClient] = React.useState<Client | null>(null);
   const [editForm, setEditForm] = React.useState({
     name: "",
     email: "",
@@ -89,7 +89,7 @@ export default function VendorsPage() {
 
   // Merge dialog state
   const [mergeDialogOpen, setMergeDialogOpen] = React.useState(false);
-  const [primaryVendorId, setPrimaryVendorId] = React.useState<string>("");
+  const [primaryClientId, setPrimaryClientId] = React.useState<string>("");
   const [isMerging, setIsMerging] = React.useState(false);
 
   // Compute date range for API calls
@@ -137,79 +137,79 @@ export default function VendorsPage() {
     fetchSettings();
   }, [orgSlug]);
 
-  // Fetch vendors
-  const fetchVendors = React.useCallback(async () => {
+  // Fetch clients
+  const fetchClients = React.useCallback(async () => {
     setIsLoading(true);
     try {
-      const url = new URL(`/api/orgs/${orgSlug}/vendors`, window.location.origin);
+      const url = new URL(`/api/orgs/${orgSlug}/clients`, window.location.origin);
       url.searchParams.set("from", computedDateRange.from);
       url.searchParams.set("to", computedDateRange.to);
 
       const response = await fetch(url.toString());
       if (!response.ok) {
-        throw new Error("Failed to fetch vendors");
+        throw new Error("Failed to fetch clients");
       }
 
       const data = await response.json();
-      setVendors(data.vendors || []);
+      setClients(data.clients || []);
     } catch (error) {
-      console.error("Error fetching vendors:", error);
-      toast.error("Failed to load vendors");
+      console.error("Error fetching clients:", error);
+      toast.error("Failed to load clients");
     } finally {
       setIsLoading(false);
     }
   }, [orgSlug, computedDateRange]);
 
   React.useEffect(() => {
-    fetchVendors();
-  }, [fetchVendors]);
+    fetchClients();
+  }, [fetchClients]);
 
-  // Toggle vendor selection
-  const toggleVendorSelection = (vendorId: string) => {
-    const newSelection = new Set(selectedVendorIds);
-    if (newSelection.has(vendorId)) {
-      newSelection.delete(vendorId);
+  // Toggle client selection
+  const toggleClientSelection = (clientId: string) => {
+    const newSelection = new Set(selectedClientIds);
+    if (newSelection.has(clientId)) {
+      newSelection.delete(clientId);
     } else {
-      newSelection.add(vendorId);
+      newSelection.add(clientId);
     }
-    setSelectedVendorIds(newSelection);
+    setSelectedClientIds(newSelection);
   };
 
   // Select/deselect all
   const toggleSelectAll = () => {
-    if (selectedVendorIds.size === vendors.length) {
-      setSelectedVendorIds(new Set());
+    if (selectedClientIds.size === clients.length) {
+      setSelectedClientIds(new Set());
     } else {
-      setSelectedVendorIds(new Set(vendors.map((v) => v.id)));
+      setSelectedClientIds(new Set(clients.map((c) => c.id)));
     }
   };
 
   // Open edit dialog
-  const openEditDialog = (vendor: Vendor) => {
-    setEditingVendor(vendor);
+  const openEditDialog = (client: Client) => {
+    setEditingClient(client);
     setEditForm({
-      name: vendor.name,
-      email: vendor.email || "",
-      phone: vendor.phone || "",
+      name: client.name,
+      email: client.email || "",
+      phone: client.phone || "",
       notes: "",
-      active: vendor.active,
+      active: client.active,
     });
     setEditDialogOpen(true);
   };
 
   // Save edit
   const handleSaveEdit = async () => {
-    if (!editingVendor) return;
+    if (!editingClient) return;
 
     if (!editForm.name.trim()) {
-      toast.error("Vendor name is required");
+      toast.error("Client name is required");
       return;
     }
 
     setIsSavingEdit(true);
     try {
       const response = await fetch(
-        `/api/orgs/${orgSlug}/vendors/${editingVendor.id}`,
+        `/api/orgs/${orgSlug}/clients/${editingClient.id}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -225,14 +225,14 @@ export default function VendorsPage() {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || "Failed to update vendor");
+        throw new Error(error.error || "Failed to update client");
       }
 
-      toast.success("Vendor updated successfully");
+      toast.success("Client updated successfully");
       setEditDialogOpen(false);
-      fetchVendors();
+      fetchClients();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to update vendor");
+      toast.error(error instanceof Error ? error.message : "Failed to update client");
     } finally {
       setIsSavingEdit(false);
     }
@@ -240,69 +240,69 @@ export default function VendorsPage() {
 
   // Open merge dialog
   const openMergeDialog = () => {
-    if (selectedVendorIds.size < 2) {
-      toast.error("Please select at least 2 vendors to merge");
+    if (selectedClientIds.size < 2) {
+      toast.error("Please select at least 2 clients to merge");
       return;
     }
-    setPrimaryVendorId("");
+    setPrimaryClientId("");
     setMergeDialogOpen(true);
   };
 
   // Perform merge
   const handleMerge = async () => {
-    if (!primaryVendorId) {
-      toast.error("Please select a primary vendor");
+    if (!primaryClientId) {
+      toast.error("Please select a primary client");
       return;
     }
 
-    const secondaryIds = Array.from(selectedVendorIds).filter(
-      (id) => id !== primaryVendorId
+    const secondaryIds = Array.from(selectedClientIds).filter(
+      (id) => id !== primaryClientId
     );
 
     if (secondaryIds.length === 0) {
-      toast.error("No secondary vendors to merge");
+      toast.error("No secondary clients to merge");
       return;
     }
 
     setIsMerging(true);
     try {
-      const response = await fetch(`/api/orgs/${orgSlug}/vendors/merge`, {
+      const response = await fetch(`/api/orgs/${orgSlug}/clients/merge`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          primaryId: primaryVendorId,
+          primaryId: primaryClientId,
           ids: secondaryIds,
         }),
       });
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || "Failed to merge vendors");
+        throw new Error(error.error || "Failed to merge clients");
       }
 
       const result = await response.json();
       toast.success(
-        `Successfully merged ${secondaryIds.length} vendor(s). ${result.reassignedCount || 0} transaction(s) reassigned.`
+        `Successfully merged ${secondaryIds.length} client(s). ${result.reassignedCount || 0} transaction(s) reassigned.`
       );
       setMergeDialogOpen(false);
-      setSelectedVendorIds(new Set());
-      fetchVendors();
+      setSelectedClientIds(new Set());
+      fetchClients();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to merge vendors");
+      toast.error(error instanceof Error ? error.message : "Failed to merge clients");
     } finally {
       setIsMerging(false);
     }
   };
 
-  const selectedVendors = vendors.filter((v) => selectedVendorIds.has(v.id));
+  const selectedClients = clients.filter((c) => selectedClientIds.has(c.id));
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Vendors</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Clients</h1>
           <p className="text-muted-foreground">
-            Manage your vendors and view expense analytics
+            Manage your clients and view income analytics
           </p>
         </div>
       </div>
@@ -315,7 +315,7 @@ export default function VendorsPage() {
             Date Range
           </CardTitle>
           <CardDescription>
-            Select a date range to view vendor transaction totals
+            Select a date range to view client transaction totals
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -376,26 +376,26 @@ export default function VendorsPage() {
       </Card>
 
       {/* Actions */}
-      {selectedVendorIds.size > 0 && (
+      {selectedClientIds.size > 0 && (
         <Card className="border-primary">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
                 <span className="font-medium">
-                  {selectedVendorIds.size} vendor(s) selected
+                  {selectedClientIds.size} client(s) selected
                 </span>
               </div>
               <div className="flex gap-2">
                 <Button
                   variant="outline"
-                  onClick={() => setSelectedVendorIds(new Set())}
+                  onClick={() => setSelectedClientIds(new Set())}
                 >
                   Clear Selection
                 </Button>
-                <Button onClick={openMergeDialog} disabled={selectedVendorIds.size < 2}>
+                <Button onClick={openMergeDialog} disabled={selectedClientIds.size < 2}>
                   <GitMerge className="mr-2 h-4 w-4" />
-                  Merge Vendors
+                  Merge Clients
                 </Button>
               </div>
             </div>
@@ -403,17 +403,17 @@ export default function VendorsPage() {
         </Card>
       )}
 
-      {/* Vendors Table */}
+      {/* Clients Table */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>All Vendors</CardTitle>
+            <CardTitle>All Clients</CardTitle>
             <Button
               variant="outline"
               size="sm"
               onClick={toggleSelectAll}
             >
-              {selectedVendorIds.size === vendors.length ? "Deselect All" : "Select All"}
+              {selectedClientIds.size === clients.length ? "Deselect All" : "Select All"}
             </Button>
           </div>
         </CardHeader>
@@ -422,10 +422,10 @@ export default function VendorsPage() {
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
-          ) : vendors.length === 0 ? (
+          ) : clients.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <Users className="mx-auto h-12 w-12 mb-2 opacity-50" />
-              <p>No vendors found for this period</p>
+              <p>No clients found for this period</p>
             </div>
           ) : (
             <Table>
@@ -441,36 +441,36 @@ export default function VendorsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {vendors.map((vendor) => (
-                  <TableRow key={vendor.id}>
+                {clients.map((client) => (
+                  <TableRow key={client.id}>
                     <TableCell>
                       <Checkbox
-                        checked={selectedVendorIds.has(vendor.id)}
-                        onCheckedChange={() => toggleVendorSelection(vendor.id)}
+                        checked={selectedClientIds.has(client.id)}
+                        onCheckedChange={() => toggleClientSelection(client.id)}
                       />
                     </TableCell>
-                    <TableCell className="font-medium">{vendor.name}</TableCell>
+                    <TableCell className="font-medium">{client.name}</TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-1 text-sm">
-                        {vendor.email && (
+                        {client.email && (
                           <div className="flex items-center gap-1 text-muted-foreground">
                             <Mail className="h-3 w-3" />
-                            {vendor.email}
+                            {client.email}
                           </div>
                         )}
-                        {vendor.phone && (
+                        {client.phone && (
                           <div className="flex items-center gap-1 text-muted-foreground">
                             <Phone className="h-3 w-3" />
-                            {vendor.phone}
+                            {client.phone}
                           </div>
                         )}
-                        {!vendor.email && !vendor.phone && (
+                        {!client.email && !client.phone && (
                           <span className="text-muted-foreground">—</span>
                         )}
                       </div>
                     </TableCell>
                     <TableCell>
-                      {vendor.active ? (
+                      {client.active ? (
                         <Badge variant="outline" className="gap-1">
                           <CircleCheck className="h-3 w-3" />
                           Active
@@ -483,17 +483,17 @@ export default function VendorsPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      {vendor.totals?.transactionCount || 0}
+                      {client.totals?.transactionCount || 0}
                     </TableCell>
                     <TableCell className="text-right">
                       {settings?.baseCurrency}{" "}
-                      {(vendor.totals?.totalAmount || 0).toFixed(2)}
+                      {(client.totals?.totalAmount || 0).toFixed(2)}
                     </TableCell>
                     <TableCell>
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => openEditDialog(vendor)}
+                        onClick={() => openEditDialog(client)}
                       >
                         <Edit2 className="h-4 w-4" />
                       </Button>
@@ -510,9 +510,9 @@ export default function VendorsPage() {
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Vendor</DialogTitle>
+            <DialogTitle>Edit Client</DialogTitle>
             <DialogDescription>
-              Update vendor information and contact details
+              Update client information and contact details
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -524,7 +524,7 @@ export default function VendorsPage() {
                 id="edit-name"
                 value={editForm.name}
                 onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                placeholder="Vendor name"
+                placeholder="Client name"
               />
             </div>
             <div className="space-y-2">
@@ -534,7 +534,7 @@ export default function VendorsPage() {
                 type="email"
                 value={editForm.email}
                 onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                placeholder="vendor@example.com"
+                placeholder="client@example.com"
               />
             </div>
             <div className="space-y-2">
@@ -589,24 +589,24 @@ export default function VendorsPage() {
       <Dialog open={mergeDialogOpen} onOpenChange={setMergeDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Merge Vendors</DialogTitle>
+            <DialogTitle>Merge Clients</DialogTitle>
             <DialogDescription>
-              Select the primary vendor to keep. All transactions from secondary
-              vendors will be reassigned to the primary vendor, and secondary vendors
+              Select the primary client to keep. All transactions from secondary
+              clients will be reassigned to the primary client, and secondary clients
               will be deactivated.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Selected Vendors</Label>
+              <Label>Selected Clients</Label>
               <div className="rounded-md border p-3 space-y-1">
-                {selectedVendors.map((vendor) => (
-                  <div key={vendor.id} className="text-sm">
-                    {vendor.name}
-                    {vendor.totals && (
+                {selectedClients.map((client) => (
+                  <div key={client.id} className="text-sm">
+                    {client.name}
+                    {client.totals && (
                       <span className="text-muted-foreground ml-2">
-                        ({vendor.totals.transactionCount} transactions, {settings?.baseCurrency}{" "}
-                        {vendor.totals.totalAmount.toFixed(2)})
+                        ({client.totals.transactionCount} transactions, {settings?.baseCurrency}{" "}
+                        {client.totals.totalAmount.toFixed(2)})
                       </span>
                     )}
                   </div>
@@ -614,23 +614,23 @@ export default function VendorsPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="primary-vendor">
-                Primary Vendor <span className="text-destructive">*</span>
+              <Label htmlFor="primary-client">
+                Primary Client <span className="text-destructive">*</span>
               </Label>
-              <Select value={primaryVendorId} onValueChange={setPrimaryVendorId}>
-                <SelectTrigger id="primary-vendor">
-                  <SelectValue placeholder="Select primary vendor" />
+              <Select value={primaryClientId} onValueChange={setPrimaryClientId}>
+                <SelectTrigger id="primary-client">
+                  <SelectValue placeholder="Select primary client" />
                 </SelectTrigger>
                 <SelectContent>
-                  {selectedVendors.map((vendor) => (
-                    <SelectItem key={vendor.id} value={vendor.id}>
-                      {vendor.name}
+                  {selectedClients.map((client) => (
+                    <SelectItem key={client.id} value={client.id}>
+                      {client.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                This vendor will be kept, and all others will be merged into it
+                This client will be kept, and all others will be merged into it
               </p>
             </div>
           </div>
@@ -642,7 +642,7 @@ export default function VendorsPage() {
             >
               Cancel
             </Button>
-            <Button onClick={handleMerge} disabled={isMerging || !primaryVendorId}>
+            <Button onClick={handleMerge} disabled={isMerging || !primaryClientId}>
               {isMerging ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -651,7 +651,7 @@ export default function VendorsPage() {
               ) : (
                 <>
                   <GitMerge className="mr-2 h-4 w-4" />
-                  Merge Vendors
+                  Merge Clients
                 </>
               )}
             </Button>

@@ -34,6 +34,10 @@ interface Transaction {
   amountBase: string;
   category: { id: string; name: string };
   account: { id: string; name: string };
+  client?: { id: string; name: string } | null;
+  vendor?: { id: string; name: string } | null;
+  clientName?: string | null;
+  vendorName?: string | null;
 }
 
 interface OrgSettings {
@@ -151,7 +155,11 @@ export default function TransactionsPage(): React.JSX.Element {
       (t) =>
         t.description.toLowerCase().includes(search) ||
         t.category.name.toLowerCase().includes(search) ||
-        t.account.name.toLowerCase().includes(search)
+        t.account.name.toLowerCase().includes(search) ||
+        (t.clientName && t.clientName.toLowerCase().includes(search)) ||
+        (t.client?.name && t.client.name.toLowerCase().includes(search)) ||
+        (t.vendorName && t.vendorName.toLowerCase().includes(search)) ||
+        (t.vendor?.name && t.vendor.name.toLowerCase().includes(search))
     );
   }, [transactions, searchFilter]);
 
@@ -244,7 +252,7 @@ export default function TransactionsPage(): React.JSX.Element {
               <Label htmlFor="search">Search</Label>
               <Input
                 id="search"
-                placeholder="Description, category..."
+                placeholder="Description, category, client, vendor..."
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
               />
@@ -330,6 +338,14 @@ export default function TransactionsPage(): React.JSX.Element {
                         settings.dateFormat
                       )}{" "}
                       • {transaction.category.name} • {transaction.account.name}
+                      {transaction.type === "INCOME" &&
+                        (transaction.clientName || transaction.client?.name) && (
+                          <> • Client: {transaction.clientName || transaction.client?.name}</>
+                        )}
+                      {transaction.type === "EXPENSE" &&
+                        (transaction.vendorName || transaction.vendor?.name) && (
+                          <> • Vendor: {transaction.vendorName || transaction.vendor?.name}</>
+                        )}
                     </div>
                   </div>
                   <div className="flex items-center gap-4">

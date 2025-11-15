@@ -43,6 +43,8 @@ export async function GET(
     // Parse query parameters
     const { searchParams } = new URL(request.url);
     const query = searchParams.get("query");
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
 
     // Build where clause
     const where: Record<string, unknown> = {
@@ -63,7 +65,45 @@ export async function GET(
       orderBy: { name: "asc" },
     });
 
-    return NextResponse.json({ clients });
+    // If date range provided, calculate totals for each client
+    let clientsWithTotals = clients;
+    if (from && to) {
+      const totalsPromises = clients.map(async (client) => {
+        const transactions = await db.transaction.findMany({
+          where: {
+            organizationId: org.id,
+            clientId: client.id,
+            type: "INCOME",
+            status: "POSTED",
+            deletedAt: null,
+            date: {
+              gte: new Date(from),
+              lte: new Date(to),
+            },
+          },
+          select: {
+            amountBase: true,
+          },
+        });
+
+        const totalAmount = transactions.reduce(
+          (sum, t) => sum + Number(t.amountBase),
+          0
+        );
+
+        return {
+          ...client,
+          totals: {
+            transactionCount: transactions.length,
+            totalAmount,
+          },
+        };
+      });
+
+      clientsWithTotals = await Promise.all(totalsPromises);
+    }
+
+    return NextResponse.json({ clients: clientsWithTotals });
   } catch (error) {
     console.error("Error fetching clients:", error);
     return NextResponse.json(

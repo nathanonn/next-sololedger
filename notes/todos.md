@@ -17,18 +17,18 @@ Generated: 2025-11-14
 
 ## Vendors
 
-- [ ] Introduce `Vendor` model (org-scoped) and CRUD APIs
-- [ ] Autocomplete vendor on transaction forms
-- [ ] Auto-create vendor when saving unknown vendorName
-- [ ] Vendor management screen with totals (by date range)
-- [ ] Merge duplicate vendors (choose primary, reassign transactions)
+- [x] Introduce `Vendor` model (org-scoped) and CRUD APIs
+- [x] Autocomplete vendor on transaction forms
+- [x] Auto-create vendor when saving unknown vendorName
+- [x] Vendor management screen with totals (by date range)
+- [x] Merge duplicate vendors (choose primary, reassign transactions)
 
 - No vendors found. Press Enter to create "Vendor_Name"
 
 ## Accounts
 
-- [ ] Account balances by selectable date range (base currency)
-- [ ] Click account → open filtered transaction list (account + date range)
+- [x] Account balances by selectable date range (base currency)
+- [x] Click account → open filtered transaction list (account + date range)
 
 ## Transactions – Filters, Bulk, Trash
 

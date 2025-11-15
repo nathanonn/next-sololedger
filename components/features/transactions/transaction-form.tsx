@@ -147,14 +147,15 @@ export function TransactionForm({
   );
   const [isVendorSearching, setIsVendorSearching] = React.useState(false);
   const [vendorPopoverOpen, setVendorPopoverOpen] = React.useState(false);
-  const vendorSearchTimeoutRef = React.useRef<NodeJS.Timeout | undefined>(undefined);
+  const vendorSearchTimeoutRef = React.useRef<NodeJS.Timeout | undefined>(
+    undefined
+  );
 
   // Computed values
   const finalCurrency =
     currency === "OTHER" ? customCurrency.toUpperCase() : currency;
   const isForeignCurrency = finalCurrency !== settings.baseCurrency;
-  const amountBase =
-    parseFloat(amountOriginal) * parseFloat(exchangeRate) || 0;
+  const amountBase = parseFloat(amountOriginal) * parseFloat(exchangeRate) || 0;
 
   // Filter and sort categories by type and sortOrder
   const filteredCategories = categories
@@ -353,7 +354,11 @@ export function TransactionForm({
         <Label htmlFor="status">
           Status <span className="text-destructive">*</span>
         </Label>
-        <Select value={status} onValueChange={(v) => setStatus(v as "DRAFT" | "POSTED")} disabled={isLoading}>
+        <Select
+          value={status}
+          onValueChange={(v) => setStatus(v as "DRAFT" | "POSTED")}
+          disabled={isLoading}
+        >
           <SelectTrigger id="status">
             <SelectValue />
           </SelectTrigger>
@@ -385,7 +390,11 @@ export function TransactionForm({
         <Label htmlFor="currency">
           Currency <span className="text-destructive">*</span>
         </Label>
-        <Select value={currency} onValueChange={setCurrency} disabled={isLoading}>
+        <Select
+          value={currency}
+          onValueChange={setCurrency}
+          disabled={isLoading}
+        >
           <SelectTrigger id="currency">
             <SelectValue />
           </SelectTrigger>
@@ -456,9 +465,7 @@ export function TransactionForm({
         {showDateWarning && (
           <Alert>
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Warning: This is a future date
-            </AlertDescription>
+            <AlertDescription>Warning: This is a future date</AlertDescription>
           </Alert>
         )}
         {showDateError && (
@@ -490,7 +497,11 @@ export function TransactionForm({
         <Label htmlFor="category">
           Category <span className="text-destructive">*</span>
         </Label>
-        <Select value={categoryId} onValueChange={setCategoryId} disabled={isLoading}>
+        <Select
+          value={categoryId}
+          onValueChange={setCategoryId}
+          disabled={isLoading}
+        >
           <SelectTrigger id="category">
             <SelectValue placeholder="Select category" />
           </SelectTrigger>
@@ -514,7 +525,11 @@ export function TransactionForm({
         <Label htmlFor="account">
           Account <span className="text-destructive">*</span>
         </Label>
-        <Select value={accountId} onValueChange={setAccountId} disabled={isLoading}>
+        <Select
+          value={accountId}
+          onValueChange={setAccountId}
+          disabled={isLoading}
+        >
           <SelectTrigger id="account">
             <SelectValue placeholder="Select account" />
           </SelectTrigger>
@@ -554,16 +569,24 @@ export function TransactionForm({
                   setVendorName(value);
                   searchVendors(value);
                 }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && vendorSuggestions.length === 0) {
+                    e.preventDefault();
+                    setVendorPopoverOpen(false);
+                  }
+                }}
               />
               <CommandList>
-                {isVendorSearching && (
-                  <CommandEmpty>Searching...</CommandEmpty>
-                )}
-                {!isVendorSearching && vendorName && vendorSuggestions.length === 0 && (
-                  <CommandEmpty>
-                    No vendors found. Press Enter to create &quot;{vendorName}&quot;
-                  </CommandEmpty>
-                )}
+                {isVendorSearching && <CommandEmpty>Searching...</CommandEmpty>}
+                {!isVendorSearching &&
+                  vendorName &&
+                  vendorSuggestions.length === 0 && (
+                    <CommandEmpty className="text-muted-foreground p-4 text-sm">
+                      No vendors found.
+                      <br />
+                      Press Enter to create &quot;{vendorName}&quot;
+                    </CommandEmpty>
+                  )}
                 {vendorSuggestions.length > 0 && (
                   <CommandGroup>
                     {vendorSuggestions.map((vendor) => (
@@ -599,7 +622,8 @@ export function TransactionForm({
           </PopoverContent>
         </Popover>
         <p className="text-xs text-muted-foreground">
-          Select an existing vendor or type a new name to create one automatically
+          Select an existing vendor or type a new name to create one
+          automatically
         </p>
       </div>
 
@@ -627,7 +651,8 @@ export function TransactionForm({
           Cancel
         </Button>
         <Button type="submit" disabled={isLoading} className="flex-1">
-          {isLoading ? "Saving..." : transactionId ? "Update" : "Create"} Transaction
+          {isLoading ? "Saving..." : transactionId ? "Update" : "Create"}{" "}
+          Transaction
         </Button>
       </div>
     </form>

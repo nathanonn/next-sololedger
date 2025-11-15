@@ -82,12 +82,13 @@ export async function GET(
       orderBy: [{ isDefault: "desc" }, { name: "asc" }],
     });
 
-    // Get transaction balances grouped by account
-    const transactionBalances = await db.transaction.groupBy({
+    // Get INCOME transaction balances grouped by account
+    const incomeBalances = await db.transaction.groupBy({
       by: ["accountId"],
       where: {
         organizationId: org.id,
         status: "POSTED",
+        type: "INCOME",
         date: {
           gte: from,
           lte: to,
@@ -102,18 +103,70 @@ export async function GET(
       },
     });
 
-    // Create a map of account balances
-    const balanceMap = new Map(
-      transactionBalances.map((balance) => [
+    // Get EXPENSE transaction balances grouped by account
+    const expenseBalances = await db.transaction.groupBy({
+      by: ["accountId"],
+      where: {
+        organizationId: org.id,
+        status: "POSTED",
+        type: "EXPENSE",
+        date: {
+          gte: from,
+          lte: to,
+        },
+        deletedAt: null,
+      },
+      _count: {
+        id: true,
+      },
+      _sum: {
+        amountBase: true,
+      },
+    });
+
+    // Create maps for income and expense
+    const incomeMap = new Map(
+      incomeBalances.map((balance) => [
         balance.accountId,
         {
           count: balance._count.id,
-          balanceBase: balance._sum.amountBase
-            ? Number(balance._sum.amountBase)
-            : 0,
+          amount: balance._sum.amountBase ? Number(balance._sum.amountBase) : 0,
         },
       ])
     );
+
+    const expenseMap = new Map(
+      expenseBalances.map((balance) => [
+        balance.accountId,
+        {
+          count: balance._count.id,
+          amount: balance._sum.amountBase ? Number(balance._sum.amountBase) : 0,
+        },
+      ])
+    );
+
+    // Create a map of account balances (income - expense)
+    const balanceMap = new Map();
+
+    // Process all accounts that have either income or expense
+    const allAccountIds = new Set([
+      ...incomeMap.keys(),
+      ...expenseMap.keys(),
+    ]);
+
+    allAccountIds.forEach((accountId) => {
+      const income = incomeMap.get(accountId);
+      const expense = expenseMap.get(accountId);
+
+      const incomeAmount = income?.amount || 0;
+      const expenseAmount = expense?.amount || 0;
+      const totalCount = (income?.count || 0) + (expense?.count || 0);
+
+      balanceMap.set(accountId, {
+        count: totalCount,
+        balanceBase: incomeAmount - expenseAmount,
+      });
+    });
 
     // Combine accounts with their balances
     const accountsWithBalances = accounts.map((account) => {

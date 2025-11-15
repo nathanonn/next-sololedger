@@ -4,7 +4,7 @@
 
 ```
 ./worktrees.sh setup \
-  --branches feat/clients_model \
+  --branches feat/trans_filter_soft_del \
   --db-url postgresql://pi:password@localhost:5432/nextsololedger
 ```
 
@@ -17,7 +17,7 @@
 ## merge
 
 ```
-./worktrees.sh merge --branches feat/clients_model --into main
+./worktrees.sh merge --branches feat/trans_filter_soft_del --into main
 ```
 
 # create wireframes based on plan

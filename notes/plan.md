@@ -1,373 +1,260 @@
-# Implementation Status
+# Plan – Transactions: Filters, Bulk, Trash
 
-## ✅ Completed Phases
+We’ll upgrade the transactions list and its APIs to support rich server-side filtering (including multi-category, vendor/client, amount range in base currency, and currency), add multi-select with a bulk action toolbar for category/status changes, soft delete, and CSV export, introduce a dedicated Trash view for soft-deleted transactions with restore and permanent delete, and enforce soft-closed period warnings/confirmations (and override flags) when editing Posted transactions—both for single-edit and bulk flows—while preserving the existing Prisma, API, and UI patterns.
 
-- **Phase 1 – Data Model & Migrations** ✅ COMPLETE
-- **Phase 2 – API Layer Changes** ✅ COMPLETE
-- **Phase 3 – UI & Form Behavior** ✅ COMPLETE
-  - ✅ TransactionForm updated with client/vendor fields
-  - ✅ EditTransactionPage fixed to preserve client data
-  - ✅ TransactionsPage display updated to show client/vendor info
-- **Phase 6 – Validation, Testing & Rollout** ⚠️ PARTIALLY COMPLETE
-  - ✅ Validation rules implemented
-  - ✅ Build verified successfully
-  - ❌ Automated tests not written
+## 1. Understand and Align with Existing Stack
 
-- **Phase 4 – Client & Vendor Management Screens** ✅ COMPLETE
-  - ✅ Clients management screen created (app/o/[orgSlug]/settings/clients/page.tsx)
-  - ✅ Vendors management screen reviewed and aligned
-  - ✅ API endpoints created: PATCH for individual client/vendor, POST for merging
-  - ✅ Transaction totals calculated based on date range
-- **Phase 5 – Reporting & Index Preparation** ⚠️ PARTIALLY COMPLETE
-  - ✅ DB indexes exist in schema from Phase 1
-  - ⚠️ Reporting routes (future enhancement, not critical for MVP)
+- Review `prisma/schema.prisma`:
+	- Confirm `Transaction` fields: `status`, `type`, `amountOriginal`, `currencyOriginal`, `exchangeRateToBase` / `amountBase`, `deletedAt`, `vendorId`/`clientId`, `vendorName`/`clientName`.
+	- Identify any existing soft-close-related fields on organization or financial settings.
+- Inspect existing APIs:
+	- `app/api/orgs/[orgSlug]/transactions/route.ts` – current GET filters (`dateFrom`, `dateTo`, `type`, `status`), pagination, and default `deletedAt` handling.
+	- `app/api/orgs/[orgSlug]/transactions/[transactionId]/route.ts` – existing GET, PATCH, DELETE; confirm soft delete via `deletedAt`, and check update semantics.
+- Inspect UI:
+	- `app/o/[orgSlug]/transactions/page.tsx` – list rendering, current filters, search behavior, delete flow, and any use of custom hooks.
+	- `app/o/[orgSlug]/transactions/[id]/page.tsx` – edit form, how it loads categories/vendor/client, how it posts updates.
+- Check related notes:
+	- `notes/requirements.md` sections 7–8, 12, 15 for expectations on filters, bulk, soft delete, Trash.
+	- `notes/user_stories.md` for `US-TRX-004` and `US-TRASH-001` to ensure acceptance criteria coverage.
 
-## ❌ Incomplete Phases
+## 2. Server-Side Filter Enhancements
 
-None - all critical phases are complete!
+Goal: Support advanced filters on the GET `/api/orgs/[orgSlug]/transactions` endpoint while keeping deleted items excluded.
 
-## Optional Future Enhancements
+- Extend query parameters:
+	- `categoryIds`: string (comma-separated IDs or repeatable params), mapped to `categoryId IN [...]`.
+	- `vendorId`: vendor primary key; filter `transaction.vendorId` or related vendor entity.
+	- `clientId`: client primary key; filter `transaction.clientId` or related client entity.
+	- `amountMin`, `amountMax`: numbers representing base-currency amount; filter on `amountBase` (or computed `amountOriginal * exchangeRateToBase` if no stored base field).
+	- `currency`: single currency code; filter `currencyOriginal` (or appropriate field).
+- Update Prisma query builder for `/transactions`:
+	- Start from existing filters: `type`, `status`, `dateFrom`, `dateTo`, and `deletedAt: null`.
+	- Add optional filters:
+		- `categoryId: { in: categoryIds[] }` when provided.
+		- `vendorId: vendorId` and/or `clientId: clientId` when provided.
+		- `amountBase: { gte: amountMin, lte: amountMax }` (or equivalent computed clauses).
+		- `currencyOriginal: currency` when provided.
+	- Ensure filters combine with logical AND and don’t break pagination or sorting.
+- Search behavior:
+	- For now, keep the existing client-side search in `transactions/page.tsx` to satisfy description/vendor/client text search.
+	- Optionally, log a follow-up task to move search server-side later for large datasets.
 
-- **Reporting Routes** (Phase 5.2)
-  - Income by Client report API
-  - Expenses by Vendor report API
-- **Automated Tests** (Phase 6.2)
-  - Unit/integration tests for client/vendor operations
-  - Manual QA completed successfully
+## 3. Advanced Filters UI in Transactions List
 
-## Bug Fixes Applied
+Goal: Add multi-category, vendor/client dropdowns, amount range in base currency, and currency filter on the main transactions page.
 
-- **P1 Fix**: PATCH endpoint now permits null counterparty fields (was rejecting all edits)
-- **P1 Fix**: Edit page now preserves existing client data (was clearing on load)
+- Categories:
+	- Load categories via existing `GET /api/orgs/[orgSlug]/categories` endpoint.
+	- Add a multi-select Category filter in `app/o/[orgSlug]/transactions/page.tsx`:
+		- Use a popover/command-style menu with checkable items for categories.
+		- Show a summary label such as “All categories” / “3 selected”.
+	- Store selected category IDs in component state and serialize into `categoryIds` query params for `loadTransactions()`.
+- Vendor & Client filters:
+	- Add a `Vendor` dropdown filter backed by a vendor list endpoint (or implement one if missing).
+	- Add a `Client` dropdown filter for income transactions, reusing the same pattern.
+	- Store selected IDs in state and append `vendorId` / `clientId` to API params.
+- Amount range & currency:
+	- Add `amountMin` / `amountMax` numeric inputs representing base-currency amounts:
+		- Validate locally (non-negative, `min <= max` where both are present).
+	- Add a single-select `Currency` dropdown:
+		- Initialize from org settings (`baseCurrency`) plus any additional enabled currencies.
+		- Bind selected value to `currency` query param.
+- Wiring & UX:
+	- Extend `loadTransactions()` to include new filter params from state.
+	- Ensure Reset/“Clear filters” button also resets the new filters to defaults.
+	- Keep the current client-side text search for description/vendor/client and ensure it operates on the already-filtered result set.
 
----
+## 4. Multi-Select & Selection Toolbar in List
 
-# Original Plan
+Goal: Add per-row checkboxes, header select-all, and a conditional bulk actions toolbar for selected transactions.
 
-In summary, we'll evolve the current "vendor" concept into two parallel relationship types—clients (for income) and vendors (for expenses)—by updating the data model, APIs, and UI so each transaction clearly links to the correct relationship type, while keeping existing data stable and migration‑friendly. We'll also introduce separate screens and filters for clients and vendors, and adjust reporting to use clients for income and vendors for expenses.
+- Selection state:
+	- Add `selectedTransactionIds: string[]` state in `transactions/page.tsx`.
+	- Derive `allSelectedOnPage` and `someSelected` from the currently rendered transaction list.
+- Checkbox column:
+	- Add a leading checkbox column to the table/list.
+	- Header checkbox toggles selection of all transactions currently visible on the page.
+	- Row checkboxes toggle each transaction ID in `selectedTransactionIds`.
+- Selection toolbar:
+	- Show a sticky or top-aligned toolbar when `selectedTransactionIds.length > 0`.
+	- Display selection count (e.g. “3 selected”).
+	- Include actions: “Change category”, “Change status”, “Delete selected”, “Export selected CSV”.
+- Interaction details:
+	- Ensure row click continues to navigate to transaction detail without interfering with checkbox clicks.
+	- Make checkboxes keyboard-accessible and maintain focus styles for accessibility.
 
----
+## 5. Bulk Actions API and Backend Logic
 
-## Phase 1 – Data Model & Migrations ✅ COMPLETE
+Goal: Provide a single bulk endpoint for category/status changes and soft delete, respecting soft-closed period rules.
 
-- **1.1 Add `Client` model (separate from `Vendor`)** ✅
-  - In `prisma/schema.prisma`, add:
-    - `Client` with fields mirroring `Vendor`:
-      - `id`, `organizationId`, `name`, `nameLower`, `email`, `phone`, `notes`, `active`, `mergedIntoId`, `createdAt`, `updatedAt`.
-      - Relations:
-        - `organization: Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)`
-        - `mergedInto: Client? @relation("ClientMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)`
-        - `mergedClients: Client[] @relation("ClientMerge")`
-        - `transactions: Transaction[]`
-    - Add `clients: Client[]` relation on `Organization`.
-    - Add `@@unique([organizationId, nameLower])` and `@@index([organizationId, active])` on `Client`.
-  - Run Prisma migration later (once plan is locked) and regenerate client.
+- New bulk endpoint:
+	- Implement `POST /api/orgs/[orgSlug]/transactions/bulk`.
+	- Request body structure:
+		- `transactionIds: string[]` (required)
+		- `action: "changeCategory" | "changeStatus" | "delete"` (required)
+		- `categoryId?: string` (for `changeCategory`)
+		- `status?: "DRAFT" | "POSTED"` (for `changeStatus`)
+		- `allowSoftClosedOverride?: boolean` (for status changes affecting soft-closed periods).
+- Common validation:
+	- Reuse auth helpers to load current user and org.
+	- Ensure all `transactionIds` belong to the org; ignore or mark as failure otherwise.
+	- Exclude transactions with `deletedAt != null` from updates.
+- Action-specific logic:
+	- `changeCategory`:
+		- Validate `categoryId` exists and belongs to org.
+		- Update `categoryId` for each eligible transaction.
+	- `changeStatus`:
+		- Allow status changes both directions (Draft ↔ Posted) by default.
+		- For any transaction that is `POSTED` and in a soft-closed period, require `allowSoftClosedOverride === true`; otherwise mark as failure.
+	- `delete`:
+		- Perform soft delete via `deletedAt = new Date()` for each eligible transaction.
+- Partial success response (error strategy):
+	- Execute updates per transaction and collect:
+		- `successCount`
+		- `failureCount`
+		- `failures: { transactionId: string; reason: string }[]`
+	- Return this structure so the UI can display a summary toast and optionally log details.
 
-- **1.2 Extend `Transaction` for clients** ✅
-  - In `Transaction` model:
-    - Add:
-      - `clientId String?`
-      - `clientName String? @db.VarChar(255)`
-    - Add relation:
-      - `client Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)`
-    - Add indexes:
-      - `@@index([organizationId, clientId, status, date])`
-      - `@@index([clientId])`
-  - Keep `vendorId`/`vendorName` as is for backward compatibility.
+## 6. Bulk Actions UI Wiring
 
-- **1.3 Backfill existing income data to clients (7/b + 2/a)** ✅
-  - Implement a backfill script (e.g., in `scripts/` or as part of a dedicated migration) that:
-    - For each organization:
-      - Find distinct `INCOME` transactions with non‑null `vendorName` or `vendorId` and `deletedAt IS NULL`.
-      - For each distinct vendor name used on income:
-        - Compute `nameLower = vendorName.toLowerCase().trim()`.
-        - Check if a `Client` with `organizationId` + `nameLower` already exists.
-          - If yes: reuse that `Client`.
-          - If no:
-            - If a `Vendor` with that `nameLower` exists in the org, create a `Client` with:
-              - `name`, `nameLower`, and copy `email`, `phone`, `notes` where available.
-            - Otherwise create a minimal `Client` with `name`/`nameLower`.
-      - For each affected income transaction:
-        - Set `clientId` to the mapped client’s id and `clientName` to the human name.
-  - Do **not** clear `vendorId`/`vendorName` for income yet; keep them populated for legacy/debugging, but they won't be used by new logic.
-  - **Implementation**: Created `scripts/backfill-clients.ts` and successfully executed.
+Goal: Connect selection toolbar actions to the bulk API and CSV export endpoint.
 
-- **1.4 Migration rollout order** ✅
-  1.  Add `Client` model and `clientId`/`clientName` fields + relations/indexes on `Transaction`.
-  2.  Run backfill to populate `Client` records and link `INCOME` transactions to clients.
-  3.  Only after this, update API and UI to start using `clientId`/`clientName` for income and stop accepting vendors for income.
+- Change category bulk action:
+	- When user clicks “Change category” in toolbar, open a dialog to pick a category.
+	- On confirm, call bulk endpoint with `action: "changeCategory"`, `transactionIds`, and `categoryId`.
+	- On success, show toast summarizing updates; refresh transactions list and clear selection.
+- Change status bulk action:
+	- When user clicks “Change status”, open a dialog to choose new status (Draft/Posted).
+	- Before calling API, check for any selected transactions that are `POSTED` in a soft-closed period:
+		- If found, show a confirmation dialog explaining the override.
+		- If user confirms, send bulk request with `allowSoftClosedOverride: true`.
+	- Handle partial success by showing a toast that includes success and failure counts.
+- Bulk delete action:
+	- On “Delete selected”, show a confirmation dialog.
+	- If confirmed, call bulk endpoint with `action: "delete"`.
+	- On success, toast and refresh list; on partial success, surface failures.
+- Bulk CSV export action:
+	- On “Export selected”, generate a URL for the CSV export endpoint (see next section) with selected IDs.
+	- Trigger browser download via navigation or a programmatic link.
 
----
+## 7. CSV Export Endpoint and Behavior
 
-## Phase 2 – API Layer Changes (Strict Per-Type Behavior) ✅ COMPLETE
+Goal: Provide CSV export for selected transactions via a dedicated GET endpoint.
 
-- **2.1 Client endpoints** ✅
-  - Create `app/api/orgs/[orgSlug]/clients` route group with:
-    - `GET /api/orgs/[orgSlug]/clients`:
-      - Query params: `query` for name/email search.
-      - Filters by `organizationId` and `active = true` by default.
-      - Returns `clients: Client[]`.
-    - `POST /api/orgs/[orgSlug]/clients`:
-      - Body: `name`, optional `email`, `phone`, `notes`.
-      - Enforces org uniqueness via `nameLower`.
-    - Optionally `PATCH`/`DELETE` or `PATCH` to toggle `active`.
-  - All endpoints:
-    - `export const runtime = "nodejs"`.
-    - Use `getCurrentUser`, `getOrgBySlug`, `requireMembership`, and `validateCsrf` (for mutating routes).
-    - Enforce `organizationId` scoping.
-  - **Implementation**: Created `app/api/orgs/[orgSlug]/clients/route.ts` with GET and POST endpoints.
+- New export endpoint:
+	- Implement `GET /api/orgs/[orgSlug]/transactions/export?ids=id1,id2,...`.
+	- Validate org membership and that all requested transactions belong to the org and are not soft-deleted.
+- CSV generation:
+	- Create or reuse a CSV utility (e.g. in `lib/transactions-export.ts`).
+	- Include columns such as: `id`, `date`, `type`, `status`, `amountBase`, `amountOriginal`, `currencyOriginal`, `categoryName`, `accountName`, `vendorName`, `clientName`, `notes`.
+	- Set headers: `Content-Type: text/csv` and `Content-Disposition` with a timestamped filename.
+- UI integration:
+	- Use the bulk toolbar’s “Export selected” to hit this endpoint.
+	- Optionally show a brief toast (“Export started”) if using programmatic download.
 
-- **2.2 Vendor endpoints review** ✅
-  - Ensure existing `/api/orgs/[orgSlug]/vendors` route:
-    - Supports `GET` with `query` for name search using `nameLower`.
-    - Filters by `organizationId` and `active`.
-  - Clarify in comments: vendors are for expenses only.
-  - **Implementation**: Created `app/api/orgs/[orgSlug]/vendors/route.ts` with GET and POST endpoints.
+## 8. Trash View for Soft-Deleted Transactions
 
-- **2.3 Transaction list endpoint (`app/api/orgs/[orgSlug]/transactions/route.ts`)** ✅
-  - `GET`:
-    - Update `include` to:
-      - `include: { category: true, account: true, vendor: true, client: true }`.
-    - Add new optional query params:
-      - `clientId` → filter transactions where `clientId = clientId`.
-      - `vendorId` → filter where `vendorId = vendorId`.
-    - Keep existing `type`, `status`, `dateFrom`, `dateTo` filtering.
-    - In future you can add a `counterparty` param for name search across client/vendor.
+Goal: Add a dedicated transactions Trash page under the org that lists soft-deleted transactions and supports restore and permanent delete.
 
-- **2.4 Transaction create endpoint (`POST /transactions`)** ✅
-  - Update Zod schema:
+- Trash list API:
+	- Implement `GET /api/orgs/[orgSlug]/transactions/trash`.
+	- Filter by `deletedAt != null` and org.
+	- Support minimal filters (date deleted, type, text search):
+		- Query params: `deletedFrom`, `deletedTo`, `type`, `search`.
+- Trash page UI:
+	- Add `app/o/[orgSlug]/transactions/trash/page.tsx`.
+	- Layout similar to main transactions table but focused on:
+		- Columns: type, description, transaction date, deletedAt, status, key identifiers.
+		- Filters: deleted date range, type selector, search box.
+	- Actions per row: “Restore” and “Delete permanently”.
+- Restore endpoint:
+	- Implement `POST /api/orgs/[orgSlug]/transactions/[transactionId]/restore`.
+	- Validate org and membership, ensure `deletedAt != null`, then set `deletedAt = null`.
+- Permanent delete endpoint:
+	- Implement `DELETE /api/orgs/[orgSlug]/transactions/[transactionId]/hard-delete`.
+	- Validate org and membership.
+	- Remove transaction record and any dependent join records (e.g. transaction-document links), consistent with Trash requirements.
+- Trash UX behavior:
+	- On restore: stay in Trash view, show “Transaction restored” toast, and remove item from the Trash list.
+	- On permanent delete: show confirmation dialog, then remove item from list on success and show a toast.
 
-    ```ts
-    const transactionSchema = z.object({
-      type: z.enum(["INCOME", "EXPENSE"]),
-      status: z.enum(["DRAFT", "POSTED"]),
-      amountOriginal: z.number().positive(),
-      currencyOriginal: z
-        .string()
-        .length(3)
-        .transform((v) => v.toUpperCase()),
-      exchangeRateToBase: z.number().positive(),
-      date: z
-        .string()
-        .refine((v) => !isNaN(Date.parse(v)), { message: "Invalid date" }),
-      description: z.string().min(1),
-      categoryId: z.string().min(1),
-      accountId: z.string().min(1),
+## 9. Soft-Closed Period Model and Helper
 
-      vendorId: z.string().nullable().optional(),
-      vendorName: z.string().nullable().optional(),
-      clientId: z.string().nullable().optional(),
-      clientName: z.string().nullable().optional(),
+Goal: Model soft-closed periods with a simple cutoff date field and provide a reusable helper.
 
-      notes: z.string().nullable().optional(),
-    });
-    ```
+- Data model:
+	- Add a field to the organization’s financial settings model (if not present), for example `softClosedBefore: Date | null`.
+	- Ensure any settings API or management UI that edits financial settings can read/write this field.
+- Helper function:
+	- Implement `isInSoftClosedPeriod(transactionDate: Date, softClosedBefore: Date | null): boolean` in a shared utility (e.g. `lib/periods.ts`).
+	- Return true when `softClosedBefore` is set and `transactionDate < softClosedBefore`.
+- Usage in APIs:
+	- In single transaction PATCH and bulk endpoints, load org settings to get `softClosedBefore`.
+	- Use the helper to determine whether a transaction is in a soft-closed period when applying edits or status changes.
 
-  - Enforce strict rules (3/a) after parsing:
-    - If `type === "INCOME"`:
-      - Reject if `vendorId` or `vendorName` is non‑null/non‑undefined.
-      - Allow `clientId`/`clientName`.
-    - If `type === "EXPENSE"`:
-      - Reject if `clientId` or `clientName` is non‑null/non‑undefined.
-      - Allow `vendorId`/`vendorName`.
-  - Relationship handling:
-    - For `INCOME`:
-      - If `clientId` present:
-        - Verify `Client` exists with `id` and `organizationId = org.id`.
-        - If not, 400 "Client not found".
-      - Else if `clientName` present (non‑empty after trim):
-        - Compute `nameLower`.
-        - Look up existing `Client` by `organizationId` + `nameLower`.
-        - If not found, create a new `Client` (active = true).
-      - Set `clientId`/`clientName` on `Transaction`, and `vendorId`/`vendorName` to `null`.
-    - For `EXPENSE` (existing logic, but explicitly scoped as expense):
-      - Same flow with `Vendor` and `vendorId`/`vendorName`.
-      - Ensure `clientId`/`clientName` are `null`.
-  - Keep existing validations:
-    - Category existence + type matches transaction type.
-    - Account existence.
-    - Date rules for POSTED vs future date.
-  - Compute `amountBase = amountOriginal * exchangeRateToBase` as before.
+## 10. Soft-Closed Warning & Confirmation in Single Transaction Edit
 
-- **2.5 Transaction update endpoint (`PATCH /transactions/[transactionId]`)** ✅
-  - Extend Zod schema to optional `clientId` / `clientName` alongside vendor fields.
-  - Apply type edit rule (9/b):
-    - Either:
-      - Disallow changing `type` in PATCH entirely, or
-      - If `data.type` differs from `existing.type` and there is any of:
-        - `existing.vendorId`, `existing.vendorName`, `existing.clientId`, or `existing.clientName`,
-      - Then reject with 400: "Cannot change transaction type once a client/vendor is set; delete and recreate the transaction."
-  - Enforce strict per-type relationship rules (3/a):
-    - Determine `finalType = data.type ?? existing.type`.
-    - If `finalType === "INCOME"`:
-      - Reject if `vendorId` or `vendorName` is present in payload (even if nulling).
-      - Allow `clientId`/`clientName`:
-        - If `clientId` is explicitly provided:
-          - Null → clear client.
-          - Non‑null → verify `Client` in org.
-        - Else if `clientName` provided:
-          - Non‑empty → lookup or create `Client` by `nameLower` (like POST).
-          - Empty → clear client.
-    - If `finalType === "EXPENSE"`:
-      - Mirror logic for vendor, rejecting `clientId`/`clientName`.
-  - Keep amount/base recalculation as now when `amountOriginal` or `exchangeRateToBase` changes.
-  - **Bug Fix Applied**: Changed validation from `!== undefined` to truthiness check to permit null values from form submissions.
+Goal: Warn users and require confirmation when editing a Posted transaction in a soft-closed period, with server-side enforcement.
 
-- **2.6 Single transaction GET (`GET /transactions/[transactionId]`)** ✅
-  - Update `include` to `{ category: true, account: true, vendor: true, client: true }`.
-  - Ensure returned JSON includes `clientId`, `clientName` for income transactions.
+- Client-side detection:
+	- In `app/o/[orgSlug]/transactions/[id]/page.tsx`, load org financial settings alongside transaction data.
+	- Use the same logic as `isInSoftClosedPeriod` to flag if a `POSTED` transaction lies before `softClosedBefore`.
+	- If true, show a warning banner explaining that edits will override a soft-closed period.
+- Submit flow:
+	- When user submits changes to such a transaction:
+		- Show a confirmation dialog: explain the risk of editing Posted items in soft-closed periods.
+		- If user confirms, include `allowSoftClosedOverride: true` in the PATCH payload.
+		- If user cancels, abort the submit.
+- API enforcement:
+	- In PATCH `/api/orgs/[orgSlug]/transactions/[transactionId]`:
+		- Load org settings and the existing transaction.
+		- If transaction is `POSTED` and `isInSoftClosedPeriod` returns true:
+			- If `allowSoftClosedOverride` is not true, reject with a 400 error and a clear message.
+			- Otherwise, proceed with the update.
+	- For v1, allow all fields to change after override, while documenting that this may affect reported figures.
 
----
+## 11. Soft-Closed Logic for Bulk Status Changes
 
-## Phase 3 – UI & Form Behavior ⚠️ PARTIALLY COMPLETE
+Goal: Apply soft-closed period rules to bulk status changes with a single confirmation step.
 
-- **3.1 Update `TransactionForm` (`components/features/transactions/transaction-form.tsx`)** ✅
-  - Types:
-    - Extend `TransactionData` interface with:
-      - `clientName?: string;`
-      - (Optionally) `clientId?: string;` if you want to pass it down.
-  - Component state:
-    - Add:
-      - `const [clientName, setClientName] = React.useState<string>(initialData?.clientName || "");`
-      - `const [clientId, setClientId] = React.useState<string | null>(null);`
-    - Keep separate `vendorName` / `vendorId`.
-  - Type change behavior:
-    - In `onValueChange` of `RadioGroup`:
-      - When switching from `INCOME` → `EXPENSE`:
-        - Optionally clear `clientName` and `clientId`.
-      - When switching from `EXPENSE` → `INCOME`:
-        - Optionally clear `vendorName` and `vendorId`.
-    - If you enforce 9/b strictly on the backend, consider:
-      - Disabling the type toggle for existing transactions (edit mode) if a client/vendor is set.
-      - Or warn the user they must delete & recreate to change type.
-  - Relationship input (dynamic, per type):
-    - When `type === "INCOME"`:
-      - Render a combobox labelled "Client (optional)" or required depending on your preference.
-      - Behavior:
-        - `CommandInput` bound to `clientName` and calling `searchClients(query)` that hits `/api/orgs/${orgSlug}/clients?query=...`.
-        - Selecting a result sets `clientName` + `clientId`.
-        - If pressing Enter with no suggestions:
-          - Treat as "create" new client implicitly; `clientName` goes to backend for lookup/create.
-    - When `type === "EXPENSE"`:
-      - Keep the existing vendor combobox behavior with `/vendors` endpoint and `vendorName`/`vendorId`.
-  - Submit payload:
-    - In `handleSubmit`, build the body as:
-      - For `INCOME`:
-        - `clientName: clientName || null`, `clientId: clientId || null`.
-        - `vendorName: null`, `vendorId: null` (or omit).
-      - For `EXPENSE`:
-        - `vendorName: vendorName || null`, `vendorId: vendorId || null`.
-        - `clientName: null`, `clientId: null`.
-    - Everything else stays as is.
+- Client-side behavior:
+	- When user triggers bulk “Change status”, determine (from available data and org settings) whether any selected transactions are `POSTED` and in a soft-closed period.
+	- If at least one is:
+		- Show a bulk confirmation dialog summarizing how many such transactions are affected.
+		- If user agrees, call the bulk API with `allowSoftClosedOverride: true`.
+		- If user cancels, abort the request.
+- Server enforcement:
+	- In the bulk API, for each transaction:
+		- Use `isInSoftClosedPeriod` to determine if the transaction is in a soft-closed period and `status === "POSTED"`.
+		- If so, require `allowSoftClosedOverride` to be true or mark that transaction as a failure.
+	- Return partial success details so the UI can report exactly how many updates succeeded vs. failed.
 
-- **3.2 `NewTransactionPage` (`app/o/[orgSlug]/transactions/new/page.tsx`)** ✅
-  - No structural changes needed beyond:
-    - Passing through unchanged props; `TransactionForm` will handle client vs vendor field.
-    - Updating copy text if desired: "Create a new income or expense transaction with a client or vendor."
-  - **Implementation**: No changes required; TransactionForm handles everything.
+## 12. Consistent Soft Delete & Trash Behavior
 
-- **3.3 `EditTransactionPage` (`app/o/[orgSlug]/transactions/[id]/page.tsx`)** ✅
-  - When loading a transaction:
-    - Include `clientName` in the shape passed to `TransactionForm`:
-      - For income: `clientName: transactionData.transaction.clientName`.
-      - For expenses: `vendorName` as currently.
-    - Optionally pass `clientId` if you include it in the GET response.
-  - If implementing strict rule 9/b:
-    - Disable the type radio group when editing an existing transaction.
-    - Show a helper text: "To change type, delete and recreate the transaction."
-  - **Bug Fix Applied**: Added `clientName` to transaction state and populated from API response.
+Goal: Ensure all deletion flows use soft delete by default and that Trash is the only place where hard delete occurs.
 
-- **3.4 `TransactionsPage` (`app/o/[orgSlug]/transactions/page.tsx`)** ❌ NOT IMPLEMENTED
-  - Extend `Transaction` interface:
-    - Add optional `client?: { id: string; name: string } | null;`
-    - Keep `vendor` as is.
-  - Display:
-    - In the secondary text (where you show date • category • account):
-      - Optionally append:
-        - For `INCOME`: `• clientName or client?.name`.
-        - For `EXPENSE`: `• vendorName or vendor?.name`.
-  - Filters (option 6/b):
-    - Add two new filter controls:
-      - "Client" select/combobox (for income):
-        - Fetch clients via `/clients` or from a small cached list.
-        - Store selected `clientId` in state.
-      - "Vendor" select/combobox (for expenses).
-    - Query string:
-      - Append `clientId` and/or `vendorId` to `URLSearchParams` when loading.
-    - Backend:
-      - Use new `clientId`/`vendorId` filters in transactions GET.
+- Delete semantics:
+	- Confirm existing `DELETE /transactions/[transactionId]` sets `deletedAt = new Date()`.
+	- Ensure bulk delete uses the same soft-delete logic.
+	- Ensure permanent delete endpoints are used only from Trash and remove the record entirely.
+- List and reporting filters:
+	- Verify all normal transaction lists and reporting queries exclude `deletedAt != null` transactions.
+	- Update any queries that still include soft-deleted rows inadvertently.
+- Activity log integration (if present):
+	- For single delete, bulk delete, restore, and permanent delete, add or extend activity log entries with type, user, and timestamp.
 
----
+## 13. Testing and Validation
 
-## Phase 4 – Client & Vendor Management Screens (Option 5/b) ❌ NOT STARTED
+Goal: Validate filters, bulk actions, Trash flows, and soft-closed behavior across API and UI.
 
-- **4.1 Clients screen** ❌
-  - Add new page, e.g. `app/o/[orgSlug]/clients/page.tsx` (or under settings if you prefer).
-  - Features:
-    - List all clients for org, with pagination if needed.
-    - Columns: name, email, phone, status (active/inactive), created date.
-    - Search box hitting `/clients?query=...`.
-    - Toggle `active` via PATCH.
-    - Optional merge UI if/when you implement `mergedInto` logic.
-  - Navigation:
-    - Add a `Clients` item in your sidebar/menu at roughly the same level as `Vendors` (or wherever vendors live).
+- API tests (or manual verification if tests are not yet in place):
+	- Verify combinations of filters (category multi-select, vendor/client, amount range, currency) return expected transactions.
+	- Test bulk category and status changes with normal and soft-closed scenarios, including override flag handling.
+	- Test soft delete, Trash listing, restore, and permanent delete end-to-end.
+- UI testing scenarios:
+	- Verify advanced filters correctly update the list and Reset clears them.
+	- Confirm selection toolbar appears and disappears as expected; header checkbox selects all visible rows.
+	- Validate bulk actions (category, status, delete, export) perform correct API calls and show appropriate toasts.
+	- Confirm soft-closed warning banners and confirmation dialogs appear only when required and block edits when overridden is not confirmed.
+	- Confirm Trash view behavior for restore and permanent delete and that restored items reappear in the normal transactions list.
 
-- **4.2 Review/align Vendors screen** ❌
-  - Ensure vendor management page (if exists):
-    - Mirrors the clients UI in layout and capabilities.
-    - Clarifies that vendors are for expenses.
-
----
-
-## Phase 5 – Reporting & Index Preparation (Option 8/a) ⚠️ PARTIALLY COMPLETE
-
-- **5.1 DB indexes for reporting** ✅
-  - Confirm indexes on:
-    - `Transaction(organizationId, clientId, status, date)`
-    - `Transaction(organizationId, vendorId, status, date)`
-  - These support:
-    - "Income by Client" reports.
-    - "Expenses by Vendor" reports.
-  - **Implementation**: Indexes already created in Prisma schema during Phase 1.
-
-- **5.2 Reporting routes (future)** ❌
-  - In a future iteration, add APIs like:
-    - `GET /api/orgs/[orgSlug]/reports/income-by-client`
-    - `GET /api/orgs/[orgSlug]/reports/expenses-by-vendor`
-  - Each groups by `clientId` or `vendorId` and sums `amountBase` over a date range.
-
----
-
-## Phase 6 – Validation, Testing & Rollout ⚠️ PARTIALLY COMPLETE
-
-- **6.1 Validation rules summary** ✅
-  - Server (strict, per 3/a & 9/b):
-    - `INCOME`:
-      - Accept and handle `clientId`/`clientName`.
-      - Reject `vendorId`/`vendorName`.
-      - Optionally disallow changing `type` once client/vendor set.
-    - `EXPENSE`:
-      - Accept and handle `vendorId`/`vendorName`.
-      - Reject `clientId`/`clientName`.
-    - Category type must match transaction type; account must belong to org.
-  - UI:
-    - Only show the appropriate field (client or vendor) based on `type`.
-    - Disable type changes on edit if backend disallows.
-
-- **6.2 Testing scenarios** ❌
-  - Unit/integration tests:
-    - Create income with new `clientName`:
-      - Client auto‑created; transaction links to client.
-    - Create expense with new `vendorName`: existing behavior unchanged.
-    - Update income to change client:
-      - New client auto‑created or existing reused.
-    - Attempt to send vendor on income or client on expense:
-      - Expect 400 error.
-    - Backfilled income transactions:
-      - Confirm they have `clientId`/`clientName` correctly set and still have legacy vendor fields populated.
-  - Manual QA:
-    - Create & edit income/expense transactions, verifying:
-      - Correct field appears (client vs vendor).
-      - Lists and filters reflect chosen contact.
-      - Clients/Vendors screens show created records.
-  - **Implementation Note**: Automated tests not written; manual testing recommended. Production build verified successfully with no type errors.

@@ -28,6 +28,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { AlertCircle, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -66,6 +74,7 @@ interface Client {
 
 interface OrgSettings {
   baseCurrency: string;
+  softClosedBefore?: string | null;
 }
 
 interface TransactionData {
@@ -90,6 +99,7 @@ interface TransactionFormProps {
   accounts: Account[];
   initialData?: TransactionData;
   transactionId?: string;
+  softClosedBefore?: string | null;
 }
 
 const CURRENCIES = [
@@ -108,9 +118,12 @@ export function TransactionForm({
   accounts,
   initialData,
   transactionId,
+  softClosedBefore,
 }: TransactionFormProps): React.JSX.Element {
   const router = useRouter();
   const [isLoading, setIsLoading] = React.useState(false);
+  const [showSoftClosedConfirm, setShowSoftClosedConfirm] = React.useState(false);
+  const formRef = React.useRef<HTMLFormElement>(null);
 
   // Form state
   const [type, setType] = React.useState<"INCOME" | "EXPENSE">(
@@ -286,6 +299,13 @@ export function TransactionForm({
   const showDateWarning = status === "DRAFT" && isFutureDate;
   const showDateError = status === "POSTED" && isFutureDate;
 
+  // Check if transaction is in soft-closed period (for edits only)
+  const isInSoftClosedPeriod =
+    transactionId &&
+    initialData?.status === "POSTED" &&
+    softClosedBefore &&
+    new Date(initialData.date) < new Date(softClosedBefore);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
@@ -335,6 +355,12 @@ export function TransactionForm({
       return;
     }
 
+    // Check if editing a POSTED transaction in soft-closed period
+    if (isInSoftClosedPeriod && !showSoftClosedConfirm) {
+      setShowSoftClosedConfirm(true);
+      return;
+    }
+
     try {
       setIsLoading(true);
 
@@ -362,6 +388,8 @@ export function TransactionForm({
             clientName: type === "INCOME" ? clientName || null : null,
             clientId: type === "INCOME" ? clientId || null : null,
             notes: notes || null,
+            // Include soft-closed override if confirming
+            ...(isInSoftClosedPeriod && { allowSoftClosedOverride: true }),
           }),
         }
       );
@@ -385,9 +413,22 @@ export function TransactionForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Type */}
-      <div className="space-y-3">
+    <>
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
+        {/* Soft-Closed Period Warning */}
+        {isInSoftClosedPeriod && (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              This transaction is POSTED in a soft-closed period. Editing it
+              may affect previously reported figures. You will be asked to
+              confirm before saving changes.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Type */}
+        <div className="space-y-3">
         <Label>
           Type <span className="text-destructive">*</span>
         </Label>
@@ -809,5 +850,41 @@ export function TransactionForm({
         </Button>
       </div>
     </form>
+
+    {/* Soft-Closed Period Confirmation Dialog */}
+    <Dialog open={showSoftClosedConfirm} onOpenChange={setShowSoftClosedConfirm}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit Posted Transaction in Soft-Closed Period</DialogTitle>
+          <DialogDescription>
+            This transaction is POSTED in a soft-closed period. Changing it may
+            alter previously reported figures.
+            <br />
+            <br />
+            Are you sure you want to proceed?
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => setShowSoftClosedConfirm(false)}
+            disabled={isLoading}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              setShowSoftClosedConfirm(false);
+              // Trigger form submission using the form ref
+              formRef.current?.requestSubmit();
+            }}
+            disabled={isLoading}
+          >
+            Confirm & Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </>
   );
 }

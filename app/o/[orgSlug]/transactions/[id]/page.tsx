@@ -27,7 +27,7 @@ export default function EditTransactionPage(): React.JSX.Element {
   const orgSlug = params.orgSlug as string;
   const transactionId = params.id as string;
   const [isLoading, setIsLoading] = React.useState(true);
-  const [settings, setSettings] = React.useState<{ baseCurrency: string } | null>(null);
+  const [settings, setSettings] = React.useState<{ baseCurrency: string; softClosedBefore: string | null } | null>(null);
   const [categories, setCategories] = React.useState<Category[]>([]);
   const [accounts, setAccounts] = React.useState<Array<{ id: string; name: string; isDefault: boolean }>>([]);
   const [transaction, setTransaction] = React.useState<{
@@ -204,6 +204,7 @@ export default function EditTransactionPage(): React.JSX.Element {
             accounts={accounts}
             initialData={transaction}
             transactionId={transactionId}
+            softClosedBefore={settings.softClosedBefore}
           />
         </CardContent>
       </Card>

@@ -375,6 +375,7 @@ model OrganizationSettings {
   thousandsSeparator     ThousandsSeparator @default(COMMA)
   isOnboardingComplete   Boolean            @default(false)
   softDeletedAt          DateTime?
+  softClosedBefore       DateTime?          // Transactions before this date are in soft-closed period
   isTaxRegistered        Boolean?
   defaultTaxRate         Decimal?           @db.Decimal(5, 2)
   createdAt              DateTime           @default(now())

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
 import { requireMembership, getOrgBySlug } from "@/lib/org-helpers";
+import { isInSoftClosedPeriod } from "@/lib/periods";
 
 export const runtime = "nodejs";
 
@@ -157,6 +158,7 @@ export async function PATCH(
       clientId: z.string().nullable().optional(),
       clientName: z.string().nullable().optional(),
       notes: z.string().nullable().optional(),
+      allowSoftClosedOverride: z.boolean().optional(),
     });
 
     const body = await request.json();
@@ -170,6 +172,29 @@ export async function PATCH(
     }
 
     const data = validation.data;
+
+    // Load org settings for soft-closed period checking
+    const orgSettings = await db.organizationSettings.findUnique({
+      where: { organizationId: org.id },
+    });
+
+    const softClosedBefore = orgSettings?.softClosedBefore || null;
+
+    // Check soft-closed period for POSTED transactions
+    if (
+      existing.status === "POSTED" &&
+      isInSoftClosedPeriod(existing.date, softClosedBefore)
+    ) {
+      if (!data.allowSoftClosedOverride) {
+        return NextResponse.json(
+          {
+            error:
+              "This Posted transaction is in a soft-closed period. Changes may affect previously reported figures. Please confirm to proceed.",
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     // Determine final transaction type
     const finalType = data.type ?? existing.type;

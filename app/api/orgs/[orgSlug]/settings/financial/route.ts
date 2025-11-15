@@ -130,6 +130,7 @@ export async function PATCH(
         dateFormat: settings.dateFormat,
         decimalSeparator: settings.decimalSeparator,
         thousandsSeparator: settings.thousandsSeparator,
+        softClosedBefore: settings.softClosedBefore ? settings.softClosedBefore.toISOString() : null,
       },
     });
   } catch (error) {
@@ -192,6 +193,7 @@ export async function GET(
         dateFormat: settings.dateFormat,
         decimalSeparator: settings.decimalSeparator,
         thousandsSeparator: settings.thousandsSeparator,
+        softClosedBefore: settings.softClosedBefore ? settings.softClosedBefore.toISOString() : null,
       },
     });
   } catch (error) {

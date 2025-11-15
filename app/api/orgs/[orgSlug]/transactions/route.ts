@@ -48,6 +48,10 @@ export async function GET(
     const dateTo = searchParams.get("dateTo");
     const clientId = searchParams.get("clientId");
     const vendorId = searchParams.get("vendorId");
+    const categoryIds = searchParams.get("categoryIds");
+    const amountMin = searchParams.get("amountMin");
+    const amountMax = searchParams.get("amountMax");
+    const currency = searchParams.get("currency");
 
     // Build where clause
     const where: Record<string, unknown> = {
@@ -79,6 +83,36 @@ export async function GET(
 
     if (vendorId) {
       where.vendorId = vendorId;
+    }
+
+    // Category multi-select filter (comma-separated IDs)
+    if (categoryIds) {
+      const categoryIdArray = categoryIds.split(",").filter((id) => id.trim());
+      if (categoryIdArray.length > 0) {
+        where.categoryId = { in: categoryIdArray };
+      }
+    }
+
+    // Amount range filter (base currency)
+    if (amountMin || amountMax) {
+      where.amountBase = {};
+      if (amountMin) {
+        const min = parseFloat(amountMin);
+        if (!isNaN(min)) {
+          (where.amountBase as Record<string, unknown>).gte = min;
+        }
+      }
+      if (amountMax) {
+        const max = parseFloat(amountMax);
+        if (!isNaN(max)) {
+          (where.amountBase as Record<string, unknown>).lte = max;
+        }
+      }
+    }
+
+    // Currency filter
+    if (currency && currency.length === 3) {
+      where.currencyOriginal = currency.toUpperCase();
     }
 
     // Get transactions

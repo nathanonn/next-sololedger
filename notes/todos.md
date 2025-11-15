@@ -34,11 +34,11 @@ At the moment, vendors are used for income and expense transactions. I want to s
 
 ## Transactions – Filters, Bulk, Trash
 
-- [ ] Advanced filters: category (multi-select), vendor, amount range, currency
-- [ ] Bulk actions: change category, change status, delete, export selected CSV
-- [ ] Multi-select in list with selection toolbar
-- [ ] Trash view for soft-deleted transactions (restore / permanent delete)
-- [ ] Soft-closed period warning/confirm on editing POSTED in closed period
+- [x] Advanced filters: category (multi-select), vendor, amount range, currency
+- [x] Bulk actions: change category, change status, delete, export selected CSV
+- [x] Multi-select in list with selection toolbar
+- [x] Trash view for soft-deleted transactions (restore / permanent delete)
+- [x] Soft-closed period warning/confirm on editing POSTED in closed period
 
 ## Multi‑Currency & Exchange Rates (FX)
 

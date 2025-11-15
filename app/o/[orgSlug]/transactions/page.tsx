@@ -124,6 +124,10 @@ export default function TransactionsPage(): React.JSX.Element {
   const [bulkStatus, setBulkStatus] = React.useState<string>("POSTED");
   const [bulkActionLoading, setBulkActionLoading] = React.useState(false);
 
+  // Single transaction delete dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
+  const [transactionToDelete, setTransactionToDelete] = React.useState<string | null>(null);
+
   // Load organization, settings, and lookup data
   React.useEffect(() => {
     async function loadOrgAndData() {
@@ -250,14 +254,12 @@ export default function TransactionsPage(): React.JSX.Element {
     }
   }
 
-  async function handleDelete(transactionId: string) {
-    if (!confirm("Are you sure you want to delete this transaction?")) {
-      return;
-    }
+  async function handleDelete() {
+    if (!transactionToDelete) return;
 
     try {
       const response = await fetch(
-        `/api/orgs/${orgSlug}/transactions/${transactionId}`,
+        `/api/orgs/${orgSlug}/transactions/${transactionToDelete}`,
         {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
@@ -271,6 +273,8 @@ export default function TransactionsPage(): React.JSX.Element {
       }
 
       toast.success("Transaction deleted");
+      setDeleteDialogOpen(false);
+      setTransactionToDelete(null);
       await loadTransactions();
     } catch {
       toast.error("Network error. Please try again.");
@@ -824,7 +828,10 @@ export default function TransactionsPage(): React.JSX.Element {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDelete(transaction.id)}
+                        onClick={() => {
+                          setTransactionToDelete(transaction.id);
+                          setDeleteDialogOpen(true);
+                        }}
                       >
                         Delete
                       </Button>
@@ -948,6 +955,33 @@ export default function TransactionsPage(): React.JSX.Element {
               disabled={bulkActionLoading}
             >
               {bulkActionLoading ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Single Transaction Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Transaction</DialogTitle>
+            <DialogDescription>
+              This transaction will be moved to Trash. You can restore it later
+              from the Trash.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteDialogOpen(false);
+                setTransactionToDelete(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDelete}>
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>

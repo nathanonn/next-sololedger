@@ -194,15 +194,16 @@ export async function PATCH(
     }
 
     // Enforce that INCOME can only have clients, EXPENSE can only have vendors
+    // Only reject if trying to set a truthy (non-null) value for the wrong type
     if (finalType === "INCOME") {
-      if (data.vendorId !== undefined || data.vendorName !== undefined) {
+      if (data.vendorId || data.vendorName) {
         return NextResponse.json(
           { error: "Income transactions cannot have vendors. Use clients instead." },
           { status: 400 }
         );
       }
     } else if (finalType === "EXPENSE") {
-      if (data.clientId !== undefined || data.clientName !== undefined) {
+      if (data.clientId || data.clientName) {
         return NextResponse.json(
           { error: "Expense transactions cannot have clients. Use vendors instead." },
           { status: 400 }

@@ -41,6 +41,7 @@ export default function EditTransactionPage(): React.JSX.Element {
     categoryId: string;
     accountId: string;
     vendorName?: string;
+    clientName?: string;
     notes?: string;
   } | null>(null);
 
@@ -82,6 +83,7 @@ export default function EditTransactionPage(): React.JSX.Element {
             categoryId: transactionData.transaction.categoryId,
             accountId: transactionData.transaction.accountId,
             vendorName: transactionData.transaction.vendorName || undefined,
+            clientName: transactionData.transaction.clientName || undefined,
             notes: transactionData.transaction.notes || undefined,
           });
         } else {

@@ -57,6 +57,13 @@ interface Vendor {
   phone?: string | null;
 }
 
+interface Client {
+  id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+}
+
 interface OrgSettings {
   baseCurrency: string;
 }
@@ -72,6 +79,7 @@ interface TransactionData {
   categoryId: string;
   accountId: string;
   vendorName?: string;
+  clientName?: string;
   notes?: string;
 }
 
@@ -139,6 +147,10 @@ export function TransactionForm({
     initialData?.vendorName || ""
   );
   const [vendorId, setVendorId] = React.useState<string | null>(null);
+  const [clientName, setClientName] = React.useState<string>(
+    initialData?.clientName || ""
+  );
+  const [clientId, setClientId] = React.useState<string | null>(null);
   const [notes, setNotes] = React.useState<string>(initialData?.notes || "");
 
   // Vendor autocomplete state
@@ -148,6 +160,16 @@ export function TransactionForm({
   const [isVendorSearching, setIsVendorSearching] = React.useState(false);
   const [vendorPopoverOpen, setVendorPopoverOpen] = React.useState(false);
   const vendorSearchTimeoutRef = React.useRef<NodeJS.Timeout | undefined>(
+    undefined
+  );
+
+  // Client autocomplete state
+  const [clientSuggestions, setClientSuggestions] = React.useState<Client[]>(
+    []
+  );
+  const [isClientSearching, setIsClientSearching] = React.useState(false);
+  const [clientPopoverOpen, setClientPopoverOpen] = React.useState(false);
+  const clientSearchTimeoutRef = React.useRef<NodeJS.Timeout | undefined>(
     undefined
   );
 
@@ -207,11 +229,51 @@ export function TransactionForm({
     [orgSlug]
   );
 
+  // Debounced client search function
+  const searchClients = React.useCallback(
+    (query: string) => {
+      if (clientSearchTimeoutRef.current) {
+        clearTimeout(clientSearchTimeoutRef.current);
+      }
+
+      if (!query.trim()) {
+        setClientSuggestions([]);
+        setIsClientSearching(false);
+        return;
+      }
+
+      setIsClientSearching(true);
+
+      clientSearchTimeoutRef.current = setTimeout(async () => {
+        try {
+          const response = await fetch(
+            `/api/orgs/${orgSlug}/clients?query=${encodeURIComponent(query)}`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            setClientSuggestions(data.clients || []);
+          } else {
+            setClientSuggestions([]);
+          }
+        } catch (error) {
+          console.error("Client search error:", error);
+          setClientSuggestions([]);
+        } finally {
+          setIsClientSearching(false);
+        }
+      }, 300); // 300ms debounce
+    },
+    [orgSlug]
+  );
+
   // Cleanup on unmount
   React.useEffect(() => {
     return () => {
       if (vendorSearchTimeoutRef.current) {
         clearTimeout(vendorSearchTimeoutRef.current);
+      }
+      if (clientSearchTimeoutRef.current) {
+        clearTimeout(clientSearchTimeoutRef.current);
       }
     };
   }, []);
@@ -293,8 +355,12 @@ export function TransactionForm({
             description,
             categoryId,
             accountId,
-            vendorName: vendorName || null,
-            vendorId: vendorId || null,
+            // Send vendor fields only for EXPENSE
+            vendorName: type === "EXPENSE" ? vendorName || null : null,
+            vendorId: type === "EXPENSE" ? vendorId || null : null,
+            // Send client fields only for INCOME
+            clientName: type === "INCOME" ? clientName || null : null,
+            clientId: type === "INCOME" ? clientId || null : null,
             notes: notes || null,
           }),
         }
@@ -544,88 +610,175 @@ export function TransactionForm({
         </Select>
       </div>
 
-      {/* Vendor Name with Autocomplete */}
-      <div className="space-y-2">
-        <Label htmlFor="vendorName">Vendor Name (optional)</Label>
-        <Popover open={vendorPopoverOpen} onOpenChange={setVendorPopoverOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              role="combobox"
-              aria-expanded={vendorPopoverOpen}
-              className="w-full justify-between font-normal"
-              disabled={isLoading}
-            >
-              {vendorName || "Select or type vendor name..."}
-              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-full p-0" align="start">
-            <Command shouldFilter={false}>
-              <CommandInput
-                placeholder="Search vendors..."
-                value={vendorName}
-                onValueChange={(value) => {
-                  setVendorName(value);
-                  searchVendors(value);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && vendorSuggestions.length === 0) {
-                    e.preventDefault();
-                    setVendorPopoverOpen(false);
-                  }
-                }}
-              />
-              <CommandList>
-                {isVendorSearching && <CommandEmpty>Searching...</CommandEmpty>}
-                {!isVendorSearching &&
-                  vendorName &&
-                  vendorSuggestions.length === 0 && (
-                    <CommandEmpty className="text-muted-foreground p-4 text-sm">
-                      No vendors found.
-                      <br />
-                      Press Enter to create &quot;{vendorName}&quot;
-                    </CommandEmpty>
+      {/* Client Name with Autocomplete (for INCOME) */}
+      {type === "INCOME" && (
+        <div className="space-y-2">
+          <Label htmlFor="clientName">Client Name (optional)</Label>
+          <Popover open={clientPopoverOpen} onOpenChange={setClientPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={clientPopoverOpen}
+                className="w-full justify-between font-normal"
+                disabled={isLoading}
+              >
+                {clientName || "Select or type client name..."}
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-full p-0" align="start">
+              <Command shouldFilter={false}>
+                <CommandInput
+                  placeholder="Search clients..."
+                  value={clientName}
+                  onValueChange={(value) => {
+                    setClientName(value);
+                    searchClients(value);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && clientSuggestions.length === 0) {
+                      e.preventDefault();
+                      setClientPopoverOpen(false);
+                    }
+                  }}
+                />
+                <CommandList>
+                  {isClientSearching && <CommandEmpty>Searching...</CommandEmpty>}
+                  {!isClientSearching &&
+                    clientName &&
+                    clientSuggestions.length === 0 && (
+                      <CommandEmpty className="text-muted-foreground p-4 text-sm">
+                        No clients found.
+                        <br />
+                        Press Enter to create &quot;{clientName}&quot;
+                      </CommandEmpty>
+                    )}
+                  {clientSuggestions.length > 0 && (
+                    <CommandGroup>
+                      {clientSuggestions.map((client) => (
+                        <CommandItem
+                          key={client.id}
+                          value={client.id}
+                          onSelect={() => {
+                            setClientName(client.name);
+                            setClientId(client.id);
+                            setClientPopoverOpen(false);
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              clientId === client.id ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          <div className="flex flex-col">
+                            <span>{client.name}</span>
+                            {(client.email || client.phone) && (
+                              <span className="text-xs text-muted-foreground">
+                                {client.email || client.phone}
+                              </span>
+                            )}
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
                   )}
-                {vendorSuggestions.length > 0 && (
-                  <CommandGroup>
-                    {vendorSuggestions.map((vendor) => (
-                      <CommandItem
-                        key={vendor.id}
-                        value={vendor.id}
-                        onSelect={() => {
-                          setVendorName(vendor.name);
-                          setVendorId(vendor.id);
-                          setVendorPopoverOpen(false);
-                        }}
-                      >
-                        <Check
-                          className={cn(
-                            "mr-2 h-4 w-4",
-                            vendorId === vendor.id ? "opacity-100" : "opacity-0"
-                          )}
-                        />
-                        <div className="flex flex-col">
-                          <span>{vendor.name}</span>
-                          {(vendor.email || vendor.phone) && (
-                            <span className="text-xs text-muted-foreground">
-                              {vendor.email || vendor.phone}
-                            </span>
-                          )}
-                        </div>
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                )}
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-        <p className="text-xs text-muted-foreground">
-          Select an existing vendor or type a new name to create one
-          automatically
-        </p>
-      </div>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+          <p className="text-xs text-muted-foreground">
+            Select an existing client or type a new name to create one
+            automatically
+          </p>
+        </div>
+      )}
+
+      {/* Vendor Name with Autocomplete (for EXPENSE) */}
+      {type === "EXPENSE" && (
+        <div className="space-y-2">
+          <Label htmlFor="vendorName">Vendor Name (optional)</Label>
+          <Popover open={vendorPopoverOpen} onOpenChange={setVendorPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={vendorPopoverOpen}
+                className="w-full justify-between font-normal"
+                disabled={isLoading}
+              >
+                {vendorName || "Select or type vendor name..."}
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-full p-0" align="start">
+              <Command shouldFilter={false}>
+                <CommandInput
+                  placeholder="Search vendors..."
+                  value={vendorName}
+                  onValueChange={(value) => {
+                    setVendorName(value);
+                    searchVendors(value);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && vendorSuggestions.length === 0) {
+                      e.preventDefault();
+                      setVendorPopoverOpen(false);
+                    }
+                  }}
+                />
+                <CommandList>
+                  {isVendorSearching && <CommandEmpty>Searching...</CommandEmpty>}
+                  {!isVendorSearching &&
+                    vendorName &&
+                    vendorSuggestions.length === 0 && (
+                      <CommandEmpty className="text-muted-foreground p-4 text-sm">
+                        No vendors found.
+                        <br />
+                        Press Enter to create &quot;{vendorName}&quot;
+                      </CommandEmpty>
+                    )}
+                  {vendorSuggestions.length > 0 && (
+                    <CommandGroup>
+                      {vendorSuggestions.map((vendor) => (
+                        <CommandItem
+                          key={vendor.id}
+                          value={vendor.id}
+                          onSelect={() => {
+                            setVendorName(vendor.name);
+                            setVendorId(vendor.id);
+                            setVendorPopoverOpen(false);
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              vendorId === vendor.id ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          <div className="flex flex-col">
+                            <span>{vendor.name}</span>
+                            {(vendor.email || vendor.phone) && (
+                              <span className="text-xs text-muted-foreground">
+                                {vendor.email || vendor.phone}
+                              </span>
+                            )}
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  )}
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+          <p className="text-xs text-muted-foreground">
+            Select an existing vendor or type a new name to create one
+            automatically
+          </p>
+        </div>
+      )}
 
       {/* Notes */}
       <div className="space-y-2">

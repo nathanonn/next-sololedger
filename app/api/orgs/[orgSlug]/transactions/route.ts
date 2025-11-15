@@ -46,6 +46,8 @@ export async function GET(
     const status = searchParams.get("status");
     const dateFrom = searchParams.get("dateFrom");
     const dateTo = searchParams.get("dateTo");
+    const clientId = searchParams.get("clientId");
+    const vendorId = searchParams.get("vendorId");
 
     // Build where clause
     const where: Record<string, unknown> = {
@@ -71,6 +73,14 @@ export async function GET(
       }
     }
 
+    if (clientId) {
+      where.clientId = clientId;
+    }
+
+    if (vendorId) {
+      where.vendorId = vendorId;
+    }
+
     // Get transactions
     const transactions = await db.transaction.findMany({
       where,
@@ -78,6 +88,7 @@ export async function GET(
         category: true,
         account: true,
         vendor: true,
+        client: true,
       },
       orderBy: { date: "desc" },
     });
@@ -149,6 +160,8 @@ export async function POST(
       accountId: z.string().min(1, "Account is required"),
       vendorId: z.string().nullable().optional(),
       vendorName: z.string().nullable().optional(),
+      clientId: z.string().nullable().optional(),
+      clientName: z.string().nullable().optional(),
       notes: z.string().nullable().optional(),
     });
 
@@ -163,6 +176,26 @@ export async function POST(
     }
 
     const data = validation.data;
+
+    // Enforce strict per-type relationship rules (3/a)
+    if (data.type === "INCOME") {
+      // Income transactions can only have client, not vendor
+      if (data.vendorId || data.vendorName) {
+        return NextResponse.json(
+          { error: "Income transactions cannot have vendors. Use clients instead." },
+          { status: 400 }
+        );
+      }
+    } else if (data.type === "EXPENSE") {
+      // Expense transactions can only have vendor, not client
+      if (data.clientId || data.clientName) {
+        return NextResponse.json(
+          { error: "Expense transactions cannot have clients. Use vendors instead." },
+          { status: 400 }
+        );
+      }
+    }
+
     const transactionDate = new Date(data.date);
     const now = new Date();
 
@@ -209,47 +242,103 @@ export async function POST(
       );
     }
 
-    // Handle vendor: use provided vendorId or auto-create from vendorName
-    let finalVendorId = data.vendorId;
+    // Handle client (for INCOME transactions)
+    let finalClientId = data.clientId;
+    let finalClientName = data.clientName;
 
-    if (!finalVendorId && data.vendorName && data.vendorName.trim()) {
-      // If vendorId not provided but vendorName is, look up or create vendor
-      const vendorName = data.vendorName.trim();
+    if (data.type === "INCOME") {
+      if (!finalClientId && data.clientName && data.clientName.trim()) {
+        // If clientId not provided but clientName is, look up or create client
+        const clientName = data.clientName.trim();
 
-      // Look for existing vendor (case-insensitive via nameLower)
-      let vendor = await db.vendor.findFirst({
-        where: {
-          organizationId: org.id,
-          nameLower: vendorName.toLowerCase(),
-        },
-      });
-
-      // Create vendor if it doesn't exist
-      if (!vendor) {
-        vendor = await db.vendor.create({
-          data: {
+        // Look for existing client (case-insensitive via nameLower)
+        let client = await db.client.findFirst({
+          where: {
             organizationId: org.id,
-            name: vendorName,
-            nameLower: vendorName.toLowerCase(),
-            active: true,
+            nameLower: clientName.toLowerCase(),
           },
         });
+
+        // Create client if it doesn't exist
+        if (!client) {
+          client = await db.client.create({
+            data: {
+              organizationId: org.id,
+              name: clientName,
+              nameLower: clientName.toLowerCase(),
+              active: true,
+            },
+          });
+        }
+
+        finalClientId = client.id;
+        finalClientName = client.name;
       }
 
-      finalVendorId = vendor.id;
+      // Verify clientId if provided
+      if (finalClientId) {
+        const client = await db.client.findUnique({
+          where: { id: finalClientId },
+        });
+
+        if (!client || client.organizationId !== org.id) {
+          return NextResponse.json(
+            { error: "Client not found" },
+            { status: 400 }
+          );
+        }
+
+        finalClientName = client.name;
+      }
     }
 
-    // Verify vendorId if provided
-    if (finalVendorId) {
-      const vendor = await db.vendor.findUnique({
-        where: { id: finalVendorId },
-      });
+    // Handle vendor (for EXPENSE transactions)
+    let finalVendorId = data.vendorId;
+    let finalVendorName = data.vendorName;
 
-      if (!vendor || vendor.organizationId !== org.id) {
-        return NextResponse.json(
-          { error: "Vendor not found" },
-          { status: 400 }
-        );
+    if (data.type === "EXPENSE") {
+      if (!finalVendorId && data.vendorName && data.vendorName.trim()) {
+        // If vendorId not provided but vendorName is, look up or create vendor
+        const vendorName = data.vendorName.trim();
+
+        // Look for existing vendor (case-insensitive via nameLower)
+        let vendor = await db.vendor.findFirst({
+          where: {
+            organizationId: org.id,
+            nameLower: vendorName.toLowerCase(),
+          },
+        });
+
+        // Create vendor if it doesn't exist
+        if (!vendor) {
+          vendor = await db.vendor.create({
+            data: {
+              organizationId: org.id,
+              name: vendorName,
+              nameLower: vendorName.toLowerCase(),
+              active: true,
+            },
+          });
+        }
+
+        finalVendorId = vendor.id;
+        finalVendorName = vendor.name;
+      }
+
+      // Verify vendorId if provided
+      if (finalVendorId) {
+        const vendor = await db.vendor.findUnique({
+          where: { id: finalVendorId },
+        });
+
+        if (!vendor || vendor.organizationId !== org.id) {
+          return NextResponse.json(
+            { error: "Vendor not found" },
+            { status: 400 }
+          );
+        }
+
+        finalVendorName = vendor.name;
       }
     }
 
@@ -272,13 +361,16 @@ export async function POST(
         categoryId: data.categoryId,
         accountId: data.accountId,
         vendorId: finalVendorId || null,
-        vendorName: data.vendorName || null,
+        vendorName: finalVendorName || null,
+        clientId: finalClientId || null,
+        clientName: finalClientName || null,
         notes: data.notes || null,
       },
       include: {
         category: true,
         account: true,
         vendor: true,
+        client: true,
       },
     });
 

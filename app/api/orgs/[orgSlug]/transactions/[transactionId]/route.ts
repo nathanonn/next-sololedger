@@ -46,6 +46,7 @@ export async function GET(
         category: true,
         account: true,
         vendor: true,
+        client: true,
       },
     });
 
@@ -153,6 +154,8 @@ export async function PATCH(
       accountId: z.string().optional(),
       vendorId: z.string().nullable().optional(),
       vendorName: z.string().nullable().optional(),
+      clientId: z.string().nullable().optional(),
+      clientName: z.string().nullable().optional(),
       notes: z.string().nullable().optional(),
     });
 
@@ -167,6 +170,45 @@ export async function PATCH(
     }
 
     const data = validation.data;
+
+    // Determine final transaction type
+    const finalType = data.type ?? existing.type;
+
+    // Enforce strict per-type relationship rules (3/a & 9/b)
+    // Prevent changing type if client/vendor is already set
+    if (data.type && data.type !== existing.type) {
+      if (
+        existing.vendorId ||
+        existing.vendorName ||
+        existing.clientId ||
+        existing.clientName
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Cannot change transaction type once a client/vendor is set. Delete and recreate the transaction.",
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Enforce that INCOME can only have clients, EXPENSE can only have vendors
+    if (finalType === "INCOME") {
+      if (data.vendorId !== undefined || data.vendorName !== undefined) {
+        return NextResponse.json(
+          { error: "Income transactions cannot have vendors. Use clients instead." },
+          { status: 400 }
+        );
+      }
+    } else if (finalType === "EXPENSE") {
+      if (data.clientId !== undefined || data.clientName !== undefined) {
+        return NextResponse.json(
+          { error: "Expense transactions cannot have clients. Use vendors instead." },
+          { status: 400 }
+        );
+      }
+    }
 
     // Validate date rules if date or status is being changed
     const finalStatus = data.status ?? existing.status;
@@ -232,55 +274,125 @@ export async function PATCH(
       }
     }
 
-    // Handle vendor: use provided vendorId or auto-create from vendorName
-    let finalVendorId: string | null | undefined = undefined;
+    // Handle client (for INCOME transactions)
+    let finalClientId: string | null | undefined = undefined;
+    let finalClientName: string | null | undefined = undefined;
 
-    if (data.vendorId !== undefined) {
-      // VendorId explicitly provided (can be null to clear)
-      finalVendorId = data.vendorId;
+    if (finalType === "INCOME") {
+      if (data.clientId !== undefined) {
+        // ClientId explicitly provided (can be null to clear)
+        finalClientId = data.clientId;
 
-      // Verify vendorId if not null
-      if (finalVendorId) {
-        const vendor = await db.vendor.findUnique({
-          where: { id: finalVendorId },
-        });
+        // Verify clientId if not null
+        if (finalClientId) {
+          const client = await db.client.findUnique({
+            where: { id: finalClientId },
+          });
 
-        if (!vendor || vendor.organizationId !== org.id) {
-          return NextResponse.json(
-            { error: "Vendor not found" },
-            { status: 400 }
-          );
+          if (!client || client.organizationId !== org.id) {
+            return NextResponse.json(
+              { error: "Client not found" },
+              { status: 400 }
+            );
+          }
+
+          finalClientName = client.name;
+        } else {
+          finalClientName = null;
         }
-      }
-    } else if (data.vendorName !== undefined) {
-      // VendorName provided but not vendorId
-      if (data.vendorName && data.vendorName.trim()) {
-        const vendorName = data.vendorName.trim();
+      } else if (data.clientName !== undefined) {
+        // ClientName provided but not clientId
+        if (data.clientName && data.clientName.trim()) {
+          const clientName = data.clientName.trim();
 
-        // Look for existing vendor (case-insensitive via nameLower)
-        let vendor = await db.vendor.findFirst({
-          where: {
-            organizationId: org.id,
-            nameLower: vendorName.toLowerCase(),
-          },
-        });
-
-        // Create vendor if it doesn't exist
-        if (!vendor) {
-          vendor = await db.vendor.create({
-            data: {
+          // Look for existing client (case-insensitive via nameLower)
+          let client = await db.client.findFirst({
+            where: {
               organizationId: org.id,
-              name: vendorName,
-              nameLower: vendorName.toLowerCase(),
-              active: true,
+              nameLower: clientName.toLowerCase(),
             },
           });
-        }
 
-        finalVendorId = vendor.id;
-      } else {
-        // Empty vendorName provided - clear vendor
-        finalVendorId = null;
+          // Create client if it doesn't exist
+          if (!client) {
+            client = await db.client.create({
+              data: {
+                organizationId: org.id,
+                name: clientName,
+                nameLower: clientName.toLowerCase(),
+                active: true,
+              },
+            });
+          }
+
+          finalClientId = client.id;
+          finalClientName = client.name;
+        } else {
+          // Empty clientName provided - clear client
+          finalClientId = null;
+          finalClientName = null;
+        }
+      }
+    }
+
+    // Handle vendor (for EXPENSE transactions)
+    let finalVendorId: string | null | undefined = undefined;
+    let finalVendorName: string | null | undefined = undefined;
+
+    if (finalType === "EXPENSE") {
+      if (data.vendorId !== undefined) {
+        // VendorId explicitly provided (can be null to clear)
+        finalVendorId = data.vendorId;
+
+        // Verify vendorId if not null
+        if (finalVendorId) {
+          const vendor = await db.vendor.findUnique({
+            where: { id: finalVendorId },
+          });
+
+          if (!vendor || vendor.organizationId !== org.id) {
+            return NextResponse.json(
+              { error: "Vendor not found" },
+              { status: 400 }
+            );
+          }
+
+          finalVendorName = vendor.name;
+        } else {
+          finalVendorName = null;
+        }
+      } else if (data.vendorName !== undefined) {
+        // VendorName provided but not vendorId
+        if (data.vendorName && data.vendorName.trim()) {
+          const vendorName = data.vendorName.trim();
+
+          // Look for existing vendor (case-insensitive via nameLower)
+          let vendor = await db.vendor.findFirst({
+            where: {
+              organizationId: org.id,
+              nameLower: vendorName.toLowerCase(),
+            },
+          });
+
+          // Create vendor if it doesn't exist
+          if (!vendor) {
+            vendor = await db.vendor.create({
+              data: {
+                organizationId: org.id,
+                name: vendorName,
+                nameLower: vendorName.toLowerCase(),
+                active: true,
+              },
+            });
+          }
+
+          finalVendorId = vendor.id;
+          finalVendorName = vendor.name;
+        } else {
+          // Empty vendorName provided - clear vendor
+          finalVendorId = null;
+          finalVendorName = null;
+        }
       }
     }
 
@@ -320,9 +432,9 @@ export async function PATCH(
         }),
         ...(data.accountId !== undefined && { accountId: data.accountId }),
         ...(finalVendorId !== undefined && { vendorId: finalVendorId }),
-        ...(data.vendorName !== undefined && {
-          vendorName: data.vendorName,
-        }),
+        ...(finalVendorName !== undefined && { vendorName: finalVendorName }),
+        ...(finalClientId !== undefined && { clientId: finalClientId }),
+        ...(finalClientName !== undefined && { clientName: finalClientName }),
         ...(data.notes !== undefined && { notes: data.notes }),
         ...(amountBase !== undefined && { amountBase }),
       },
@@ -330,6 +442,7 @@ export async function PATCH(
         category: true,
         account: true,
         vendor: true,
+        client: true,
       },
     });
 

@@ -8,8 +8,8 @@ import { requireMembership, getOrgBySlug } from "@/lib/org-helpers";
 export const runtime = "nodejs";
 
 /**
- * GET /api/orgs/[orgSlug]/vendors
- * List vendors with optional search
+ * GET /api/orgs/[orgSlug]/clients
+ * List clients with optional search
  * Members and admins can view
  */
 export async function GET(
@@ -57,25 +57,25 @@ export async function GET(
       };
     }
 
-    // Get vendors
-    const vendors = await db.vendor.findMany({
+    // Get clients
+    const clients = await db.client.findMany({
       where,
       orderBy: { name: "asc" },
     });
 
-    return NextResponse.json({ vendors });
+    return NextResponse.json({ clients });
   } catch (error) {
-    console.error("Error fetching vendors:", error);
+    console.error("Error fetching clients:", error);
     return NextResponse.json(
-      { error: "Failed to fetch vendors" },
+      { error: "Failed to fetch clients" },
       { status: 500 }
     );
   }
 }
 
 /**
- * POST /api/orgs/[orgSlug]/vendors
- * Create a new vendor
+ * POST /api/orgs/[orgSlug]/clients
+ * Create a new client
  * Members and admins can create
  */
 export async function POST(
@@ -113,7 +113,7 @@ export async function POST(
     }
 
     // Validate request body
-    const vendorSchema = z.object({
+    const clientSchema = z.object({
       name: z.string().min(1, "Name is required"),
       email: z.string().email().nullable().optional(),
       phone: z.string().nullable().optional(),
@@ -121,7 +121,7 @@ export async function POST(
     });
 
     const body = await request.json();
-    const validation = vendorSchema.safeParse(body);
+    const validation = clientSchema.safeParse(body);
 
     if (!validation.success) {
       return NextResponse.json(
@@ -133,8 +133,8 @@ export async function POST(
     const data = validation.data;
     const nameLower = data.name.toLowerCase().trim();
 
-    // Check for existing vendor with same name
-    const existing = await db.vendor.findUnique({
+    // Check for existing client with same name
+    const existing = await db.client.findUnique({
       where: {
         organizationId_nameLower: {
           organizationId: org.id,
@@ -145,13 +145,13 @@ export async function POST(
 
     if (existing) {
       return NextResponse.json(
-        { error: "A vendor with this name already exists" },
+        { error: "A client with this name already exists" },
         { status: 400 }
       );
     }
 
-    // Create vendor
-    const vendor = await db.vendor.create({
+    // Create client
+    const client = await db.client.create({
       data: {
         organizationId: org.id,
         name: data.name.trim(),
@@ -163,11 +163,11 @@ export async function POST(
       },
     });
 
-    return NextResponse.json({ vendor }, { status: 201 });
+    return NextResponse.json({ client }, { status: 201 });
   } catch (error) {
-    console.error("Error creating vendor:", error);
+    console.error("Error creating client:", error);
     return NextResponse.json(
-      { error: "Failed to create vendor" },
+      { error: "Failed to create client" },
       { status: 500 }
     );
   }

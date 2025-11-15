@@ -23,12 +23,14 @@ Generated: 2025-11-14
 - [x] Vendor management screen with totals (by date range)
 - [x] Merge duplicate vendors (choose primary, reassign transactions)
 
-- No vendors found. Press Enter to create "Vendor_Name"
-
 ## Accounts
 
 - [x] Account balances by selectable date range (base currency)
 - [x] Click account → open filtered transaction list (account + date range)
+
+## Vendors/Clients
+
+At the moment, vendors are used for income and expense transactions. I want to separate vendors and clients to better track business relationships. Clients will be used for income transactions, while vendors will be used for expense transactions.
 
 ## Transactions – Filters, Bulk, Trash
 

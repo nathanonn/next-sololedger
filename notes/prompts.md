@@ -4,7 +4,7 @@
 
 ```
 ./worktrees.sh setup \
-  --branches feat/vibe_second \
+  --branches feat/clients_model \
   --db-url postgresql://pi:password@localhost:5432/nextsololedger
 ```
 
@@ -17,7 +17,7 @@
 ## merge
 
 ```
-./worktrees.sh merge --branches feat/vibe_second --into main
+./worktrees.sh merge --branches feat/clients_model --into main
 ```
 
 # create wireframes based on plan

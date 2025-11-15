@@ -1,309 +1,319 @@
-Sololedger Enhancements Plan – Categories, Business Settings, Vendors, Accounts
+In summary, we’ll evolve the current “vendor” concept into two parallel relationship types—clients (for income) and vendors (for expenses)—by updating the data model, APIs, and UI so each transaction clearly links to the correct relationship type, while keeping existing data stable and migration‑friendly. We’ll also introduce separate screens and filters for clients and vendors, and adjust reporting to use clients for income and vendors for expenses.
 
-This plan extends Sololedger’s core ledger with richer master data and settings: categories gain delete-with-reassignment, color/icon configuration, drag-and-drop ordering, and usage analytics; business settings get post-onboarding business and financial UIs (with a safe base-currency change flow and member read-only access); vendors become first-class entities with APIs, autocomplete, auto-create, and merge; and accounts gain date-range balances with click-through to filtered transaction lists. The changes build on existing Prisma models, org-scoped APIs, and settings/transactions UIs, and respect your permissions model.
+---
 
-PHASE 0 – Foundations & Model Updates ✅ COMPLETED
-0.1 Confirm and align Category model in `schema.prisma` ✅
-    - Ensure fields: `id`, `organizationId`, `name`, `type` ("INCOME"/"EXPENSE"), `parentId`, `color`, `icon`, `sortOrder`, `includeInPnL`, `active`, timestamps.
-    - Verify or add useful indexes, especially `(organizationId, type, parentId, sortOrder)` and `(organizationId, type)`.
+## Phase 1 – Data Model & Migrations
 
-0.2 Introduce Vendor model in `schema.prisma` ✅
-    - Add `Vendor`:
-        - `id` (cuid), `organizationId` (FK → Organization), `name` (varchar, required).
-        - Contact fields: `email?`, `phone?`, `notes?`.
-        - `active` boolean (default true).
-        - `mergedIntoId?` (nullable self-FK for soft-merge).
-        - `createdAt`, `updatedAt`.
-    - Enforce per-org, case-insensitive unique name: e.g. composite unique on `(organizationId, lower(name))` via Prisma pattern (or equivalent).
-    - Add indexes on `(organizationId, active)` and `(organizationId, name)`.
+- **1.1 Add `Client` model (separate from `Vendor`)**
+  - In `prisma/schema.prisma`, add:
+    - `Client` with fields mirroring `Vendor`:
+      - `id`, `organizationId`, `name`, `nameLower`, `email`, `phone`, `notes`, `active`, `mergedIntoId`, `createdAt`, `updatedAt`.
+      - Relations:
+        - `organization: Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)`
+        - `mergedInto: Client? @relation("ClientMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)`
+        - `mergedClients: Client[] @relation("ClientMerge")`
+        - `transactions: Transaction[]`
+    - Add `clients: Client[]` relation on `Organization`.
+    - Add `@@unique([organizationId, nameLower])` and `@@index([organizationId, active])` on `Client`.
+  - Run Prisma migration later (once plan is locked) and regenerate client.
 
-0.3 Extend Transaction model for vendor linkage and category analytics ✅
-    - Add `vendorId` (nullable FK → Vendor) while keeping existing `vendorName` string.
-    - Confirm fields for category analytics and balances: `organizationId`, `categoryId`, `accountId`, `status` ("DRAFT"/"POSTED"), `amountBase`, `date`.
-    - Add indexes: `(organizationId, categoryId, status, date)`, `(organizationId, vendorId, status, date)`, `(organizationId, accountId, status, date)` to support analytics and balances efficiently.
+- **1.2 Extend `Transaction` for clients**
+  - In `Transaction` model:
+    - Add:
+      - `clientId String?`
+      - `clientName String? @db.VarChar(255)`
+    - Add relation:
+      - `client Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)`
+    - Add indexes:
+      - `@@index([organizationId, clientId, status, date])`
+      - `@@index([clientId])`
+  - Keep `vendorId`/`vendorName` as is for backward compatibility.
 
-0.4 Verify Account model and indexes ✅
-    - Confirm fields: `id`, `organizationId`, `name`, `description?`, `isDefault`, `active`, timestamps.
-    - Add index `(organizationId, active)` for listing, and rely on transaction indexes from 0.3 for balance queries.
+- **1.3 Backfill existing income data to clients (7/b + 2/a)**
+  - Implement a backfill script (e.g., in `scripts/` or as part of a dedicated migration) that:
+    - For each organization:
+      - Find distinct `INCOME` transactions with non‑null `vendorName` or `vendorId` and `deletedAt IS NULL`.
+      - For each distinct vendor name used on income:
+        - Compute `nameLower = vendorName.toLowerCase().trim()`.
+        - Check if a `Client` with `organizationId` + `nameLower` already exists.
+          - If yes: reuse that `Client`.
+          - If no:
+            - If a `Vendor` with that `nameLower` exists in the org, create a `Client` with:
+              - `name`, `nameLower`, and copy `email`, `phone`, `notes` where available.
+            - Otherwise create a minimal `Client` with `name`/`nameLower`.
+      - For each affected income transaction:
+        - Set `clientId` to the mapped client’s id and `clientName` to the human name.
+  - Do **not** clear `vendorId`/`vendorName` for income yet; keep them populated for legacy/debugging, but they won’t be used by new logic.
 
-0.5 Migrations & seeds ✅
-    - Create Prisma migration for Vendor + Transaction updates.
-    - Adjust `prisma/seed.ts` if needed:
-        - Ensure default categories have sensible `sortOrder`.
-        - Optionally seed a couple of vendors for dev/testing.
-    - Run `npx prisma generate` and `npx prisma migrate dev` to apply.
+- **1.4 Migration rollout order**
+  1.  Add `Client` model and `clientId`/`clientName` fields + relations/indexes on `Transaction`.
+  2.  Run backfill to populate `Client` records and link `INCOME` transactions to clients.
+  3.  Only after this, update API and UI to start using `clientId`/`clientName` for income and stop accepting vendors for income.
 
-PHASE 1 – Categories: Delete with Reassignment, Color/Icon, Reorder, Analytics ✅ COMPLETED
+---
 
-1.1 Backend: Delete category with reassignment (modal-driven flow) ✅
-    - Add endpoint, e.g. `POST /api/orgs/[orgSlug]/categories/[categoryId]/delete-with-reassignment`:
-        - Input: `{ replacementCategoryId: string }`.
-        - Auth: `requireMembership` (members and admins can manage categories per matrix).
-        - Validation:
-            - Both categories must belong to org and be active.
-            - Types must match (INCOME vs EXPENSE).
-            - Category cannot be reassigned to itself.
-        - Implementation (transaction):
-            - Reassign all `Transaction` rows where `categoryId = categoryId` to `replacementCategoryId`.
-            - Delete the category (hard delete) or set `active=false` per your preference; align with `plan.md` (hard delete post-reassignment for simpler lists).
-            - Return `{ reassignedCount }` for UI feedback.
-        - Optional: create an `AuditLog` entry for category deletion/reassignment.
+## Phase 2 – API Layer Changes (Strict Per-Type Behavior)
 
-1.2 Backend: Category reorder persistence (sibling-level sort) ✅
-    - Add endpoint `POST /api/orgs/[orgSlug]/categories/reorder`:
-        - Input shape (aligned with sibling-only ordering): array of objects like `{ id, sortOrder }` or per group: `{ parentId, type, orderedIds[] }`.
-        - Auth: `requireMembership`.
-        - Validation:
-            - All categories belong to org.
-            - Reordering is applied per `(type, parentId)` group.
-        - Implementation:
-            - For each group, reassign `sortOrder` sequentially (e.g. 1..N) according to received order.
-            - Use a transaction to ensure all updates apply atomically.
+- **2.1 Client endpoints**
+  - Create `app/api/orgs/[orgSlug]/clients` route group with:
+    - `GET /api/orgs/[orgSlug]/clients`:
+      - Query params: `query` for name/email search.
+      - Filters by `organizationId` and `active = true` by default.
+      - Returns `clients: Client[]`.
+    - `POST /api/orgs/[orgSlug]/clients`:
+      - Body: `name`, optional `email`, `phone`, `notes`.
+      - Enforces org uniqueness via `nameLower`.
+    - Optionally `PATCH`/`DELETE` or `PATCH` to toggle `active`.
+  - All endpoints:
+    - `export const runtime = "nodejs"`.
+    - Use `getCurrentUser`, `getOrgBySlug`, `requireMembership`, and `validateCsrf` (for mutating routes).
+    - Enforce `organizationId` scoping.
 
-1.3 Backend: Category usage analytics (rolling 12 months + optional range) ✅
-    - Add endpoint `GET /api/orgs/[orgSlug]/categories/usage`:
-        - Query params: `from`, `to` (optional). If omitted, default to last 12 months.
-        - Auth: `requireMembership`.
-        - For each category:
-            - Count of POSTED transactions in range.
-            - Sum of `amountBase` in range.
-            - `lastUsedAt`: max transaction date in range.
-        - Implementation:
-            - Query `Transaction` grouped by `categoryId` with filters on `organizationId`, `status = "POSTED"`, and date range.
-            - Join with `Category` to return enriched data.
+- **2.2 Vendor endpoints review**
+  - Ensure existing `/api/orgs/[orgSlug]/vendors` route:
+    - Supports `GET` with `query` for name search using `nameLower`.
+    - Filters by `organizationId` and `active`.
+  - Clarify in comments: vendors are for expenses only.
 
-1.4 Frontend: Category management UI enhancements (post-onboarding) ✅
-    - In `app/o/[orgSlug]/settings/categories/page.tsx`:
-        - Color/icon editing:
-            - Extend form state with `formColor`, `formIcon`.
-            - In add/edit dialog, add:
-                - Color selector: small fixed palette or text input; persist to `color`.
-                - Icon selector: dropdown of a curated Lucide icon list, storing icon name as string.
-            - Render color swatch and icon in category rows.
-        - Drag-and-drop ordering:
-            - Implement sortable list for categories (per active tab/type) using a DnD helper.
-            - On drop:
-                - Update local array order.
-                - Build payload per `(type, parentId)` group and call `POST /categories/reorder`.
-                - Handle optimistic update with error rollback if needed.
-        - Delete with reassignment:
-            - Add “Delete” action/button on each category row.
-            - On click:
-                - Open modal.
-                - Show warning text and the category name.
-                - If analytics are available (from 1.3), show transaction count and total.
-                - Add a select for replacement category restricted to same type and org (exclude current).
-                - On confirm, call `delete-with-reassignment` endpoint, show success toast, and refresh list + analytics.
-            - For categories with zero usage:
-                - Either allow direct delete via existing `DELETE` or reuse same modal with replacement optional and block only if count>0.
-        - Usage analytics surface:
-            - Optionally add a toggle or small date-range selector near the list.
-            - Show per-category stats (e.g. "23 tx, 12,345.67 MYR, last used 2025-10-15") in the row subtitle or a hover.
+- **2.3 Transaction list endpoint (`app/api/orgs/[orgSlug]/transactions/route.ts`)**
+  - `GET`:
+    - Update `include` to:
+      - `include: { category: true, account: true, vendor: true, client: true }`.
+    - Add new optional query params:
+      - `clientId` → filter transactions where `clientId = clientId`.
+      - `vendorId` → filter where `vendorId = vendorId`.
+    - Keep existing `type`, `status`, `dateFrom`, `dateTo` filtering.
+    - In future you can add a `counterparty` param for name search across client/vendor.
 
-1.5 Frontend: Category dropdown ordering in forms and filters ✅
-    - Ensure category lists in:
-        - `TransactionForm` (`components/features/transactions/transaction-form.tsx`),
-        - onboarding categories page,
-        - any reporting filters,
-      are sorted by `type` and `sortOrder`, with parent/child structure respected.
-    - If API already orders by `type` + `sortOrder`, just use that; otherwise, sort client-side based on returned fields.
-    - Consider rendering parent labels with children indented or prefixed (e.g. "Marketing / Facebook Ads").
+- **2.4 Transaction create endpoint (`POST /transactions`)**
+  - Update Zod schema:
 
-PHASE 2 – Business Settings: Post-Onboarding Info + Base Currency Change ✅ COMPLETED
+    ```ts
+    const transactionSchema = z.object({
+      type: z.enum(["INCOME", "EXPENSE"]),
+      status: z.enum(["DRAFT", "POSTED"]),
+      amountOriginal: z.number().positive(),
+      currencyOriginal: z
+        .string()
+        .length(3)
+        .transform((v) => v.toUpperCase()),
+      exchangeRateToBase: z.number().positive(),
+      date: z
+        .string()
+        .refine((v) => !isNaN(Date.parse(v)), { message: "Invalid date" }),
+      description: z.string().min(1),
+      categoryId: z.string().min(1),
+      accountId: z.string().min(1),
 
-2.1 Backend: Business settings read/write ✅
-    - Adjust `GET /api/orgs/[orgSlug]/settings/business`:
-        - Auth: change from admin-only to `requireMembership` for reads.
-        - Return full business info (name, type, address, phone, email, taxId).
-    - Keep `PATCH /settings/business` admin-only via `requireAdminOrSuperadmin`.
-    - Confirm `OrganizationSettings` has fields: `businessType`, `businessTypeOther`, `address`, `phone`, `email`, `taxId`, `baseCurrency`, `fiscalYearStartMonth`.
-    - Confirm financial settings endpoint (`/settings/financial`) exposes `baseCurrency`, `fiscalYearStartMonth`, `dateFormat`, `decimalSeparator`, `thousandsSeparator`; add any missing fields.
+      vendorId: z.string().nullable().optional(),
+      vendorName: z.string().nullable().optional(),
+      clientId: z.string().nullable().optional(),
+      clientName: z.string().nullable().optional(),
 
-2.2 Frontend: Business Info tab (post-onboarding) ✅
-    - Under `app/o/[orgSlug]/settings/organization/(tabs)`, add `business-info` tab page:
-        - Reuse onboarding `BusinessDetails` form schema (zod) and layout for fields:
-            - Business name, type (with “Other” + extra field), address, phone, email, tax ID.
-        - On mount:
-            - Fetch `GET /settings/business` and populate form.
-        - Behavior:
-            - If user is admin:
-                - Editable form with “Save” button using `PATCH /settings/business`.
-                - Show success/error toasts and revalidate on save.
-            - If user is member:
-                - Render same form but all inputs disabled; hide "Save" button.
-        - Ensure organization name changes flow through to any shared context (likely already via org fetches).
+      notes: z.string().nullable().optional(),
+    });
+    ```
 
-2.3 Frontend: Financial Settings tab + base currency change ✅
-    - Add `financial-settings` tab page:
-        - Show current:
-            - Base currency (code + label).
-            - Fiscal year start month.
-            - Date format, number format.
-        - For admins:
-            - Controls to edit fiscal year and formats via `PATCH /settings/financial`.
-            - “Change base currency” section:
-                - Display current base currency.
-                - “Change base currency” button opens dialog:
-                    - Warning text explaining that:
-                        - Base currency for reporting will change.
-                        - Stored `amountBase` is not recalculated; historical comparisons may be less meaningful.
-                    - Required confirmation (checkbox or text input “CHANGE”).
-                    - Base currency selector (ISO list) with the current value preselected.
-                    - Confirm button that calls `PATCH /settings/financial` with new base currency only.
-                - On success: toast and revalidation of settings; optionally refresh key dashboards.
-        - For members:
-            - Display-only view; hide change controls.
+  - Enforce strict rules (3/a) after parsing:
+    - If `type === "INCOME"`:
+      - Reject if `vendorId` or `vendorName` is non‑null/non‑undefined.
+      - Allow `clientId`/`clientName`.
+    - If `type === "EXPENSE"`:
+      - Reject if `clientId` or `clientName` is non‑null/non‑undefined.
+      - Allow `vendorId`/`vendorName`.
+  - Relationship handling:
+    - For `INCOME`:
+      - If `clientId` present:
+        - Verify `Client` exists with `id` and `organizationId = org.id`.
+        - If not, 400 "Client not found".
+      - Else if `clientName` present (non‑empty after trim):
+        - Compute `nameLower`.
+        - Look up existing `Client` by `organizationId` + `nameLower`.
+        - If not found, create a new `Client` (active = true).
+      - Set `clientId`/`clientName` on `Transaction`, and `vendorId`/`vendorName` to `null`.
+    - For `EXPENSE` (existing logic, but explicitly scoped as expense):
+      - Same flow with `Vendor` and `vendorId`/`vendorName`.
+      - Ensure `clientId`/`clientName` are `null`.
+  - Keep existing validations:
+    - Category existence + type matches transaction type.
+    - Account existence.
+    - Date rules for POSTED vs future date.
+  - Compute `amountBase = amountOriginal * exchangeRateToBase` as before.
 
-2.4 Shared settings hooks ✅
-    - Implement `useBusinessSettings(orgSlug)` and `useFinancialSettings(orgSlug)`:
-        - Use SWR (or similar) to fetch and cache `GET /settings/business` and `GET /settings/financial`.
-        - Expose `data`, `isLoading`, `error`, and a `mutate` function for refresh.
-    - Use these hooks in:
-        - Onboarding steps (business, financial).
-        - Organization settings tabs (business info, financial).
+- **2.5 Transaction update endpoint (`PATCH /transactions/[transactionId]`)**
+  - Extend Zod schema to optional `clientId` / `clientName` alongside vendor fields.
+  - Apply type edit rule (9/b):
+    - Either:
+      - Disallow changing `type` in PATCH entirely, or
+      - If `data.type` differs from `existing.type` and there is any of:
+        - `existing.vendorId`, `existing.vendorName`, `existing.clientId`, or `existing.clientName`,
+      - Then reject with 400: "Cannot change transaction type once a client/vendor is set; delete and recreate the transaction."
+  - Enforce strict per-type relationship rules (3/a):
+    - Determine `finalType = data.type ?? existing.type`.
+    - If `finalType === "INCOME"`:
+      - Reject if `vendorId` or `vendorName` is present in payload (even if nulling).
+      - Allow `clientId`/`clientName`:
+        - If `clientId` is explicitly provided:
+          - Null → clear client.
+          - Non‑null → verify `Client` in org.
+        - Else if `clientName` provided:
+          - Non‑empty → lookup or create `Client` by `nameLower` (like POST).
+          - Empty → clear client.
+    - If `finalType === "EXPENSE"`:
+      - Mirror logic for vendor, rejecting `clientId`/`clientName`.
+  - Keep amount/base recalculation as now when `amountOriginal` or `exchangeRateToBase` changes.
 
-PHASE 3 – Vendors: Model, APIs, Autocomplete, Auto-Create, Management, Merge ✅ COMPLETED
+- **2.6 Single transaction GET (`GET /transactions/[transactionId]`)**
+  - Update `include` to `{ category: true, account: true, vendor: true, client: true }`.
+  - Ensure returned JSON includes `clientId`, `clientName` for income transactions.
 
-3.1 Backend: Vendor CRUD API ✅
-    - Create `app/api/orgs/[orgSlug]/vendors/route.ts`:
-        - `GET`:
-            - Auth: `requireMembership`.
-            - Query params: `query?` (for autocomplete), `from?`, `to?` (for totals).
-            - Behavior:
-                - If `query` present: filter vendors by case-insensitive match on `name`, limit to e.g. 20 results.
-                - If `from`/`to` present: include aggregated totals per vendor (posted transactions in date range using `amountBase`).
-                - Return `vendors` with fields: id, name, email, phone, notes, active, optional `totals`.
-        - `POST`:
-            - Auth: `requireMembership` (members can manage vendors).
-            - Validate payload: `name` required; email/phone/notes optional.
-            - Enforce per-org, case-insensitive uniqueness (handle conflict gracefully with clear error).
-    - Create `app/api/orgs/[orgSlug]/vendors/[vendorId]/route.ts`:
-        - `PATCH`:
-            - Auth: `requireMembership`.
-            - Allow edits to name, contact fields, `active`.
-            - Validate uniqueness when renaming.
-    - Create `app/api/orgs/[orgSlug]/vendors/merge/route.ts`:
-        - `POST`:
-            - Auth: `requireMembership` (or admin-only if you prefer stricter control).
-            - Input: `{ primaryId: string, ids: string[] }`.
-            - Validation:
-                - `primaryId` belongs to org, is active.
-                - All `ids` belong to same org, are distinct from `primaryId`.
-            - Implementation (transaction):
-                - Update `Transaction` where `vendorId` in `ids` to `primaryId`.
-                - For each secondary vendor:
-                    - Set `active=false`.
-                    - Set `mergedIntoId = primaryId`.
-                - Optionally log merge into `AuditLog`.
+---
 
-3.2 Backend: Auto-create vendor on transaction save ✅
-    - In `POST /api/orgs/[orgSlug]/transactions` and `PATCH /api/orgs/[orgSlug]/transactions/[transactionId]`:
-        - Before creating/updating transaction:
-            - If `vendorId` supplied: use as-is after verifying it belongs to org.
-            - Else if `vendorName` is non-empty:
-                - Look up existing vendor for org by name (case-insensitive).
-                - If found: use its `id` as `vendorId`.
-                - If not found: create new `Vendor` with given name (and possibly no contact info) and set `vendorId`.
-            - Persist `vendorName` along with `vendorId`.
-        - Ensure all operations are scoped by `organizationId`.
+## Phase 3 – UI & Form Behavior
 
-3.3 Frontend: Vendor autocomplete on transaction form ✅
-    - In `TransactionForm` component:
-        - Replace plain `Input` for `vendorName` with an autocomplete input:
-            - On typing, debounce and call `GET /vendors?query=...`.
-            - Show dropdown (using e.g. shadcn `Command` or `Popover`) of vendor suggestions.
-            - Selecting a suggestion sets both `vendorName` (for display) and `vendorId` in form state.
-            - If the user types a new name and does not select a suggestion:
-                - Keep `vendorName` string only; on submit, backend auto-creates vendor as per 3.2.
-        - Handle loading/empty states and display basic errors with toasts.
+- **3.1 Update `TransactionForm` (`components/features/transactions/transaction-form.tsx`)**
+  - Types:
+    - Extend `TransactionData` interface with:
+      - `clientName?: string;`
+      - (Optionally) `clientId?: string;` if you want to pass it down.
+  - Component state:
+    - Add:
+      - `const [clientName, setClientName] = React.useState<string>(initialData?.clientName || "");`
+      - `const [clientId, setClientId] = React.useState<string | null>(null);`
+    - Keep separate `vendorName` / `vendorId`.
+  - Type change behavior:
+    - In `onValueChange` of `RadioGroup`:
+      - When switching from `INCOME` → `EXPENSE`:
+        - Optionally clear `clientName` and `clientId`.
+      - When switching from `EXPENSE` → `INCOME`:
+        - Optionally clear `vendorName` and `vendorId`.
+    - If you enforce 9/b strictly on the backend, consider:
+      - Disabling the type toggle for existing transactions (edit mode) if a client/vendor is set.
+      - Or warn the user they must delete & recreate to change type.
+  - Relationship input (dynamic, per type):
+    - When `type === "INCOME"`:
+      - Render a combobox labelled "Client (optional)" or required depending on your preference.
+      - Behavior:
+        - `CommandInput` bound to `clientName` and calling `searchClients(query)` that hits `/api/orgs/${orgSlug}/clients?query=...`.
+        - Selecting a result sets `clientName` + `clientId`.
+        - If pressing Enter with no suggestions:
+          - Treat as "create" new client implicitly; `clientName` goes to backend for lookup/create.
+    - When `type === "EXPENSE"`:
+      - Keep the existing vendor combobox behavior with `/vendors` endpoint and `vendorName`/`vendorId`.
+  - Submit payload:
+    - In `handleSubmit`, build the body as:
+      - For `INCOME`:
+        - `clientName: clientName || null`, `clientId: clientId || null`.
+        - `vendorName: null`, `vendorId: null` (or omit).
+      - For `EXPENSE`:
+        - `vendorName: vendorName || null`, `vendorId: vendorId || null`.
+        - `clientName: null`, `clientId: null`.
+    - Everything else stays as is.
 
-3.4 Frontend: Vendor management screen with totals and merge ✅
-    - Add a route, e.g. `app/o/[orgSlug]/settings/vendors/page.tsx`:
-        - Layout:
-            - Date range selector (default rolling 12 months or fiscal YTD).
-            - Table/list of vendors with:
-                - Name.
-                - Contact details (email, phone).
-                - Active status badge.
-                - Totals for selected period: count of transactions, total base amount (spent/received).
-            - Actions:
-                - Inline edit button for each row to open a dialog for editing vendor metadata.
-                - Toggle active/inactive.
-        - Merge duplicates:
-            - Allow multi-select (checkbox per row).
-            - “Merge vendors” button:
-                - When clicked:
-                    - Ensure at least two vendors selected.
-                    - Open dialog showing selected vendors.
-                    - Require choosing primary vendor (radio/select).
-                    - Show explanation that all transactions will be reassigned and secondaries deactivated but preserved.
-                - On confirm:
-                    - Call `POST /vendors/merge` with primary + secondary IDs.
-                    - On success, refresh vendors list and show toast.
-        - Respect permissions:
-            - Members and admins can view and manage vendors per current rules; adjust if you want merge to be admin-only.
+- **3.2 `NewTransactionPage` (`app/o/[orgSlug]/transactions/new/page.tsx`)**
+  - No structural changes needed beyond:
+    - Passing through unchanged props; `TransactionForm` will handle client vs vendor field.
+    - Updating copy text if desired: "Create a new income or expense transaction with a client or vendor."
 
-PHASE 4 – Accounts: Date-Range Balances & Click-Through ✅ COMPLETED
+- **3.3 `EditTransactionPage` (`app/o/[orgSlug]/transactions/[id]/page.tsx`)**
+  - When loading a transaction:
+    - Include `clientName` in the shape passed to `TransactionForm`:
+      - For income: `clientName: transactionData.transaction.clientName`.
+      - For expenses: `vendorName` as currently.
+    - Optionally pass `clientId` if you include it in the GET response.
+  - If implementing strict rule 9/b:
+    - Disable the type radio group when editing an existing transaction.
+    - Show a helper text: "To change type, delete and recreate the transaction."
 
-4.1 Backend: Account balances by date range ✅
-    - Create endpoint `GET /api/orgs/[orgSlug]/accounts/balances`:
-        - Query params: `from`, `to` (required or default).
-        - Auth: `requireMembership`.
-        - Behavior:
-            - For each active account in org:
-                - Compute base currency balance = sum of `amountBase` for POSTED transactions within date range.
-                - Include account meta: id, name, isDefault, active.
-            - Return `accounts` with `balanceBase` and maybe `transactionCount`.
-        - Implementation:
-            - Query `Transaction` grouped by `accountId` with filters on `organizationId`, `status`, and date.
-            - Join or map with `Account` table results.
-
-4.2 Frontend: Accounts balances UI in settings ✅
-    - In `app/o/[orgSlug]/settings/accounts/page.tsx`:
-        - Add date range controls:
-            - Default to fiscal year-to-date (based on `OrganizationSettings.fiscalYearStartMonth`) or last 30 days, per your preference.
-            - Allow user to adjust range.
-        - On change:
-            - Fetch `GET /accounts/balances?from=...&to=...`.
-        - Display:
-            - Extend account rows to show base currency balance for selected range.
-            - Show currency symbol/code from org base currency.
-        - Click-through:
-            - Make each account row clickable (or add "View transactions" link).
-            - On click, navigate to `/o/[orgSlug]/transactions` with query params `accountId`, `from`, `to`.
-            - Update transactions list page to read these query params and initialize filters accordingly (if not already supported).
-
-4.3 Optional: Dashboard accounts widget ✅
-    - Optionally, add an “Accounts overview” widget to the main org dashboard page:
-        - Use the same `accounts/balances` endpoint with a default date range (e.g., “All time” or YTD).
-        - Show top N accounts and total balance.
-        - Rows clickable to the filtered transactions page.
-
-PHASE 5 – Testing, Permissions, and Polish ✅ COMPLETED
-
-5.1 Tests and validation ✅
+- **3.4 `TransactionsPage` (`app/o/[orgSlug]/transactions/page.tsx`)**
+  - Extend `Transaction` interface:
+    - Add optional `client?: { id: string; name: string } | null;`
+    - Keep `vendor` as is.
+  - Display:
+    - In the secondary text (where you show date • category • account):
+      - Optionally append:
+        - For `INCOME`: `• clientName or client?.name`.
+        - For `EXPENSE`: `• vendorName or vendor?.name`.
+  - Filters (option 6/b):
+    - Add two new filter controls:
+      - "Client" select/combobox (for income):
+        - Fetch clients via `/clients` or from a small cached list.
+        - Store selected `clientId` in state.
+      - "Vendor" select/combobox (for expenses).
+    - Query string:
+      - Append `clientId` and/or `vendorId` to `URLSearchParams` when loading.
     - Backend:
-        - Add tests for:
-            - Category delete/reassign.
-            - Category reorder endpoint.
-            - Category usage analytics.
-            - Vendor CRUD, search, merge, and transaction auto-create behavior.
-            - Accounts balances endpoint.
-            - Business and financial settings GET/PATCH with correct role behavior.
-    - Frontend:
-        - Spot-check:
-            - Category drag-and-drop and delete flows.
-            - Business/financial settings screens (admin vs member).
-            - Vendor autocomplete in transaction form (existing vs new vendor).
-            - Vendor merge effect on transactions.
-            - Account balances recalculating correctly when changing date range and click-through to transaction list.
-        - Verify org scoping and that no cross-org leakage occurs.
+      - Use new `clientId`/`vendorId` filters in transactions GET.
 
-5.2 Permissions and UX polish ✅
-    - Confirm that:
-        - `requireMembership` and `requireAdminOrSuperadmin` are used consistently according to requirements.
-        - Admin-only UI actions are not visible or are disabled for members.
-    - Polish UX:
-        - Add loading states, empty states ("No vendors found for this period"), and clear error toasts.
-        - Debounce vendor autocomplete and avoid excessive reorder API calls (e.g., save only on drop, not on every drag).
-        - Ensure color/icon choices do not break existing layouts.
+---
+
+## Phase 4 – Client & Vendor Management Screens (Option 5/b)
+
+- **4.1 Clients screen**
+  - Add new page, e.g. `app/o/[orgSlug]/clients/page.tsx` (or under settings if you prefer).
+  - Features:
+    - List all clients for org, with pagination if needed.
+    - Columns: name, email, phone, status (active/inactive), created date.
+    - Search box hitting `/clients?query=...`.
+    - Toggle `active` via PATCH.
+    - Optional merge UI if/when you implement `mergedInto` logic.
+  - Navigation:
+    - Add a `Clients` item in your sidebar/menu at roughly the same level as `Vendors` (or wherever vendors live).
+
+- **4.2 Review/align Vendors screen**
+  - Ensure vendor management page (if exists):
+    - Mirrors the clients UI in layout and capabilities.
+    - Clarifies that vendors are for expenses.
+
+---
+
+## Phase 5 – Reporting & Index Preparation (Option 8/a)
+
+- **5.1 DB indexes for reporting**
+  - Confirm indexes on:
+    - `Transaction(organizationId, clientId, status, date)`
+    - `Transaction(organizationId, vendorId, status, date)`
+  - These support:
+    - "Income by Client" reports.
+    - "Expenses by Vendor" reports.
+
+- **5.2 Reporting routes (future)**
+  - In a future iteration, add APIs like:
+    - `GET /api/orgs/[orgSlug]/reports/income-by-client`
+    - `GET /api/orgs/[orgSlug]/reports/expenses-by-vendor`
+  - Each groups by `clientId` or `vendorId` and sums `amountBase` over a date range.
+
+---
+
+## Phase 6 – Validation, Testing & Rollout
+
+- **6.1 Validation rules summary**
+  - Server (strict, per 3/a & 9/b):
+    - `INCOME`:
+      - Accept and handle `clientId`/`clientName`.
+      - Reject `vendorId`/`vendorName`.
+      - Optionally disallow changing `type` once client/vendor set.
+    - `EXPENSE`:
+      - Accept and handle `vendorId`/`vendorName`.
+      - Reject `clientId`/`clientName`.
+    - Category type must match transaction type; account must belong to org.
+  - UI:
+    - Only show the appropriate field (client or vendor) based on `type`.
+    - Disable type changes on edit if backend disallows.
+
+- **6.2 Testing scenarios**
+  - Unit/integration tests:
+    - Create income with new `clientName`:
+      - Client auto‑created; transaction links to client.
+    - Create expense with new `vendorName`: existing behavior unchanged.
+    - Update income to change client:
+      - New client auto‑created or existing reused.
+    - Attempt to send vendor on income or client on expense:
+      - Expect 400 error.
+    - Backfilled income transactions:
+      - Confirm they have `clientId`/`clientName` correctly set and still have legacy vendor fields populated.
+  - Manual QA:
+    - Create & edit income/expense transactions, verifying:
+      - Correct field appears (client vs vendor).
+      - Lists and filters reflect chosen contact.
+      - Clients/Vendors screens show created records.

@@ -42,10 +42,36 @@ At the moment, vendors are used for income and expense transactions. I want to s
 
 ## Multi‑Currency & Exchange Rates (FX)
 
-- [ ] Automatic historical exchange rate fetch on non-base transactions
-- [ ] Store rate (date, source, timestamp) and reuse for same day
-- [ ] Failure policy per business setting: fallback to last available OR require manual
-- [ ] Manual rate override indicator + optional note persisted and visible
+For the currency requirements, help me update it based on the following:
+
+  - Remove the exchange rate entirely
+  - Beside the base currency, I want to add support of secondary currency for each transaction, where the secondary currency will have its own amount and currency code. This will allow me to track transactions in two different currencies without needing to deal with exchange rates.
+    - Here's the use-case: My base currency is MYR, but I often deal with USD transactions. But, since my accounting is in MYR, I need to track the MYR amount as well. So, for a USD transaction, I will have the USD amount and currency code, and also the MYR amount and currency code. The base currency amount will be used for reporting and accounting purposes.
+    - Here's the user story:
+      - As a user, I want to be able to enter transactions with two currencies: the base currency and a secondary currency.
+      - As a user, I want to see both currency amounts and codes in the transaction list and details.
+      - As a user, I want to filter transactions using the base currency amount only.
+      - As a user, I want to generate reports that use the base currency amount for calculations.
+      - As a user, I want to be able to edit both currency amounts and codes in the transaction edit form.
+      - As a user, I want to be able to create transactions with only the base currency, without needing to provide a secondary currency.
+      - As a user, I can't add transactions with only the secondary currency; the base currency is mandatory.
+      - As a user, I want to be able to search transactions by base currency amount only.
+      - As a user, I want to be able to sort transactions by base currency amount only.
+    - Here's the acceptance criteria:
+      - The transaction model will have two currency fields: base currency and secondary currency.
+      - The transaction model will have two amount fields: base currency amount and secondary currency amount.
+      - The transaction list and detail views will display both currency amounts and codes. However, filtering, searching, and sorting will only be based on the base currency amount. If the secondary currency is not provided, it will be shown as "N/A" or similar.
+      - The transaction creation and edit forms will have fields for both currency amounts and codes. The base currency amount and code are mandatory.
+    - The secondary currency amount and code will be optional. If not provided, the transaction will only have the base currency amount and code.
+
+Ask me clarifying questions until you are 95% confident you can complete this task successfully.
+
+a. If the question is about choosing different options, please provide me with a list of options to choose from. Mark the option with a clear label, like a, b, c, etc.
+b. If the question need custom input that is not in the list of options, please ask me to provide the custom input.
+
+Always mark each question with a number, like 1/, 2/, 3/, etc. so that I can easily refer to the question number when I answer.
+
+For each question, add your recommendation (with reason why) below the options. This would help me in making a better decision.
 
 ## Documents & AI Extraction
 

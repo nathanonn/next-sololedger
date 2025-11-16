@@ -1,355 +1,268 @@
-This plan introduces an organization-scoped FX rate store and service, wires automatic daily historical exchange-rate fetching into transaction create/update flows with per-business failure policies, and adds explicit manual override metadata and UI so users can see and control how foreign-currency amounts convert into base currency while keeping reports based solely on stored base amounts.
+In this phase we will refactor Sololedger’s multi-currency handling from an exchange-rate–centric model to an explicit dual-currency model, where each transaction always stores an authoritative base-currency amount and optionally a secondary (original) currency amount. We will apply this through the data model, APIs, transaction forms, and UI displays, while preserving backwards compatibility via a migration from the existing `amountOriginal` / `exchangeRateToBase` fields. All filtering, sorting, reporting, and dashboards will continue to run purely on base-currency amounts, with secondary currency used only for display and reference.
 
-## Phases Overview
+## Implementation Plan – Dual Currency Model (Section 7)
 
-1. Data model & settings
-2. FX service & provider adapter
-3. API integration (transactions)
-4. UI integration (transaction form)
-5. Indicators & listing/report hooks
-6. Testing & configuration
+### 1. Data Model & Prisma
 
----
+1.1 Extend `Transaction` model
 
-## Phase 1 – Data Model & Org Settings
+- In `prisma/schema.prisma`, extend the `Transaction` model to support explicit base and secondary currencies:
+  - Keep `amountBase Decimal(18, 2)` as the canonical base amount field (already present).
+  - Add `currencyBase String @db.VarChar(3)` (required) to store the organization’s base currency code per transaction.
+  - Add `amountSecondary Decimal @db.Decimal(18, 2)?` (optional) to store the original/secondary transaction amount.
+  - Add `currencySecondary String? @db.VarChar(3)` (optional) for the original/secondary currency code.
+- Retain legacy fields for now (for migration and audit only): - `amountOriginal`, `currencyOriginal`, `exchangeRateToBase` and any related metadata. - Mark them as legacy in comments and stop using them in new business logic after migration.
 
-### 1.1 Add `FxRate` model (Prisma)
+  1.2 Database migration
 
-- Define new `FxRate` model in `prisma/schema.prisma`:
-	- `id: String @id @default(cuid())`
-	- `organizationId: String`
-	- `baseCurrency: String @db.VarChar(3)`
-	- `quoteCurrency: String @db.VarChar(3)`
-	- `date: DateTime` (normalized to UTC midnight for that rate day)
-	- `rate: Decimal @db.Decimal(18, 8)`
-	- `source: String @db.VarChar(50)` (e.g. `"EXCHANGERATE_HOST"`)
-	- `retrievedAt: DateTime @default(now())`
-- Relations & indexes:
-	- Relation to `Organization` via `organizationId` (cascade on delete).
-	- Unique constraint on `(organizationId, baseCurrency, quoteCurrency, date)`.
-	- Index on `(organizationId, quoteCurrency, date)` to support lookback queries.
-- Semantics:
-	- Rates are logically global, but we store them per org for tenant isolation and potential org-specific overrides later.
+- Create a Prisma migration to add `currencyBase`, `amountSecondary`, and `currencySecondary` to `Transaction`:
+  - Temporarily allow `currencyBase` to be nullable or default to a placeholder, then backfill values via a script and enforce non-null.
+- Verify that `organization_settings.baseCurrency` values are:
+  - Non-null.
+  - Uppercased 3-letter codes.
+  - Valid ISO 4217 codes (or at least syntactically valid) before relying on them for migration.
 
-### 1.2 Extend `OrganizationSettings` with FX policy
+### 2. Shared Currency Utilities & ISO Validation
 
-- Add fields to `OrganizationSettings` in `prisma/schema.prisma`:
-	- `fxFailurePolicy: String @db.VarChar(20)`
-		- Values: `"FALLBACK" | "MANUAL"` (string-based, or a dedicated Prisma enum if preferred).
-	- Optional: `fxMaxLookbackDays: Int?` (if we want per-org overrides; otherwise global env only).
-- Defaults and migrations:
-	- Default `fxFailurePolicy` to `"FALLBACK"` in migration for existing rows.
-	- Leave `fxMaxLookbackDays` null initially so env default applies.
-- API: `app/api/orgs/[orgSlug]/settings/financial/route.ts`:
-	- `GET` should include `fxFailurePolicy` (and `fxMaxLookbackDays` if present) in `settings` payload.
-	- `PATCH` should accept and persist `fxFailurePolicy` (and `fxMaxLookbackDays` if implemented) for admins.
-- UI: `app/o/[orgSlug]/settings/organization/(tabs)/financial/page.tsx`:
-	- Add an "Exchange Rate Behavior" section under financial settings:
-		- Radio group:
-			- Option A: "Fallback to last available rate (recommended)" → `"FALLBACK"`.
-			- Option B: "Require manual rate when automatic fetch fails" → `"MANUAL"`.
-		- Show helper text describing each behavior.
-	- Bound to `fxFailurePolicy` from financial settings hook.
-	- Editable only for admins; members see a read-only description.
+2.1 Shared currency list and helpers
 
-### 1.3 Extend `Transaction` model with FX metadata
+- Add a new module `lib/currencies.ts` that exports: - A full ISO 4217 currency list as an array of `{ code: string; name: string }`. - `isValidCurrencyCode(code: string): boolean` that checks uppercase 3-letter codes against this list.
 
-- In `Transaction` model in `prisma/schema.prisma`, add:
-	- `exchangeRateIsManual: Boolean @default(false)`
-	- `exchangeRateNote: String? @db.Text`
-	- `exchangeRateSource: String? @db.VarChar(50)` (e.g. `"EXCHANGERATE_HOST"`, `"MANUAL"`, `"BASE_CURRENCY"`).
-- Migration behavior:
-	- Existing transactions get `exchangeRateIsManual = false` and `exchangeRateSource = null` (or optionally a placeholder like `"LEGACY"`).
-- Semantics:
-	- Provider-derived rate: `exchangeRateIsManual = false`, `exchangeRateSource = provider code`.
-	- Manual override: `exchangeRateIsManual = true`, `exchangeRateSource = "MANUAL"`, `exchangeRateNote` populated when user supplies a justification.
+  2.2 Server-side currency validation
 
----
+- Use `isValidCurrencyCode` in server routes to enforce ISO codes:
+  - `app/api/orgs/[orgSlug]/settings/financial/route.ts` when saving `baseCurrency`.
+  - `app/api/orgs/[orgSlug]/transactions/route.ts` and `app/api/orgs/[orgSlug]/transactions/[transactionId]/route.ts` for `currencySecondary` (and any `currencyBase` input if accepted).
+- Update Zod schemas to refine currency strings: - `.string().length(3).transform((v) => v.toUpperCase()).refine(isValidCurrencyCode, { message: "Invalid currency code" })`.
 
-## Phase 2 – FX Service & Provider Adapter
+  2.3 Client-side usage (mirroring server)
 
-### 2.1 Core FX service module
+- Replace ad-hoc currency lists with shared ISO data where appropriate:
+  - `app/onboarding/[orgSlug]/financial/page.tsx` (base currency selection).
+  - `app/o/[orgSlug]/settings/organization/(tabs)/financial/page.tsx` (base currency change dialog).
+  - `components/features/transactions/transaction-form.tsx` (secondary currency selection).
+- Keep a “common currencies” subset at the top of dropdowns for UX, but still validate against the full ISO list.
 
-- Create `lib/fx-service.ts` as a server-only module.
-- Types:
-	- `type FxFailurePolicy = "FALLBACK" | "MANUAL";`
-	- `type FxRateResult = { rate: number; source: string; date: Date; usedFallback: boolean; };`
-	- `type FxProvider = { getHistoricalRate(params: { baseCurrency: string; quoteCurrency: string; date: Date; }): Promise<{ rate: number; date: Date; source: string; }>; };`
-- Public functions:
-	- `async function getFxSettingsForOrg(organizationId: string): Promise<{ failurePolicy: FxFailurePolicy; maxLookbackDays: number; }>`:
-		- Reads `OrganizationSettings` for `fxFailurePolicy` (fallback to `"FALLBACK"` if null).
-		- `maxLookbackDays` from `fxMaxLookbackDays` or env `FX_MAX_LOOKBACK_DAYS` (default 30).
-	- `async function getOrFetchRate(params: { organizationId: string; baseCurrency: string; quoteCurrency: string; date: Date; failurePolicy: FxFailurePolicy; maxLookbackDays: number; }): Promise<FxRateResult | null>`:
-		- Normalize `date` to a UTC midnight "rate date".
-		- Step 1: Check existing `FxRate` for `(organizationId, baseCurrency, quoteCurrency, rateDate)`.
-			- If found, return cached `rate` and `source`, `usedFallback: false`.
-		- Step 2: If not found, call provider via `getFxProvider().getHistoricalRate(...)`.
-			- On success:
-				- Persist a new `FxRate` row.
-				- Return `{ rate, source, date: rateDate, usedFallback: false }`.
-			- On failure:
-				- If `failurePolicy === "FALLBACK"`:
-					- Query `FxRate` for latest previous date within `maxLookbackDays` for same `(org, base, quote)`.
-					- If found, return with `usedFallback: true`.
-					- If not found, return `null`.
-				- If `failurePolicy === "MANUAL"`, return `null` immediately.
+### 3. Transaction API – Dual Currency Fields
 
-### 2.2 Provider adapter with pluggable implementation
+3.1 Create transaction (POST /api/orgs/[orgSlug]/transactions)
 
-- Add `lib/fx-providers/exchangerate-host.ts`:
-	- Implements `FxProvider` using `https://api.exchangerate.host/{YYYY-MM-DD}?base=BASE&symbols=QUOTE`.
-	- Parses JSON, extracts `rates[QUOTE]`.
-	- Validates and throws on missing/invalid rate.
-	- Uses `FX_API_BASE_URL` env when present; defaults to the public host.
-- Add `lib/fx-providers/index.ts`:
-	- Exports `getFxProvider(): FxProvider`.
-	- Chooses implementation based on `process.env.FX_PROVIDER` (e.g. `"EXCHANGERATE_HOST"` or `"MOCK"`).
-- Ensure all provider calls stay server-side (in routes or server libs), never in client components.
+- In `app/api/orgs/[orgSlug]/transactions/route.ts`, update the POST schema and handler:
+  - New primary fields:
+    - `amountBase: z.number().positive("Amount must be greater than 0")`.
+  - Optional secondary fields (all-or-nothing):
+    - `amountSecondary: z.number().positive().optional()`.
+    - `currencySecondary: z
+	 .string()
+	 .length(3)
+	 .transform((v) => v.toUpperCase())
+	 .refine(isValidCurrencyCode, { message: "Invalid currency code" })
+	 .optional()`.
+  - Cross-field validation for secondary:
+    - If `amountSecondary` is provided → `currencySecondary` must be present and valid.
+    - If `currencySecondary` is provided → `amountSecondary` must be present and positive.
+  - Base currency handling:
+    - Load `orgSettings` and read `baseCurrency`.
+    - Force `currencyBase` to `orgSettings.baseCurrency` (ignore or hard-validate any incoming `currencyBase` field).
+  - Data persistence:
+    - Write `amountBase` and `currencyBase` for every transaction.
+    - Write `amountSecondary` and `currencySecondary` only when valid secondary data is provided; otherwise leave them null.
+- Backwards-compatibility path during rollout: - Optionally keep accepting `amountOriginal` + `currencyOriginal` + `exchangeRateToBase` for a short transition period. - If these legacy fields are present and new dual-currency fields are not, derive: - `amountBase` from `amountOriginal * exchangeRateToBase`. - Secondary from `amountOriginal`/`currencyOriginal` per migration logic. - Mark this path as deprecated and remove once clients are updated.
 
-### 2.3 Mock provider for tests/dev
+  3.2 Update transaction (PATCH /api/orgs/[orgSlug]/transactions/[transactionId])
 
-- Implement `lib/fx-providers/mock.ts`:
-	- `getHistoricalRate` returns deterministic values from an in-memory map or simple logic (e.g. `1 USD = 4.20000000 MYR`).
-	- Optionally supports a small override mechanism for tests (e.g. `setMockRate(...)`).
-- Configure tests/dev:
-	- In tests, set `FX_PROVIDER="MOCK"`.
-	- Optionally allow local dev to use MOCK when no internet or while API keys are missing.
+- In `app/api/orgs/[orgSlug]/transactions/[transactionId]/route.ts`, extend the Zod schema for PATCH:
+  - Allow optional `amountBase`, `amountSecondary`, and `currencySecondary` with the same constraints as POST.
+  - Reuse cross-field validation for secondary.
+- Update handler logic:
+  - When `amountBase` is provided, update `amountBase` for the transaction (respect soft-closed period rules and activity logging).
+  - Always enforce that `currencyBase` remains equal to `orgSettings.baseCurrency` (if base currency settings change later, handle recompute via separate logic, not per-transaction PATCH).
+  - For secondary fields:
+    - If both `amountSecondary` and `currencySecondary` are present and valid → update them.
+    - If both are explicitly cleared (e.g. null/undefined in payload semantics) → clear `amountSecondary` and `currencySecondary` to represent base-only.
+- Keep existing rules (type/category alignment, soft-close warnings, vendor/client handling) unchanged.
 
----
+  3.3 List transactions (GET /api/orgs/[orgSlug]/transactions)
 
-## Phase 3 – API Integration (Transactions)
+- In the GET handler in `transactions/route.ts`:
+  - Confirm amount range filters use `where.amountBase` only (already implemented but re-verify).
+  - Adjust currency filter semantics to operate on original/secondary currency:
+    - Interpret `?currency=` query as follows:
+      - `currency=all` (or no param) → no filter.
+      - `currency=BASE` (reserved value) → `where.currencySecondary = null` (base-only transactions).
+      - `currency=XXX` → `where.currencySecondary = XXX` (transactions originally in that currency).
+  - Include new fields in the response payload:
+    - `amountBase`, `currencyBase`, `amountSecondary`, `currencySecondary`.
+- Ensure ordering by amount (if present) uses `amountBase`.
 
-### 3.1 POST `/api/orgs/[orgSlug]/transactions` – auto FX application
+### 4. Migration – Exchange-Rate Model to Dual Currency
 
-- Update zod schema in `app/api/orgs/[orgSlug]/transactions/route.ts` for POST:
-	- Existing fields remain (type, status, amountOriginal, currencyOriginal, date, etc.).
-	- Add FX-related fields:
-		- `useManualRate: z.boolean().optional().default(false)`.
-		- `exchangeRateToBase: z.number().positive().optional()` (required when `useManualRate` true and `currencyOriginal !== baseCurrency`).
-		- `exchangeRateNote: z.string().nullable().optional()`.
-- Server logic (after validation, org + membership checks):
-	1. Load `OrganizationSettings` to get `baseCurrency` and FX settings via `getFxSettingsForOrg(org.id)`.
-	2. Determine `finalCurrency` from `currencyOriginal`.
-	3. If `finalCurrency === baseCurrency`:
-		 - Set `rate = 1.0`.
-		 - Set `exchangeRateIsManual = false`.
-		 - Set `exchangeRateSource = "BASE_CURRENCY"`.
-	4. Else if `useManualRate === true`:
-		 - Require `exchangeRateToBase` > 0 in zod and runtime.
-		 - Set `rate = exchangeRateToBase`.
-		 - `exchangeRateIsManual = true`.
-		 - `exchangeRateSource = "MANUAL"`.
-		 - `exchangeRateNote` from body (optional).
-	5. Else (auto FX mode for foreign currency):
-		 - Call `getOrFetchRate` with `(org.id, baseCurrency, finalCurrency, new Date(date), failurePolicy, maxLookbackDays)`.
-		 - If result is `null`:
-			 - Return 400 with an error like "Could not fetch an exchange rate; please enter a manual rate.".
-		 - If result found:
-			 - `rate = result.rate`.
-			 - `exchangeRateIsManual = false`.
-			 - `exchangeRateSource = result.source`.
-			 - (Optional) If `result.usedFallback`, include that in the response payload for UI messaging.
-	6. Compute base amount:
-		 - `amountBase = amountOriginal * rate` (convert Prisma `Decimal` to `Number` where needed, consistent with `CLAUDE.md`).
-	7. Create transaction with:
-		 - `amountOriginal`, `currencyOriginal`, `exchangeRateToBase: rate`, `amountBase`.
-		 - `exchangeRateIsManual`, `exchangeRateSource`, `exchangeRateNote`.
-- Response:
-	- Include `exchangeRateToBase`, `amountBase`, `exchangeRateIsManual`, `exchangeRateSource`, and `exchangeRateNote` so the client can reflect the final state.
+4.1 Migration script
 
-### 3.2 PATCH `/api/orgs/[orgSlug]/transactions/[transactionId]` – FX-aware updates
+- Create `scripts/migrate-currency-model.ts` that uses Prisma to transform existing data according to Section 7.6: - Load all organizations and their `organizationSettings.baseCurrency` values. - Iterate transactions in manageable batches (e.g. by organization and createdAt).
 
-- Update PATCH zod schema in `app/api/orgs/[orgSlug]/transactions/[transactionId]/route.ts`:
-	- Add optional FX fields:
-		- `useManualRate: z.boolean().optional()`.
-		- `exchangeRateToBase: z.number().positive().optional()`.
-		- `exchangeRateNote: z.string().nullable().optional()`.
-		- `autoRecalculateRate: z.boolean().optional()` (to explicitly request re-fetch when editing).
-- Server logic (after auth/org checks and fetching existing transaction):
-	1. Determine `finalCurrency`:
-		 - Use `data.currencyOriginal` if provided; else `existing.currencyOriginal`.
-	2. Determine `finalDate`:
-		 - Use `data.date` if provided; else `existing.date`.
-	3. If `finalCurrency === baseCurrency`:
-		 - Set `rate = 1.0`, `exchangeRateIsManual = false`, `exchangeRateSource = "BASE_CURRENCY"`.
-	4. Else if `useManualRate === true`:
-		 - Require `exchangeRateToBase` > 0.
-		 - `rate = exchangeRateToBase`.
-		 - `exchangeRateIsManual = true`.
-		 - `exchangeRateSource = "MANUAL"`.
-		 - `exchangeRateNote` from body.
-	5. Else if `autoRecalculateRate === true` or currency/date changed:
-		 - Use `getOrFetchRate` as in POST.
-		 - Same error handling if result is `null`.
-	6. Else (no explicit FX change):
-		 - Keep existing `exchangeRateToBase`, `exchangeRateIsManual`, `exchangeRateSource`, and `exchangeRateNote`.
-	7. Recalculate `amountBase` when needed:
-		 - Determine `finalAmountOriginal` (updated or existing).
-		 - If either `finalAmountOriginal` or `rate` differ from existing, set `amountBase = finalAmountOriginal * rate`.
-	8. Persist updates accordingly.
+  4.2 Transformation rules
 
-### 3.3 Include FX metadata in GET `/transactions`
+- For each transaction, read `amountOriginal`, `currencyOriginal`, `amountBase` (legacy), and the organization’s `baseCurrency`:
+  - If `currencyOriginal !== baseCurrency`:
+    - Set `amountSecondary = amountOriginal`.
+    - Set `currencySecondary = currencyOriginal`.
+    - Keep existing `amountBase` unchanged.
+    - Set `currencyBase = baseCurrency`.
+  - If `currencyOriginal === baseCurrency`:
+    - Set `amountBase = amountOriginal` (overwriting if necessary).
+    - Set `currencyBase = baseCurrency`.
+    - Set `amountSecondary = null` and `currencySecondary = null`.
+- Optional consistency checks: - For foreign-currency transactions, log rows where existing `amountBase` differs from `amountOriginal * exchangeRateToBase` beyond a small epsilon.
 
-- Ensure `GET /api/orgs/[orgSlug]/transactions` includes, for each transaction:
-	- `currencyOriginal`, `amountOriginal`, `exchangeRateToBase`, `exchangeRateIsManual`, `exchangeRateSource`.
-- This powers dual display and manual-rate indicators in the UI.
+  4.3 Execution & safety
 
----
+- Add CLI flags for:
+  - `--dry-run`: log planned updates without writing.
+  - `--batch-size`: tune performance.
+- Run migration in staging first and manually inspect a sample of transactions per organization.
+- Once satisfied, run in production during a controlled window.
 
-## Phase 4 – UI Integration (Transaction Form)
+  4.4 Cleanup migration
 
-### 4.1 Extend transaction form data model
+- After successful migration and verification:
+  - Create a follow-up Prisma migration to drop obsolete fields from `Transaction`:
+    - `exchangeRateToBase`.
+    - Any optional `rateSource`, `rateTimestamp`, manual override fields if present.
+  - Decide separately when to remove `amountOriginal` and `currencyOriginal` (they can be kept longer-term as legacy/audit fields).
 
-- In `components/features/transactions/transaction-form.tsx`:
-	- Extend `TransactionData` with:
-		- `exchangeRateIsManual?: boolean`.
-		- `exchangeRateNote?: string`.
-	- Local React state additions:
-		- `rateMode: "AUTO" | "MANUAL"` (derive initial from `initialData.exchangeRateIsManual`).
-		- `exchangeRateNote` controlled input.
-	- Derived flags:
-		- `const isBaseCurrency = finalCurrency === settings.baseCurrency;`
-		- `const isForeignCurrency = !isBaseCurrency;`.
+### 5. Base Currency Settings & Changes
 
-### 4.2 Auto-suggest rate on currency/date change
+5.1 Onboarding and financial settings
 
-- Add a dedicated FX suggestion route (server):
-	- `GET /api/orgs/[orgSlug]/fx/suggest-rate?currency=XXX&date=YYYY-MM-DD`.
-	- Uses `getFxSettingsForOrg` and `getOrFetchRate` but does not touch `Transaction`.
-	- Returns JSON: `{ rate, source, rateDate, usedFallback }` or a 400/500 error.
-- In `TransactionForm`:
-	- When `currency` or `date` changes and `isForeignCurrency` and `rateMode === "AUTO"`:
-		- Call the FX suggest endpoint with the current `orgSlug`, currency, and date.
-		- On success:
-			- Update `exchangeRate` state.
-			- Store `source` and whether `usedFallback` for display.
-			- Show helper text like:
-				- "Rate from Exchangerate.host for 2025-11-16".
-				- If `usedFallback`, append "(using 2025-11-15 rate)".
-		- On failure:
-			- Read `fxFailurePolicy` from financial settings (passed down or via hook).
-			- If policy is MANUAL or fallback failed:
-				- Switch `rateMode` to `"MANUAL"`.
-				- Show inline error under rate field and a toast: "We couldn't fetch an exchange rate; please enter a manual rate.".
+- In `app/onboarding/[orgSlug]/financial/page.tsx` and `app/api/orgs/[orgSlug]/settings/financial/route.ts`: - Replace hardcoded currency lists with the shared ISO currency list. - Validate base currency via `isValidCurrencyCode` on the server. - Ensure base currency is stored in uppercase and used consistently across the app.
 
-### 4.3 Manual override toggle and note
+  5.2 Base currency change behavior (v1 – no recompute)
 
-- Under the exchange rate input in `TransactionForm`:
-	- Add a toggle UI (e.g. radio group or switch) for mode selection:
-		- Option 1: "Use automatic rate" (sets `rateMode = "AUTO"`, `useManualRate = false`).
-		- Option 2: "Use manual rate" (sets `rateMode = "MANUAL"`, `useManualRate = true`).
-	- Behavior:
-		- AUTO → MANUAL:
-			- Keep the current suggested rate in the input as a starting point.
-			- Enable editing.
-		- MANUAL → AUTO:
-			- Clear `exchangeRateNote`.
-			- Trigger FX suggestion for `(currency, date)` to refresh the rate.
-- Rate input:
-	- For base-currency transactions:
-		- Always show `1.00` as read-only; hide toggle and note.
-	- For foreign-currency transactions:
-		- Read-only when `rateMode === "AUTO"`.
-		- Editable when `rateMode === "MANUAL"`.
-- Manual note field:
-	- Only visible when `rateMode === "MANUAL"` and `isForeignCurrency`.
-	- Label: "Reason for manual rate (optional)".
-	- Bound to `exchangeRateNote` state.
+- Maintain the current behavior where changing base currency does not recompute historical `amountBase` values:
+  - `organizationSettings.baseCurrency` changes.
+  - Existing `amountBase` values remain numerically the same.
+  - UI labels for base currency update to the new code.
+- Update copy in `app/o/[orgSlug]/settings/organization/(tabs)/financial/page.tsx` to clearly state:
+  - Historical transaction amounts are not recalculated.
+  - Reports may be misleading across a base-currency change.
+  - New transactions use the new base currency code.
+- Reserve room in the design for a future enhancement that recomputes base amounts for transactions that have `currencySecondary` populated.
 
-### 4.4 Client-side validation and submit
+### 6. Transaction Form UX (Create/Edit)
 
-- Validation in `handleSubmit`:
-	- If `isForeignCurrency` and `rateMode === "MANUAL"`, require `exchangeRate > 0`.
-	- For `rateMode === "AUTO"`, allow submit even if suggestion failed, since server will enforce policy and may return an error prompting manual rate.
-	- For `isBaseCurrency`, ignore manual vs auto and enforce rate = 1.0.
-- Payload construction (POST and PATCH):
-	- Always send:
-		- `currencyOriginal` (finalCurrency).
-		- `amountOriginal`.
-		- `useManualRate: rateMode === "MANUAL"`.
-		- `exchangeRateNote` when non-empty.
-	- Only send `exchangeRateToBase` when `rateMode === "MANUAL"` or base-currency (1.0).
-	- Let server compute final `amountBase`, `exchangeRateIsManual`, and `exchangeRateSource`.
-- After save success:
-	- Use response data to update any local state if necessary.
-	- Show confirmation toast.
+6.1 Form state model changes
 
----
+- In `components/features/transactions/transaction-form.tsx`, refactor state: - Replace `amountOriginal`, `currencyOriginal`, and `exchangeRate` state with: - `amountBase` (string; required). - `amountSecondary` (string; optional). - `currencySecondary` (string; optional, uppercase 3-letter code). - Keep `settings.baseCurrency` as a read-only reference for the base currency.
 
-## Phase 5 – Indicators & Listing/Reports
+  6.2 Inputs and client-side validation
 
-### 5.1 Dual currency display and manual indicator in transaction list
+- Base amount:
+  - Input labeled “Amount (Base)” with a required indicator.
+  - Helper text showing the base currency code, e.g. `Base currency: MYR`.
+  - Validate that `amountBase` is a positive number before submit.
+- Secondary currency (optional, all-or-nothing):
+  - Numeric `Secondary amount` input.
+  - Searchable dropdown for `Secondary currency` using the ISO list module:
+    - Implement via existing `Select` + an internal searchable component (e.g. `Command`), or a custom searchable dropdown pattern.
+  - Client-side rules:
+    - If `amountSecondary` is non-empty → require a valid `currencySecondary` and show inline error/toast if missing.
+    - If `currencySecondary` is set → require `amountSecondary` > 0.
+- Remove the explicit `exchangeRate` UI entirely.
 
-- `app/o/[orgSlug]/transactions/page.tsx`:
-	- Ensure each row has access to:
-		- `amountOriginal`, `currencyOriginal`, `amountBase`, `exchangeRateIsManual`.
-	- Display logic:
-		- If `currencyOriginal !== settings.baseCurrency`:
-			- Show: `"{currencyOriginal} {amountOriginal} • {settings.baseCurrency} {amountBase}"` (using `formatCurrency`).
-		- Else:
-			- Show the base amount only (current behavior).
-	- Manual indicator:
-		- If `exchangeRateIsManual` is true:
-			- Add a small badge/icon next to the amounts (e.g. an "M" or info icon).
-			- Tooltip text: "Manual FX rate".
+  6.3 Submit payloads
 
-### 5.2 Transaction detail/edit view
+- For create:
+  - POST body should send `{ type, status, amountBase, amountSecondary?, currencySecondary?, date, description, categoryId, accountId, vendorName?, clientName?, notes? }`.
+- For edit:
+  - PATCH body should send only changed fields, including `amountBase`, `amountSecondary`, and `currencySecondary` when modified.
+- Ensure date rules, category type matching, account selection, and soft-close confirmations continue to operate as before.
 
-- `app/o/[orgSlug]/transactions/[id]/page.tsx`:
-	- Ensure API includes `exchangeRateIsManual`, `exchangeRateNote`, and `exchangeRateSource`.
-	- Show an "Exchange rate" section:
-		- Example: `"Rate: 4.20000000 MYR per USD"`.
-		- `Source: Exchangerate.host` or `"Source: Manual override"`.
-		- If `exchangeRateIsManual`:
-			- Highlight with a badge: "Manual FX rate".
-			- Show `exchangeRateNote` below when present.
+### 7. Dual-Currency Display in UI
 
-### 5.3 Reporting and balances
+7.1 Transactions list page
 
-- Confirm that account balances and other reports continue to rely only on `amountBase` (current design).
-- For any future "currency reports" (already hinted in requirements):
-	- Use `currencyOriginal` and `amountOriginal` for original-currency totals.
-	- Use `amountBase` for base-currency totals.
-	- Optionally expose counts of manual-rate transactions per currency.
+- In `app/o/[orgSlug]/transactions/page.tsx`, enhance the amount display for each row: - Primary line (base currency): - Use `formatCurrency(amountBase, settings.baseCurrency, settings.decimalSeparator, settings.thousandsSeparator)` as today. - Secondary line (only when present): - If `currencySecondary && amountSecondary`: - Render below the primary line in smaller, muted text. - Display as `currencySecondary` + formatted `amountSecondary` using `formatCurrency` with `currencySecondary`. - If no secondary currency, render only the primary line (no “N/A” text).
 
----
+  7.2 Transaction detail page
 
-## Phase 6 – Testing & Configuration
+- In `app/o/[orgSlug]/transactions/[id]/page.tsx`, mirror the list behavior with more detail: - Show a prominent base amount section. - If secondary exists, add a labeled “Original currency” section beneath, displaying secondary amount and code.
 
-### 6.1 Environment configuration
+  7.3 Trash and other views
 
-- Update `.env.example` with FX settings:
-	- `FX_PROVIDER=EXCHANGERATE_HOST`
-	- `FX_API_BASE_URL=https://api.exchangerate.host` (optional override)
-	- `FX_MAX_LOOKBACK_DAYS=30`
-- Document in a suitable notes file (e.g. `notes/implementations.md` or a new FX-specific note):
-	- What the FX provider is.
-	- That FX runs server-side only.
-	- How to switch to MOCK provider for tests.
+- In `app/o/[orgSlug]/transactions/trash/page.tsx` and any other views that show transaction amounts: - Continue to use base amount as the main figure. - Optionally show a secondary line similar to the main list for consistency.
 
-### 6.2 Tests
+  7.4 Helper function for dual display
 
-- Unit tests for `lib/fx-service.ts`:
-	- Returns cached rate when present.
-	- On provider failure with `FALLBACK`, uses latest prior rate within `maxLookbackDays`.
-	- Returns `null` when no fallback exists or policy is `MANUAL`.
-- Tests for POST `/transactions`:
-	- Base currency: enforces rate = 1.0, manual flags false.
-	- Foreign currency + auto mode: uses provider rate, sets `exchangeRateIsManual = false`, `exchangeRateSource` correctly.
-	- Foreign currency + manual mode: uses provided rate, sets `exchangeRateIsManual = true`, persists `exchangeRateNote`.
-	- Failure policy:
-		- `FALLBACK` with no history → 400 requiring manual rate.
-		- `MANUAL` → 400 requiring manual rate.
-- Tests for PATCH `/transactions/[id]`:
-	- Changing date/currency with `autoRecalculateRate` updates rate and `amountBase`.
-	- Switching from auto to manual and back.
-	- Base-currency transactions remain pinned to rate 1.0.
+- In `lib/sololedger-formatters.ts` (or a new module), add:
+  - `formatDualCurrency(amountBase, currencyBase, amountSecondary, currencySecondary, decimalSeparator, thousandsSeparator)` that returns `{ primary: string; secondary: string | null }`.
+- Use this helper in list, detail, and trash views to keep formatting logic centralized.
 
----
+### 8. Searching, Filtering & Sorting
 
-## Out of Scope for This Plan
+8.1 Amount range filters and sorting
 
-- Historical recomputation of all `amountBase` values on base-currency change (current UI explicitly says no recalculation; changing this should be a separate story).
-- Advanced FX reporting (e.g. currency-specific dashboards) beyond ensuring current reports continue to use `amountBase`.
-- Multi-provider routing or paid-provider-specific features beyond the simple pluggable adapter.
+- Ensure all amount-based operations use `amountBase` only: - `GET /transactions` amount filters (`amountMin`, `amountMax`) already apply to `where.amountBase`; re-confirm and update labels if needed. - Any sorting by amount in the transactions list should order by `amountBase`.
 
+  8.2 Currency filters
+
+- Adjust the currency filter on the transactions page: - In the UI (`transactions/page.tsx`): - Provide options: “All currencies”, “Base currency only”, and a set of specific original currencies (e.g. USD, EUR, etc.). - In the API (`GET /transactions`): - Map UI selections to query params and apply filters as defined in 3.3.
+
+  8.3 Search by amount
+
+- Document and ensure that any free-text search by amount (if implemented) treats values as base-currency amounts.
+- Do not attempt to search by secondary amount for v1.
+
+### 9. Reporting & Dashboard
+
+9.1 Dashboard metrics
+
+- In `app/o/[orgSlug]/dashboard/page.tsx` and any other dashboard code: - Confirm that all aggregates (YTD income, expenses, profit/loss) sum `amountBase` only. - Ensure labels use `settings.baseCurrency`.
+
+  9.2 Future currency reports (design alignment)
+
+- When implementing Section 12.2 “Currency Reports” later, plan to:
+  - Group by `currencySecondary`.
+  - For each currency group, show:
+    - Total income/expense in original (secondary) currency (sum of `amountSecondary`).
+    - Corresponding totals in base currency (sum of `amountBase`).
+  - Keep this design in mind while modeling data and APIs now.
+
+### 10. Export & Import Adjustments
+
+10.1 CSV export
+
+- In `app/api/orgs/[orgSlug]/transactions/export/route.ts`: - Update the exported columns to reflect the new model: - Include `amountBase` and `currencyBase`. - Include `amountSecondary` and `currencySecondary` (blank for base-only transactions). - Remove `exchangeRateToBase` from exported CSV per Section 7.6. - Update header labels and any related docs.
+
+  10.2 CSV import
+
+- When refining CSV import (Section 13.1):
+  - Treat base amount and currency as required:
+    - Either infer base currency from org settings or require an explicit column that matches it.
+  - Treat secondary amount and currency as optional but all-or-nothing:
+    - Apply the same validation rules as the transaction API.
+  - Validate currency codes via `isValidCurrencyCode` during import.
+
+### 11. Testing & Verification
+
+11.1 Unit tests
+
+- Add unit tests for: - `isValidCurrencyCode` and any helper functions in `lib/currencies.ts`. - New Zod schemas for POST/PATCH transaction payloads (including all combinations of base/secondary fields). - Pure transformation logic used in the migration script (given a transaction + baseCurrency, assert the correct new fields).
+
+  11.2 Integration tests
+
+- If you have API test infrastructure (e.g. Jest + supertest or similar): - Test creating a base-only transaction via POST. - Test creating a dual-currency transaction (both base and secondary) via POST. - Test updating secondary currency and amount via PATCH. - Test currency filter semantics in GET (`BASE`, specific secondary currency, all).
+
+  11.3 UI tests / manual QA
+
+- Manually or via E2E tests: - Create/edit transactions through `TransactionForm` with and without secondary currency. - Verify dual-currency display in the list, detail, and trash views. - Verify amount filters and currency filters behave as expected.
+
+  11.4 Migration dry-run and rollout
+
+- Run the migration script in dry-run mode against staging or a snapshot:
+  - Inspect logs for anomalies and sample-check per organization.
+- After running for real:
+  - Compare a sample of transactions before and after migration to confirm:
+    - Base amounts and codes are correct.
+    - Secondary amounts and codes are correctly assigned.
+  - Only then proceed to drop legacy fields and flip clients fully to the new model.

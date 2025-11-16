@@ -1,351 +1,344 @@
-## Multi-Currency & FX – UX Flow & Wireframes
+## Multi-Currency – UX Flow & Wireframes
 
-This document captures the UX flow and screen-by-screen wireframes for the multi-currency and FX features: automatic historical rate suggestions, per-business FX failure policy, and manual rate override with clear indicators.
-
----
-
-## 1. High-Level UX Flow Map
+### 1. High-Level UX Flow
 
 ```text
-[Dashboard]
-	 |
-	 v
-[Settings > Organization > Financial]
-	 - Configure base currency (existing)
-	 - Configure FX failure policy (new)
-
+[Onboarding - Financial Config]
+	↓ (base currency chosen)
+[Org Dashboard]
+	↓
 [Transactions List]
-	 - Filter by currency
-	 - See dual amounts and manual FX indicator
-	 |
-	 +--> [New Transaction]
-	 |        - Choose currency and date
-	 |        - Auto-suggest FX rate for foreign currency
-	 |        - Optional manual override + note
-	 |
-	 +--> [Edit Transaction]
-						- View existing FX info (rate, source, manual flag, note)
-						- Change currency/date
-						- Re-suggest FX rate or override manually
+	├─ Filter by base amount / original currency
+	├─ Create Transaction → [Transaction Form]
+	└─ Click row → [Transaction Detail]
 
-[Accounts / Reports]
-	 - Continue to show balances in base currency only (no new UI)
+[Settings → Organization → Financial]
+	├─ View base currency
+	└─ Change base currency (advanced warning dialog)
+
+[Transactions Trash]
+	└─ View deleted transactions with base + optional secondary display
+
+[Exports]
+	└─ Export CSV with base + secondary currency columns
 ```
 
----
+### 2. Screens & Wireframes
 
-## 2. Settings – Financial: FX Failure Policy
-
-### 2.1 Screen: Organization Settings – Financial Tab
-
-**Entry points:**
-- Sidebar: `Settings` → `Organization` → `Financial`
+#### 2.1 Onboarding – Financial Configuration (Base Currency)
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│  Header                                                            │
-│  ─────────────────────────────────────────────────────────────────  │
-│  [<] Back   Organization Settings                                  │
-│                                                                     │
-│  Title: Financial Settings                                         │
-│  Subtitle: Configure financial reporting preferences and base      │
-│            currency                                                │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌──────────────── Base Currency (existing) ──────────────────────────┐
-│ Current base currency: [ MYR ]                                     │
-│ [Change Currency] (admin only)                                     │
-│ Info: Changing the base currency does not automatically            │
-│       recalculate historical transaction amounts.                  │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌─────────────── Fiscal Year & Formats (existing) ───────────────────┐
-│ [Fiscal Year Start Month]  [v]                                     │
-│ [Date Format]              [v]                                     │
-│ [Number Format]            [Decimal, Thousands]                    │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────── Exchange Rate Behavior (new) ──────────────────┐
-│ Label: On exchange rate failure                                    │
-│                                                                     │
-│ ( ) Fallback to last available rate (recommended)                  │
-│     • If today's rate is unavailable, use the latest prior rate    │
-│       within the allowed lookback window.                          │
-│                                                                     │
-│ ( ) Require manual rate input                                      │
-│     • If an automatic rate cannot be fetched, the transaction      │
-│       form will require you to enter a manual rate before saving.  │
-│                                                                     │
-│ [Optional] Info text:                                              │
-│  "This setting applies to all foreign-currency transactions for    │
-│   this business."                                                  │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────┐
-│ [Cancel]                        [Save Changes] (primary, admin)    │
-└─────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│  Step 3 of 4 – Financial configuration       │
+├───────────────────────────────────────────────┤
+│  Title: Financial configuration              │
+│  Subtitle: Choose your base currency,        │
+│            fiscal year, and formats          │
+├───────────────────────────────────────────────┤
+│  Base Currency *                             │
+│  ┌───────────────────────────────────────┐   │
+│  │ [MYR – Malaysian Ringgit        ▾]    │   │
+│  └───────────────────────────────────────┘   │
+│  Helper: Reports and dashboards use this      │
+│          as the base currency                 │
+│                                               │
+│  [If "Other" selected]                       │
+│  Enter currency code (ISO 4217) *             │
+│  ┌───────────────────────────────────────┐   │
+│  │ JPY                                   │   │
+│  └───────────────────────────────────────┘   │
+│  Helper: 3-letter ISO currency code           │
+│                                               │
+│  (Fiscal year start, date format, number      │
+│   format sections – unchanged from current)   │
+├───────────────────────────────────────────────┤
+│  [← Back]                         [Continue]  │
+└───────────────────────────────────────────────┘
 ```
 
-State notes:
-- Admins can toggle FX policy and save.
-- Members see the Exchange Rate Behavior block in read-only mode with disabled controls.
-
----
-
-## 3. Transactions List – Dual Amounts & Manual Indicator
-
-### 3.1 Screen: Transactions List
-
-**Entry points:**
-- Sidebar: `Transactions`
+#### 2.2 Settings → Organization → Financial – Base Currency & Change Dialog
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│  Header                                                            │
-│  ─────────────────────────────────────────────────────────────────  │
-│  Title: Transactions                                               │
-│  Controls: [New Transaction] [Filters...]                          │
-└─────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│  Settings / Organization / Financial          │
+├───────────────────────────────────────────────┤
+│  Card: Financial Settings                     │
+│  Subtitle: Configure financial reporting      │
+│             preferences and base currency     │
+├───────────────────────────────────────────────┤
+│  Section: Base Currency                       │
+│  Text: The primary currency for financial     │
+│        reporting and analysis                 │
+│                                               │
+│  Current base currency card:                  │
+│  ┌─────────────────────────────────────────┐  │
+│  │  Current Base Currency: MYR             │  │
+│  │  Malaysian Ringgit                      │  │
+│  └─────────────────────────────────────────┘  │
+│                                               │
+│  [Change Currency] (admin only)               │
+│                                               │
+│  Info alert:                                  │
+│  "Changing the base currency does not        │
+│   automatically recalculate historical        │
+│   transaction amounts. Existing transactions  │
+│   retain their original base amounts.         │
+│   Historical comparisons may be less          │
+│   meaningful across base-currency changes."   │
+│                                               │
+│  (Fiscal year, date format, number format     │
+│   sections follow below – existing behavior)  │
+└───────────────────────────────────────────────┘
 
-┌──────────────── Filters (excerpt) ─────────────────────────────────┐
-│ Date range: [Last 30 days] [v]                                     │
-│ Currency:   [All currencies v]                                     │
-│   • All currencies                                                 │
-│   • {BaseCurrency} (e.g. MYR)                                      │
-│   • USD, EUR, GBP, ...                                             │
-└─────────────────────────────────────────────────────────────────────┘
+Change Base Currency Dialog
 
-┌──────────────── Transactions Table ────────────────────────────────┐
-│  Date       Description           Account    Amount                │
-│────────────────────────────────────────────────────────────────────│
-│  2025-11-15 Invoice #1234        Main Acc   USD 1,000.00 •        │
-│                                                MYR 4,200.00  [M]  │
-│                                Category: Consulting                │
-│                                Client: ACME Corp                  │
-│                                                                    │
-│  2025-11-14 Software license     Card       EUR 200.00 •           │
-│                                                MYR 940.00         │
-│                                Category: Software                 │
-│                                Vendor: SaaS Ltd                   │
-│                                                                    │
-│  2025-11-12 Local expense        Cash       MYR 150.00            │
-│                                Category: Meals                     │
-│                                Vendor: Cafe XYZ                    │
-└────────────────────────────────────────────────────────────────────┘
-
-Legend:
-- For foreign-currency transactions:
-	- Show original amount + original currency.
-	- Show base-currency amount separated by a dot or bullet.
-- [M] small badge/icon:
-	- Appears only when `exchangeRateIsManual` is true.
-	- Tooltip on hover: "Manual FX rate" or similar.
+┌───────────────────────────────────────────────┐
+│  Dialog Title: Change Base Currency           │
+│  Subtitle: This is a critical change that     │
+│            affects all financial reporting.   │
+├───────────────────────────────────────────────┤
+│  Destructive Alert (inside dialog):           │
+│  • This does NOT recalculate historical       │
+│    transaction amounts                        │
+│  • Existing transactions retain their         │
+│    original base amounts                      │
+│  • Historical comparisons may be less         │
+│    meaningful                                  │
+│  • Reports will use the new currency going    │
+│    forward                                    │
+├───────────────────────────────────────────────┤
+│  New Base Currency                            │
+│  ┌───────────────────────────────────────┐    │
+│  │ [USD – US Dollar               ▾]    │    │
+│  └───────────────────────────────────────┘    │
+│  (Searchable dropdown backed by ISO list)     │
+├───────────────────────────────────────────────┤
+│  Confirmation checkbox:                       │
+│  [ ] I understand that historical amounts     │
+│      will not be recalculated and that past   │
+│      reports may be less comparable.          │
+│                                               │
+│  Confirmation text:                           │
+│  Label: Type "CHANGE" to confirm             │
+│  ┌──────────────────────────────┐             │
+│  │ CHANGE                       │             │
+│  └──────────────────────────────┘             │
+├───────────────────────────────────────────────┤
+│  [Cancel]                        [Change]     │
+└───────────────────────────────────────────────┘
 ```
 
-Interactions:
-- Clicking a row opens the Edit Transaction screen.
-- Filtering by currency with "All currencies" / base currency / specific FX currencies behaves as current filters plus the new options.
-
----
-
-## 4. New Transaction – Auto FX & Manual Override
-
-### 4.1 Screen: New Transaction
-
-**Entry points:**
-- Transactions List → `[New Transaction]`
+#### 2.3 Transactions List – Dual Currency Display & Filters
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│  Header                                                            │
-│  ─────────────────────────────────────────────────────────────────  │
-│  [<] Back   New Transaction                                        │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌──────────────── Basic Details ─────────────────────────────────────┐
-│ Type:   (• Income) (  Expense )                                    │
-│ Status: (• Posted) (  Draft   )                                    │
-│ Date:   [ 2025-11-16          ]  (date picker)                     │
-│                                                                     │
-│ Description: [___________________________________________]         │
-│ Category:    [Select category v]                                   │
-│ Account:     [Select account  v]                                   │
-│ Client/Vendor fields (as per type)                                 │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌──────────────── Amount & Currency ─────────────────────────────────┐
-│ Amount (original): [ 1000.00     ]                                 │
-│ Currency:          [ USD v ]                                       │
-│   - MYR (base currency)                                            │
-│   - USD, EUR, GBP, ...                                             │
-│   - Other... (shows custom ISO code field)                         │
-│                                                                     │
-│ (Base currency: MYR)                                               │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌──────────────── Exchange Rate to Base ─────────────────────────────┐
-│ Label: Exchange rate to MYR                                        │
-│                                                                     │
-│ [AUTO/MANUAL TOGGLE ROW]                                           │
-│  (o) Use automatic rate (recommended)                              │
-│  ( ) Use manual rate                                               │
-│                                                                     │
-│ Exchange rate: [ 4.20000000 ]  (read-only in AUTO, editable in     │
-│                                   MANUAL for foreign currency)     │
-│                                                                     │
-│ Helper text (AUTO, success):                                       │
-│  "Rate from Exchangerate.host for 2025-11-16"                      │
-│  If fallback used:                                                 │
-│  "Using 2025-11-15 rate due to market closure/availability."      │
-│                                                                     │
-│ Helper text (AUTO, failure + MANUAL policy):                       │
-│  - Inline error below field: "We couldn't fetch a rate for this    │
-│    date and currency. Please enter a manual rate."                │
-│  - Toast message: similar wording.                                 │
-│                                                                     │
-│ Manual rate note (visible only when 'Use manual rate' selected):   │
-│  Label: "Reason for manual rate (optional)"                        │
-│  [_____________________________________________]                    │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌──────────────── Base Amount Preview ───────────────────────────────┐
-│ Label: Base currency amount                                        │
-│                                                                     │
-│ Display (non-editable):                                            │
-│  "MYR 4,200.00"                                                   │
-│                                                                     │
-│ Helper text:                                                       │
-│  "Calculated as amount × exchange rate. Reports and balances      │
-│   use this amount."                                               │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌──────────────── Notes & Actions ───────────────────────────────────┐
-│ Notes (optional):                                                  │
-│ [_______________________________________________________]         │
-│                                                                     │
-│ [Cancel]                             [Save Transaction] (primary)  │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  Header: Transactions                                         │
+│  Subtitle: View and manage income and expenses                │
+├──────────────────────────────────────────────────────────────┤
+│  Filter Bar                                                   │
+│  ┌───────────────┬───────────────┬───────────────┬─────────┐ │
+│  │ Date Range    │ Category      │ Vendor/Client │ Status  │ │
+│  └───────────────┴───────────────┴───────────────┴─────────┘ │
+│  ┌───────────────┬───────────────┬─────────────────────────┐ │
+│  │ Amount Min     │ Amount Max     │ Search text            │ │
+│  │ (Base)         │ (Base)         │ (desc, vendor, client) │ │
+│  └───────────────┴───────────────┴─────────────────────────┘ │
+│  ┌───────────────────────────────┬─────────────────────────┐ │
+│  │ Currency filter              │ Type filter             │ │
+│  │ ┌─────────────────────────┐  │ ┌────────────────────┐ │ │
+│  │ │ All currencies   ▾      │  │ │ Income / Expense ▾ │ │ │
+│  │ └─────────────────────────┘  │ └────────────────────┘ │ │
+│  │ Options:                     │                         │ │
+│  │  • All currencies            │                         │ │
+│  │  • Base currency only        │                         │ │
+│  │  • USD                       │                         │ │
+│  │  • EUR                       │                         │ │
+│  │  • GBP                       │                         │ │
+│  │  • (etc., from ISO list)     │                         │ │
+│  └───────────────────────────────┴─────────────────────────┘ │
+├──────────────────────────────────────────────────────────────┤
+│  Transactions Table / List                                   │
+│                                                              │
+│  Row example (INCOME, with secondary currency):              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  Left:                                                 │  │
+│  │   • Date (formatted per settings)                      │  │
+│  │   • Description                                        │  │
+│  │   • Category > Subcategory                             │  │
+│  │   • Account name                                       │  │
+│  │   • Vendor / Client (if any)                           │  │
+│  │                                                        │  │
+│  │  Right:                                                │  │
+│  │   • Primary line (base currency):                      │  │
+│  │     +MYR 1,000.00                                      │  │
+│  │     (styled green for INCOME, red for EXPENSE)         │  │
+│  │   • Secondary line (original currency, smaller):       │  │
+│  │     USD 250.00                                         │  │
+│  │                                                        │  │
+│  │   • Action buttons: [Edit] [Delete]                    │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  Row example (base-only, no secondary):                      │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  Left: (same metadata fields)                          │  │
+│  │  Right:                                                │  │
+│  │   • Only base line shown:                              │  │
+│  │     -MYR 320.00                                        │  │
+│  │   • No secondary line rendered                         │  │
+│  └────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-Behavior notes:
-- When the user selects a currency different from base and chooses a date:
-	- On change of currency or date, the form calls the FX suggestion API (AUTO mode only).
-- If the business FX policy is "FALLBACK":
-	- The suggestion attempts provider, then local fallback within lookback window.
-	- If still failing, the UI automatically switches to MANUAL mode with error message.
-- If the policy is "MANUAL":
-	- Any provider failure immediately switches to MANUAL and blocks save until a valid manual rate is provided.
-- For base-currency transactions:
-	- Currency select is base.
-	- Exchange rate section shows a fixed `1.00` and hides the auto/manual toggle and note field.
-
----
-
-## 5. Edit Transaction – FX Details & Recalculation
-
-### 5.1 Screen: Edit Transaction
-
-**Entry points:**
-- Transactions List → click row
+#### 2.4 Transaction Form – Create/Edit with Base + Secondary Currency
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│  Header                                                            │
-│  ─────────────────────────────────────────────────────────────────  │
-│  [<] Back   Edit Transaction                                       │
-│  Right-side actions: [Delete] [More...]                            │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌──────────────── Basic Details (pre-filled) ────────────────────────┐
-│ Date:        [ 2025-11-15          ]                               │
-│ Type:        (• Income) (  Expense )                                │
-│ Status:      (• Posted) (  Draft   )                                │
-│ Description: [ Invoice #1234                 ]                      │
-│ Category:    [ Consulting v ]                                       │
-│ Account:     [ Main Account v ]                                     │
-│ Client/Vendor fields                                                │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌──────────────── Amount & Currency (pre-filled) ────────────────────┐
-│ Amount (original): [ 1000.00     ]                                 │
-│ Currency:          [ USD v ]                                       │
-│ (Base currency: MYR)                                               │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌──────────────── Exchange Rate to Base ─────────────────────────────┐
-│ Label: Exchange rate to MYR                                        │
-│                                                                     │
-│ Current state summary row:                                         │
-│  "Using manual rate: 4.20000000 (from bank statement)"            │
-│   or                                                               │
-│  "Using automatic rate: 4.19000000 from Exchangerate.host"       │
-│                                                                     │
-│ [AUTO/MANUAL TOGGLE ROW]                                           │
-│  (o) Use automatic rate                                            │
-│  ( ) Use manual rate                                               │
-│                                                                     │
-│ Exchange rate: [ 4.20000000 ]                                      │
-│                                                                     │
-│ Manual rate note (if manual):                                      │
-│  ["Used bank rate from statement"                    ]             │
-│                                                                     │
-│ [Optional button] (visible only in AUTO mode and foreign currency):│
-│  [Re-suggest rate for this date]                                   │
-│   - Triggers FX suggestion using current date & currency.          │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌──────────────── Base Amount & FX Meta ─────────────────────────────┐
-│ Base currency amount:  "MYR 4,200.00"                             │
-│                                                                     │
-│ Metadata (read-only, small text):                                  │
-│  - Source: Manual override / Exchangerate.host                     │
-│  - Last updated: 2025-11-15 10:45                                  │
-│  - (If fallback used) "Based on rate from 2025-11-14"             │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌──────────────── Notes & Actions ───────────────────────────────────┐
-│ Notes (optional):                                                  │
-│ [_______________________________________________________]         │
-│                                                                     │
-│ [Cancel]                         [Save Changes] (primary)          │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  Header: New Transaction / Edit Transaction                   │
+├──────────────────────────────────────────────────────────────┤
+│  Left column: core fields                                    │
+│                                                              │
+│  Transaction Type *                                          │
+│  [● Income] [○ Expense]                                      │
+│                                                              │
+│  Status *                                                    │
+│  [● Posted] [○ Draft]                                       │
+│                                                              │
+│  Date *                                                      │
+│  ┌──────────────────────┐                                   │
+│  │ 2025-11-16           │ (date picker)                     │
+│  └──────────────────────┘                                   │
+│                                                              │
+│  Description *                                               │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │ e.g. Stripe payout                                    │  │
+│  └───────────────────────────────────────────────────────┘  │
+│                                                              │
+│  Category *  (select with parent > child)                    │
+│  Account *   (select, default account preselected)           │
+│                                                              │
+│  Vendor / Client (optional, autocomplete)                    │
+├──────────────────────────────────────────────────────────────┤
+│  Right column: currency and amounts                          │
+│                                                              │
+│  Section: Base Amount (required)                             │
+│  Label: Amount (Base) *                                      │
+│  ┌──────────────────────────────┐                            │
+│  │ 1000.00                      │                            │
+│  └──────────────────────────────┘                            │
+│  Helper: Base currency: MYR                                  │
+│                                                              │
+│  Section: Secondary (Original) Currency (optional)           │
+│  Helper: Use this if the transaction was in another          │
+│          currency. Both amount and currency are required      │
+│          if one is provided.                                 │
+│                                                              │
+│  Secondary amount                                             │
+│  ┌──────────────────────────────┐                            │
+│  │ 250.00                       │                            │
+│  └──────────────────────────────┘                            │
+│                                                              │
+│  Secondary currency                                           │
+│  ┌───────────────────────────────────────────────────────┐   │
+│  │ [USD – US Dollar                              ▾]      │   │
+│  └───────────────────────────────────────────────────────┘   │
+│  (Searchable dropdown using ISO list; type to filter)        │
+│                                                              │
+│  Validation states (shown inline or via toast):              │
+│   • If secondary amount present but no currency → error      │
+│     "Please select a secondary currency"                    │
+│   • If secondary currency selected but no amount → error     │
+│     "Please enter a secondary amount"                       │
+├──────────────────────────────────────────────────────────────┤
+│  Notes (optional)                                            │
+│  ┌───────────────────────────────────────────────────────┐   │
+│  │                                                       │   │
+│  └───────────────────────────────────────────────────────┘   │
+├──────────────────────────────────────────────────────────────┤
+│  Footer:                                                     │
+│  [Cancel]                        [Save Transaction]          │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-Behavior notes:
-- Changing amount or rate automatically updates the base amount preview.
-- Changing date or currency while in AUTO mode can optionally trigger re-suggestion (or rely on server-side recalculation when saving, depending on performance trade-offs).
-- If the user switches from AUTO to MANUAL, we preserve the last suggested rate as starting value.
-
----
-
-## 6. Supporting Screenlets / States
-
-### 6.1 FX Suggestion Loading State
+#### 2.5 Transaction Detail – Dual Currency Summary
 
 ```text
-┌──────────────── Exchange Rate to Base ─────────────────────────────┐
-│ Exchange rate: [ 4.20000000 ]    (field disabled)                  │
-│                                                                     │
-│ [Spinner] Fetching rate for 2025-11-16...                           │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  Header: Transaction Detail                                  │
+│  Breadcrumb: Transactions / #1234                            │
+├──────────────────────────────────────────────────────────────┤
+│  Top summary row                                             │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  Left:                                                 │  │
+│  │   • Type badge: [Income] / [Expense]                   │  │
+│  │   • Status badge: [Posted] / [Draft]                   │  │
+│  │   • Date                                              │  │
+│  │   • Category > Subcategory                            │  │
+│  │   • Account                                           │  │
+│  │   • Vendor / Client                                   │  │
+│  │                                                        │  │
+│  │  Right:                                               │  │
+│  │   • Base amount (large, colored):                     │  │
+│  │       MYR 1,000.00                                    │  │
+│  │   • Secondary line (if present, smaller):             │  │
+│  │       USD 250.00 (Original currency)                  │  │
+│  └────────────────────────────────────────────────────────┘  │
+├──────────────────────────────────────────────────────────────┤
+│  Details sections                                            │
+│  • Description                                               │
+│  • Notes                                                     │
+│  • Linked documents                                          │
+│  • Audit log snippet (created/edited info)                   │
+├──────────────────────────────────────────────────────────────┤
+│  Actions: [Edit] [Delete] [Back to Transactions]             │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### 6.2 FX Suggestion Error (Auto → Manual switch)
+#### 2.6 Transactions Trash – Base + Optional Secondary
 
 ```text
-┌──────────────── Exchange Rate to Base ─────────────────────────────┐
-│ Exchange rate: [            ]                                      │
-│                                                                     │
-│ Error (inline):                                                     │
-│  "We couldn't fetch a rate for this date and currency.             │
-│   Please enter a manual rate."                                    │
-│                                                                     │
-│ ( ) Use automatic rate                                             │
-│ (o) Use manual rate                                                │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  Header: Trash – Transactions                                │
+├──────────────────────────────────────────────────────────────┤
+│  Columns:                                                    │
+│   • Date                                                     │
+│   • Description                                              │
+│   • Category                                                 │
+│   • Account                                                  │
+│   • Amount (Base)                                            │
+│   • Secondary amount (if any)                               │
+│   • Deleted at                                               │
+│   • Actions: [Restore] [Delete permanently]                  │
+│                                                              │
+│  Row with secondary:                                        │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  Date       Description      Category   Account        │  │
+│  │  2025-11-01 SaaS subscription Software  Bank          │  │
+│  │                                                    →  │  │
+│  │  Amount:   -MYR 1,000.00                              │  │
+│  │  Original: -USD 250.00                                │  │
+│  │  Deleted at: 2025-11-10 14:32                         │  │
+│  │  [Restore] [Delete permanently]                       │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  Row base-only:                                             │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  Amount: -MYR 320.00 (no secondary line)               │  │
+│  └────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
 ```
 
----
+#### 2.7 CSV Export – Columns Overview (Conceptual)
 
-These wireframes should be used in combination with the detailed plan in `notes/plan.md` when implementing the multi-currency & FX behavior across settings, APIs, and transaction screens.
-
+```text
+┌──────────────────────────────────────────────────────────────┐
+│  Export Transactions – Column overview                        │
+├──────────────────────────────────────────────────────────────┤
+│  Included columns (relevant to currency):                     │
+│   • amountBase (e.g. 1000.00)                                │
+│   • currencyBase (e.g. MYR)                                  │
+│   • amountSecondary (e.g. 250.00, empty if base-only)        │
+│   • currencySecondary (e.g. USD, empty if base-only)         │
+│  (Other columns: date, type, status, description, category,  │
+│   account, vendor/client, notes, etc.)                        │
+└──────────────────────────────────────────────────────────────┘
+```

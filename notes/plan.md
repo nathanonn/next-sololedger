@@ -1,260 +1,355 @@
-# Plan – Transactions: Filters, Bulk, Trash
+This plan introduces an organization-scoped FX rate store and service, wires automatic daily historical exchange-rate fetching into transaction create/update flows with per-business failure policies, and adds explicit manual override metadata and UI so users can see and control how foreign-currency amounts convert into base currency while keeping reports based solely on stored base amounts.
 
-We’ll upgrade the transactions list and its APIs to support rich server-side filtering (including multi-category, vendor/client, amount range in base currency, and currency), add multi-select with a bulk action toolbar for category/status changes, soft delete, and CSV export, introduce a dedicated Trash view for soft-deleted transactions with restore and permanent delete, and enforce soft-closed period warnings/confirmations (and override flags) when editing Posted transactions—both for single-edit and bulk flows—while preserving the existing Prisma, API, and UI patterns.
+## Phases Overview
 
-## 1. Understand and Align with Existing Stack
+1. Data model & settings
+2. FX service & provider adapter
+3. API integration (transactions)
+4. UI integration (transaction form)
+5. Indicators & listing/report hooks
+6. Testing & configuration
 
-- Review `prisma/schema.prisma`:
-	- Confirm `Transaction` fields: `status`, `type`, `amountOriginal`, `currencyOriginal`, `exchangeRateToBase` / `amountBase`, `deletedAt`, `vendorId`/`clientId`, `vendorName`/`clientName`.
-	- Identify any existing soft-close-related fields on organization or financial settings.
-- Inspect existing APIs:
-	- `app/api/orgs/[orgSlug]/transactions/route.ts` – current GET filters (`dateFrom`, `dateTo`, `type`, `status`), pagination, and default `deletedAt` handling.
-	- `app/api/orgs/[orgSlug]/transactions/[transactionId]/route.ts` – existing GET, PATCH, DELETE; confirm soft delete via `deletedAt`, and check update semantics.
-- Inspect UI:
-	- `app/o/[orgSlug]/transactions/page.tsx` – list rendering, current filters, search behavior, delete flow, and any use of custom hooks.
-	- `app/o/[orgSlug]/transactions/[id]/page.tsx` – edit form, how it loads categories/vendor/client, how it posts updates.
-- Check related notes:
-	- `notes/requirements.md` sections 7–8, 12, 15 for expectations on filters, bulk, soft delete, Trash.
-	- `notes/user_stories.md` for `US-TRX-004` and `US-TRASH-001` to ensure acceptance criteria coverage.
+---
 
-## 2. Server-Side Filter Enhancements
+## Phase 1 – Data Model & Org Settings
 
-Goal: Support advanced filters on the GET `/api/orgs/[orgSlug]/transactions` endpoint while keeping deleted items excluded.
+### 1.1 Add `FxRate` model (Prisma)
 
-- Extend query parameters:
-	- `categoryIds`: string (comma-separated IDs or repeatable params), mapped to `categoryId IN [...]`.
-	- `vendorId`: vendor primary key; filter `transaction.vendorId` or related vendor entity.
-	- `clientId`: client primary key; filter `transaction.clientId` or related client entity.
-	- `amountMin`, `amountMax`: numbers representing base-currency amount; filter on `amountBase` (or computed `amountOriginal * exchangeRateToBase` if no stored base field).
-	- `currency`: single currency code; filter `currencyOriginal` (or appropriate field).
-- Update Prisma query builder for `/transactions`:
-	- Start from existing filters: `type`, `status`, `dateFrom`, `dateTo`, and `deletedAt: null`.
-	- Add optional filters:
-		- `categoryId: { in: categoryIds[] }` when provided.
-		- `vendorId: vendorId` and/or `clientId: clientId` when provided.
-		- `amountBase: { gte: amountMin, lte: amountMax }` (or equivalent computed clauses).
-		- `currencyOriginal: currency` when provided.
-	- Ensure filters combine with logical AND and don’t break pagination or sorting.
-- Search behavior:
-	- For now, keep the existing client-side search in `transactions/page.tsx` to satisfy description/vendor/client text search.
-	- Optionally, log a follow-up task to move search server-side later for large datasets.
+- Define new `FxRate` model in `prisma/schema.prisma`:
+	- `id: String @id @default(cuid())`
+	- `organizationId: String`
+	- `baseCurrency: String @db.VarChar(3)`
+	- `quoteCurrency: String @db.VarChar(3)`
+	- `date: DateTime` (normalized to UTC midnight for that rate day)
+	- `rate: Decimal @db.Decimal(18, 8)`
+	- `source: String @db.VarChar(50)` (e.g. `"EXCHANGERATE_HOST"`)
+	- `retrievedAt: DateTime @default(now())`
+- Relations & indexes:
+	- Relation to `Organization` via `organizationId` (cascade on delete).
+	- Unique constraint on `(organizationId, baseCurrency, quoteCurrency, date)`.
+	- Index on `(organizationId, quoteCurrency, date)` to support lookback queries.
+- Semantics:
+	- Rates are logically global, but we store them per org for tenant isolation and potential org-specific overrides later.
 
-## 3. Advanced Filters UI in Transactions List
+### 1.2 Extend `OrganizationSettings` with FX policy
 
-Goal: Add multi-category, vendor/client dropdowns, amount range in base currency, and currency filter on the main transactions page.
+- Add fields to `OrganizationSettings` in `prisma/schema.prisma`:
+	- `fxFailurePolicy: String @db.VarChar(20)`
+		- Values: `"FALLBACK" | "MANUAL"` (string-based, or a dedicated Prisma enum if preferred).
+	- Optional: `fxMaxLookbackDays: Int?` (if we want per-org overrides; otherwise global env only).
+- Defaults and migrations:
+	- Default `fxFailurePolicy` to `"FALLBACK"` in migration for existing rows.
+	- Leave `fxMaxLookbackDays` null initially so env default applies.
+- API: `app/api/orgs/[orgSlug]/settings/financial/route.ts`:
+	- `GET` should include `fxFailurePolicy` (and `fxMaxLookbackDays` if present) in `settings` payload.
+	- `PATCH` should accept and persist `fxFailurePolicy` (and `fxMaxLookbackDays` if implemented) for admins.
+- UI: `app/o/[orgSlug]/settings/organization/(tabs)/financial/page.tsx`:
+	- Add an "Exchange Rate Behavior" section under financial settings:
+		- Radio group:
+			- Option A: "Fallback to last available rate (recommended)" → `"FALLBACK"`.
+			- Option B: "Require manual rate when automatic fetch fails" → `"MANUAL"`.
+		- Show helper text describing each behavior.
+	- Bound to `fxFailurePolicy` from financial settings hook.
+	- Editable only for admins; members see a read-only description.
 
-- Categories:
-	- Load categories via existing `GET /api/orgs/[orgSlug]/categories` endpoint.
-	- Add a multi-select Category filter in `app/o/[orgSlug]/transactions/page.tsx`:
-		- Use a popover/command-style menu with checkable items for categories.
-		- Show a summary label such as “All categories” / “3 selected”.
-	- Store selected category IDs in component state and serialize into `categoryIds` query params for `loadTransactions()`.
-- Vendor & Client filters:
-	- Add a `Vendor` dropdown filter backed by a vendor list endpoint (or implement one if missing).
-	- Add a `Client` dropdown filter for income transactions, reusing the same pattern.
-	- Store selected IDs in state and append `vendorId` / `clientId` to API params.
-- Amount range & currency:
-	- Add `amountMin` / `amountMax` numeric inputs representing base-currency amounts:
-		- Validate locally (non-negative, `min <= max` where both are present).
-	- Add a single-select `Currency` dropdown:
-		- Initialize from org settings (`baseCurrency`) plus any additional enabled currencies.
-		- Bind selected value to `currency` query param.
-- Wiring & UX:
-	- Extend `loadTransactions()` to include new filter params from state.
-	- Ensure Reset/“Clear filters” button also resets the new filters to defaults.
-	- Keep the current client-side text search for description/vendor/client and ensure it operates on the already-filtered result set.
+### 1.3 Extend `Transaction` model with FX metadata
 
-## 4. Multi-Select & Selection Toolbar in List
+- In `Transaction` model in `prisma/schema.prisma`, add:
+	- `exchangeRateIsManual: Boolean @default(false)`
+	- `exchangeRateNote: String? @db.Text`
+	- `exchangeRateSource: String? @db.VarChar(50)` (e.g. `"EXCHANGERATE_HOST"`, `"MANUAL"`, `"BASE_CURRENCY"`).
+- Migration behavior:
+	- Existing transactions get `exchangeRateIsManual = false` and `exchangeRateSource = null` (or optionally a placeholder like `"LEGACY"`).
+- Semantics:
+	- Provider-derived rate: `exchangeRateIsManual = false`, `exchangeRateSource = provider code`.
+	- Manual override: `exchangeRateIsManual = true`, `exchangeRateSource = "MANUAL"`, `exchangeRateNote` populated when user supplies a justification.
 
-Goal: Add per-row checkboxes, header select-all, and a conditional bulk actions toolbar for selected transactions.
+---
 
-- Selection state:
-	- Add `selectedTransactionIds: string[]` state in `transactions/page.tsx`.
-	- Derive `allSelectedOnPage` and `someSelected` from the currently rendered transaction list.
-- Checkbox column:
-	- Add a leading checkbox column to the table/list.
-	- Header checkbox toggles selection of all transactions currently visible on the page.
-	- Row checkboxes toggle each transaction ID in `selectedTransactionIds`.
-- Selection toolbar:
-	- Show a sticky or top-aligned toolbar when `selectedTransactionIds.length > 0`.
-	- Display selection count (e.g. “3 selected”).
-	- Include actions: “Change category”, “Change status”, “Delete selected”, “Export selected CSV”.
-- Interaction details:
-	- Ensure row click continues to navigate to transaction detail without interfering with checkbox clicks.
-	- Make checkboxes keyboard-accessible and maintain focus styles for accessibility.
+## Phase 2 – FX Service & Provider Adapter
 
-## 5. Bulk Actions API and Backend Logic
+### 2.1 Core FX service module
 
-Goal: Provide a single bulk endpoint for category/status changes and soft delete, respecting soft-closed period rules.
+- Create `lib/fx-service.ts` as a server-only module.
+- Types:
+	- `type FxFailurePolicy = "FALLBACK" | "MANUAL";`
+	- `type FxRateResult = { rate: number; source: string; date: Date; usedFallback: boolean; };`
+	- `type FxProvider = { getHistoricalRate(params: { baseCurrency: string; quoteCurrency: string; date: Date; }): Promise<{ rate: number; date: Date; source: string; }>; };`
+- Public functions:
+	- `async function getFxSettingsForOrg(organizationId: string): Promise<{ failurePolicy: FxFailurePolicy; maxLookbackDays: number; }>`:
+		- Reads `OrganizationSettings` for `fxFailurePolicy` (fallback to `"FALLBACK"` if null).
+		- `maxLookbackDays` from `fxMaxLookbackDays` or env `FX_MAX_LOOKBACK_DAYS` (default 30).
+	- `async function getOrFetchRate(params: { organizationId: string; baseCurrency: string; quoteCurrency: string; date: Date; failurePolicy: FxFailurePolicy; maxLookbackDays: number; }): Promise<FxRateResult | null>`:
+		- Normalize `date` to a UTC midnight "rate date".
+		- Step 1: Check existing `FxRate` for `(organizationId, baseCurrency, quoteCurrency, rateDate)`.
+			- If found, return cached `rate` and `source`, `usedFallback: false`.
+		- Step 2: If not found, call provider via `getFxProvider().getHistoricalRate(...)`.
+			- On success:
+				- Persist a new `FxRate` row.
+				- Return `{ rate, source, date: rateDate, usedFallback: false }`.
+			- On failure:
+				- If `failurePolicy === "FALLBACK"`:
+					- Query `FxRate` for latest previous date within `maxLookbackDays` for same `(org, base, quote)`.
+					- If found, return with `usedFallback: true`.
+					- If not found, return `null`.
+				- If `failurePolicy === "MANUAL"`, return `null` immediately.
 
-- New bulk endpoint:
-	- Implement `POST /api/orgs/[orgSlug]/transactions/bulk`.
-	- Request body structure:
-		- `transactionIds: string[]` (required)
-		- `action: "changeCategory" | "changeStatus" | "delete"` (required)
-		- `categoryId?: string` (for `changeCategory`)
-		- `status?: "DRAFT" | "POSTED"` (for `changeStatus`)
-		- `allowSoftClosedOverride?: boolean` (for status changes affecting soft-closed periods).
-- Common validation:
-	- Reuse auth helpers to load current user and org.
-	- Ensure all `transactionIds` belong to the org; ignore or mark as failure otherwise.
-	- Exclude transactions with `deletedAt != null` from updates.
-- Action-specific logic:
-	- `changeCategory`:
-		- Validate `categoryId` exists and belongs to org.
-		- Update `categoryId` for each eligible transaction.
-	- `changeStatus`:
-		- Allow status changes both directions (Draft ↔ Posted) by default.
-		- For any transaction that is `POSTED` and in a soft-closed period, require `allowSoftClosedOverride === true`; otherwise mark as failure.
-	- `delete`:
-		- Perform soft delete via `deletedAt = new Date()` for each eligible transaction.
-- Partial success response (error strategy):
-	- Execute updates per transaction and collect:
-		- `successCount`
-		- `failureCount`
-		- `failures: { transactionId: string; reason: string }[]`
-	- Return this structure so the UI can display a summary toast and optionally log details.
+### 2.2 Provider adapter with pluggable implementation
 
-## 6. Bulk Actions UI Wiring
+- Add `lib/fx-providers/exchangerate-host.ts`:
+	- Implements `FxProvider` using `https://api.exchangerate.host/{YYYY-MM-DD}?base=BASE&symbols=QUOTE`.
+	- Parses JSON, extracts `rates[QUOTE]`.
+	- Validates and throws on missing/invalid rate.
+	- Uses `FX_API_BASE_URL` env when present; defaults to the public host.
+- Add `lib/fx-providers/index.ts`:
+	- Exports `getFxProvider(): FxProvider`.
+	- Chooses implementation based on `process.env.FX_PROVIDER` (e.g. `"EXCHANGERATE_HOST"` or `"MOCK"`).
+- Ensure all provider calls stay server-side (in routes or server libs), never in client components.
 
-Goal: Connect selection toolbar actions to the bulk API and CSV export endpoint.
+### 2.3 Mock provider for tests/dev
 
-- Change category bulk action:
-	- When user clicks “Change category” in toolbar, open a dialog to pick a category.
-	- On confirm, call bulk endpoint with `action: "changeCategory"`, `transactionIds`, and `categoryId`.
-	- On success, show toast summarizing updates; refresh transactions list and clear selection.
-- Change status bulk action:
-	- When user clicks “Change status”, open a dialog to choose new status (Draft/Posted).
-	- Before calling API, check for any selected transactions that are `POSTED` in a soft-closed period:
-		- If found, show a confirmation dialog explaining the override.
-		- If user confirms, send bulk request with `allowSoftClosedOverride: true`.
-	- Handle partial success by showing a toast that includes success and failure counts.
-- Bulk delete action:
-	- On “Delete selected”, show a confirmation dialog.
-	- If confirmed, call bulk endpoint with `action: "delete"`.
-	- On success, toast and refresh list; on partial success, surface failures.
-- Bulk CSV export action:
-	- On “Export selected”, generate a URL for the CSV export endpoint (see next section) with selected IDs.
-	- Trigger browser download via navigation or a programmatic link.
+- Implement `lib/fx-providers/mock.ts`:
+	- `getHistoricalRate` returns deterministic values from an in-memory map or simple logic (e.g. `1 USD = 4.20000000 MYR`).
+	- Optionally supports a small override mechanism for tests (e.g. `setMockRate(...)`).
+- Configure tests/dev:
+	- In tests, set `FX_PROVIDER="MOCK"`.
+	- Optionally allow local dev to use MOCK when no internet or while API keys are missing.
 
-## 7. CSV Export Endpoint and Behavior
+---
 
-Goal: Provide CSV export for selected transactions via a dedicated GET endpoint.
+## Phase 3 – API Integration (Transactions)
 
-- New export endpoint:
-	- Implement `GET /api/orgs/[orgSlug]/transactions/export?ids=id1,id2,...`.
-	- Validate org membership and that all requested transactions belong to the org and are not soft-deleted.
-- CSV generation:
-	- Create or reuse a CSV utility (e.g. in `lib/transactions-export.ts`).
-	- Include columns such as: `id`, `date`, `type`, `status`, `amountBase`, `amountOriginal`, `currencyOriginal`, `categoryName`, `accountName`, `vendorName`, `clientName`, `notes`.
-	- Set headers: `Content-Type: text/csv` and `Content-Disposition` with a timestamped filename.
-- UI integration:
-	- Use the bulk toolbar’s “Export selected” to hit this endpoint.
-	- Optionally show a brief toast (“Export started”) if using programmatic download.
+### 3.1 POST `/api/orgs/[orgSlug]/transactions` – auto FX application
 
-## 8. Trash View for Soft-Deleted Transactions
+- Update zod schema in `app/api/orgs/[orgSlug]/transactions/route.ts` for POST:
+	- Existing fields remain (type, status, amountOriginal, currencyOriginal, date, etc.).
+	- Add FX-related fields:
+		- `useManualRate: z.boolean().optional().default(false)`.
+		- `exchangeRateToBase: z.number().positive().optional()` (required when `useManualRate` true and `currencyOriginal !== baseCurrency`).
+		- `exchangeRateNote: z.string().nullable().optional()`.
+- Server logic (after validation, org + membership checks):
+	1. Load `OrganizationSettings` to get `baseCurrency` and FX settings via `getFxSettingsForOrg(org.id)`.
+	2. Determine `finalCurrency` from `currencyOriginal`.
+	3. If `finalCurrency === baseCurrency`:
+		 - Set `rate = 1.0`.
+		 - Set `exchangeRateIsManual = false`.
+		 - Set `exchangeRateSource = "BASE_CURRENCY"`.
+	4. Else if `useManualRate === true`:
+		 - Require `exchangeRateToBase` > 0 in zod and runtime.
+		 - Set `rate = exchangeRateToBase`.
+		 - `exchangeRateIsManual = true`.
+		 - `exchangeRateSource = "MANUAL"`.
+		 - `exchangeRateNote` from body (optional).
+	5. Else (auto FX mode for foreign currency):
+		 - Call `getOrFetchRate` with `(org.id, baseCurrency, finalCurrency, new Date(date), failurePolicy, maxLookbackDays)`.
+		 - If result is `null`:
+			 - Return 400 with an error like "Could not fetch an exchange rate; please enter a manual rate.".
+		 - If result found:
+			 - `rate = result.rate`.
+			 - `exchangeRateIsManual = false`.
+			 - `exchangeRateSource = result.source`.
+			 - (Optional) If `result.usedFallback`, include that in the response payload for UI messaging.
+	6. Compute base amount:
+		 - `amountBase = amountOriginal * rate` (convert Prisma `Decimal` to `Number` where needed, consistent with `CLAUDE.md`).
+	7. Create transaction with:
+		 - `amountOriginal`, `currencyOriginal`, `exchangeRateToBase: rate`, `amountBase`.
+		 - `exchangeRateIsManual`, `exchangeRateSource`, `exchangeRateNote`.
+- Response:
+	- Include `exchangeRateToBase`, `amountBase`, `exchangeRateIsManual`, `exchangeRateSource`, and `exchangeRateNote` so the client can reflect the final state.
 
-Goal: Add a dedicated transactions Trash page under the org that lists soft-deleted transactions and supports restore and permanent delete.
+### 3.2 PATCH `/api/orgs/[orgSlug]/transactions/[transactionId]` – FX-aware updates
 
-- Trash list API:
-	- Implement `GET /api/orgs/[orgSlug]/transactions/trash`.
-	- Filter by `deletedAt != null` and org.
-	- Support minimal filters (date deleted, type, text search):
-		- Query params: `deletedFrom`, `deletedTo`, `type`, `search`.
-- Trash page UI:
-	- Add `app/o/[orgSlug]/transactions/trash/page.tsx`.
-	- Layout similar to main transactions table but focused on:
-		- Columns: type, description, transaction date, deletedAt, status, key identifiers.
-		- Filters: deleted date range, type selector, search box.
-	- Actions per row: “Restore” and “Delete permanently”.
-- Restore endpoint:
-	- Implement `POST /api/orgs/[orgSlug]/transactions/[transactionId]/restore`.
-	- Validate org and membership, ensure `deletedAt != null`, then set `deletedAt = null`.
-- Permanent delete endpoint:
-	- Implement `DELETE /api/orgs/[orgSlug]/transactions/[transactionId]/hard-delete`.
-	- Validate org and membership.
-	- Remove transaction record and any dependent join records (e.g. transaction-document links), consistent with Trash requirements.
-- Trash UX behavior:
-	- On restore: stay in Trash view, show “Transaction restored” toast, and remove item from the Trash list.
-	- On permanent delete: show confirmation dialog, then remove item from list on success and show a toast.
+- Update PATCH zod schema in `app/api/orgs/[orgSlug]/transactions/[transactionId]/route.ts`:
+	- Add optional FX fields:
+		- `useManualRate: z.boolean().optional()`.
+		- `exchangeRateToBase: z.number().positive().optional()`.
+		- `exchangeRateNote: z.string().nullable().optional()`.
+		- `autoRecalculateRate: z.boolean().optional()` (to explicitly request re-fetch when editing).
+- Server logic (after auth/org checks and fetching existing transaction):
+	1. Determine `finalCurrency`:
+		 - Use `data.currencyOriginal` if provided; else `existing.currencyOriginal`.
+	2. Determine `finalDate`:
+		 - Use `data.date` if provided; else `existing.date`.
+	3. If `finalCurrency === baseCurrency`:
+		 - Set `rate = 1.0`, `exchangeRateIsManual = false`, `exchangeRateSource = "BASE_CURRENCY"`.
+	4. Else if `useManualRate === true`:
+		 - Require `exchangeRateToBase` > 0.
+		 - `rate = exchangeRateToBase`.
+		 - `exchangeRateIsManual = true`.
+		 - `exchangeRateSource = "MANUAL"`.
+		 - `exchangeRateNote` from body.
+	5. Else if `autoRecalculateRate === true` or currency/date changed:
+		 - Use `getOrFetchRate` as in POST.
+		 - Same error handling if result is `null`.
+	6. Else (no explicit FX change):
+		 - Keep existing `exchangeRateToBase`, `exchangeRateIsManual`, `exchangeRateSource`, and `exchangeRateNote`.
+	7. Recalculate `amountBase` when needed:
+		 - Determine `finalAmountOriginal` (updated or existing).
+		 - If either `finalAmountOriginal` or `rate` differ from existing, set `amountBase = finalAmountOriginal * rate`.
+	8. Persist updates accordingly.
 
-## 9. Soft-Closed Period Model and Helper
+### 3.3 Include FX metadata in GET `/transactions`
 
-Goal: Model soft-closed periods with a simple cutoff date field and provide a reusable helper.
+- Ensure `GET /api/orgs/[orgSlug]/transactions` includes, for each transaction:
+	- `currencyOriginal`, `amountOriginal`, `exchangeRateToBase`, `exchangeRateIsManual`, `exchangeRateSource`.
+- This powers dual display and manual-rate indicators in the UI.
 
-- Data model:
-	- Add a field to the organization’s financial settings model (if not present), for example `softClosedBefore: Date | null`.
-	- Ensure any settings API or management UI that edits financial settings can read/write this field.
-- Helper function:
-	- Implement `isInSoftClosedPeriod(transactionDate: Date, softClosedBefore: Date | null): boolean` in a shared utility (e.g. `lib/periods.ts`).
-	- Return true when `softClosedBefore` is set and `transactionDate < softClosedBefore`.
-- Usage in APIs:
-	- In single transaction PATCH and bulk endpoints, load org settings to get `softClosedBefore`.
-	- Use the helper to determine whether a transaction is in a soft-closed period when applying edits or status changes.
+---
 
-## 10. Soft-Closed Warning & Confirmation in Single Transaction Edit
+## Phase 4 – UI Integration (Transaction Form)
 
-Goal: Warn users and require confirmation when editing a Posted transaction in a soft-closed period, with server-side enforcement.
+### 4.1 Extend transaction form data model
 
-- Client-side detection:
-	- In `app/o/[orgSlug]/transactions/[id]/page.tsx`, load org financial settings alongside transaction data.
-	- Use the same logic as `isInSoftClosedPeriod` to flag if a `POSTED` transaction lies before `softClosedBefore`.
-	- If true, show a warning banner explaining that edits will override a soft-closed period.
-- Submit flow:
-	- When user submits changes to such a transaction:
-		- Show a confirmation dialog: explain the risk of editing Posted items in soft-closed periods.
-		- If user confirms, include `allowSoftClosedOverride: true` in the PATCH payload.
-		- If user cancels, abort the submit.
-- API enforcement:
-	- In PATCH `/api/orgs/[orgSlug]/transactions/[transactionId]`:
-		- Load org settings and the existing transaction.
-		- If transaction is `POSTED` and `isInSoftClosedPeriod` returns true:
-			- If `allowSoftClosedOverride` is not true, reject with a 400 error and a clear message.
-			- Otherwise, proceed with the update.
-	- For v1, allow all fields to change after override, while documenting that this may affect reported figures.
+- In `components/features/transactions/transaction-form.tsx`:
+	- Extend `TransactionData` with:
+		- `exchangeRateIsManual?: boolean`.
+		- `exchangeRateNote?: string`.
+	- Local React state additions:
+		- `rateMode: "AUTO" | "MANUAL"` (derive initial from `initialData.exchangeRateIsManual`).
+		- `exchangeRateNote` controlled input.
+	- Derived flags:
+		- `const isBaseCurrency = finalCurrency === settings.baseCurrency;`
+		- `const isForeignCurrency = !isBaseCurrency;`.
 
-## 11. Soft-Closed Logic for Bulk Status Changes
+### 4.2 Auto-suggest rate on currency/date change
 
-Goal: Apply soft-closed period rules to bulk status changes with a single confirmation step.
+- Add a dedicated FX suggestion route (server):
+	- `GET /api/orgs/[orgSlug]/fx/suggest-rate?currency=XXX&date=YYYY-MM-DD`.
+	- Uses `getFxSettingsForOrg` and `getOrFetchRate` but does not touch `Transaction`.
+	- Returns JSON: `{ rate, source, rateDate, usedFallback }` or a 400/500 error.
+- In `TransactionForm`:
+	- When `currency` or `date` changes and `isForeignCurrency` and `rateMode === "AUTO"`:
+		- Call the FX suggest endpoint with the current `orgSlug`, currency, and date.
+		- On success:
+			- Update `exchangeRate` state.
+			- Store `source` and whether `usedFallback` for display.
+			- Show helper text like:
+				- "Rate from Exchangerate.host for 2025-11-16".
+				- If `usedFallback`, append "(using 2025-11-15 rate)".
+		- On failure:
+			- Read `fxFailurePolicy` from financial settings (passed down or via hook).
+			- If policy is MANUAL or fallback failed:
+				- Switch `rateMode` to `"MANUAL"`.
+				- Show inline error under rate field and a toast: "We couldn't fetch an exchange rate; please enter a manual rate.".
 
-- Client-side behavior:
-	- When user triggers bulk “Change status”, determine (from available data and org settings) whether any selected transactions are `POSTED` and in a soft-closed period.
-	- If at least one is:
-		- Show a bulk confirmation dialog summarizing how many such transactions are affected.
-		- If user agrees, call the bulk API with `allowSoftClosedOverride: true`.
-		- If user cancels, abort the request.
-- Server enforcement:
-	- In the bulk API, for each transaction:
-		- Use `isInSoftClosedPeriod` to determine if the transaction is in a soft-closed period and `status === "POSTED"`.
-		- If so, require `allowSoftClosedOverride` to be true or mark that transaction as a failure.
-	- Return partial success details so the UI can report exactly how many updates succeeded vs. failed.
+### 4.3 Manual override toggle and note
 
-## 12. Consistent Soft Delete & Trash Behavior
+- Under the exchange rate input in `TransactionForm`:
+	- Add a toggle UI (e.g. radio group or switch) for mode selection:
+		- Option 1: "Use automatic rate" (sets `rateMode = "AUTO"`, `useManualRate = false`).
+		- Option 2: "Use manual rate" (sets `rateMode = "MANUAL"`, `useManualRate = true`).
+	- Behavior:
+		- AUTO → MANUAL:
+			- Keep the current suggested rate in the input as a starting point.
+			- Enable editing.
+		- MANUAL → AUTO:
+			- Clear `exchangeRateNote`.
+			- Trigger FX suggestion for `(currency, date)` to refresh the rate.
+- Rate input:
+	- For base-currency transactions:
+		- Always show `1.00` as read-only; hide toggle and note.
+	- For foreign-currency transactions:
+		- Read-only when `rateMode === "AUTO"`.
+		- Editable when `rateMode === "MANUAL"`.
+- Manual note field:
+	- Only visible when `rateMode === "MANUAL"` and `isForeignCurrency`.
+	- Label: "Reason for manual rate (optional)".
+	- Bound to `exchangeRateNote` state.
 
-Goal: Ensure all deletion flows use soft delete by default and that Trash is the only place where hard delete occurs.
+### 4.4 Client-side validation and submit
 
-- Delete semantics:
-	- Confirm existing `DELETE /transactions/[transactionId]` sets `deletedAt = new Date()`.
-	- Ensure bulk delete uses the same soft-delete logic.
-	- Ensure permanent delete endpoints are used only from Trash and remove the record entirely.
-- List and reporting filters:
-	- Verify all normal transaction lists and reporting queries exclude `deletedAt != null` transactions.
-	- Update any queries that still include soft-deleted rows inadvertently.
-- Activity log integration (if present):
-	- For single delete, bulk delete, restore, and permanent delete, add or extend activity log entries with type, user, and timestamp.
+- Validation in `handleSubmit`:
+	- If `isForeignCurrency` and `rateMode === "MANUAL"`, require `exchangeRate > 0`.
+	- For `rateMode === "AUTO"`, allow submit even if suggestion failed, since server will enforce policy and may return an error prompting manual rate.
+	- For `isBaseCurrency`, ignore manual vs auto and enforce rate = 1.0.
+- Payload construction (POST and PATCH):
+	- Always send:
+		- `currencyOriginal` (finalCurrency).
+		- `amountOriginal`.
+		- `useManualRate: rateMode === "MANUAL"`.
+		- `exchangeRateNote` when non-empty.
+	- Only send `exchangeRateToBase` when `rateMode === "MANUAL"` or base-currency (1.0).
+	- Let server compute final `amountBase`, `exchangeRateIsManual`, and `exchangeRateSource`.
+- After save success:
+	- Use response data to update any local state if necessary.
+	- Show confirmation toast.
 
-## 13. Testing and Validation
+---
 
-Goal: Validate filters, bulk actions, Trash flows, and soft-closed behavior across API and UI.
+## Phase 5 – Indicators & Listing/Reports
 
-- API tests (or manual verification if tests are not yet in place):
-	- Verify combinations of filters (category multi-select, vendor/client, amount range, currency) return expected transactions.
-	- Test bulk category and status changes with normal and soft-closed scenarios, including override flag handling.
-	- Test soft delete, Trash listing, restore, and permanent delete end-to-end.
-- UI testing scenarios:
-	- Verify advanced filters correctly update the list and Reset clears them.
-	- Confirm selection toolbar appears and disappears as expected; header checkbox selects all visible rows.
-	- Validate bulk actions (category, status, delete, export) perform correct API calls and show appropriate toasts.
-	- Confirm soft-closed warning banners and confirmation dialogs appear only when required and block edits when overridden is not confirmed.
-	- Confirm Trash view behavior for restore and permanent delete and that restored items reappear in the normal transactions list.
+### 5.1 Dual currency display and manual indicator in transaction list
+
+- `app/o/[orgSlug]/transactions/page.tsx`:
+	- Ensure each row has access to:
+		- `amountOriginal`, `currencyOriginal`, `amountBase`, `exchangeRateIsManual`.
+	- Display logic:
+		- If `currencyOriginal !== settings.baseCurrency`:
+			- Show: `"{currencyOriginal} {amountOriginal} • {settings.baseCurrency} {amountBase}"` (using `formatCurrency`).
+		- Else:
+			- Show the base amount only (current behavior).
+	- Manual indicator:
+		- If `exchangeRateIsManual` is true:
+			- Add a small badge/icon next to the amounts (e.g. an "M" or info icon).
+			- Tooltip text: "Manual FX rate".
+
+### 5.2 Transaction detail/edit view
+
+- `app/o/[orgSlug]/transactions/[id]/page.tsx`:
+	- Ensure API includes `exchangeRateIsManual`, `exchangeRateNote`, and `exchangeRateSource`.
+	- Show an "Exchange rate" section:
+		- Example: `"Rate: 4.20000000 MYR per USD"`.
+		- `Source: Exchangerate.host` or `"Source: Manual override"`.
+		- If `exchangeRateIsManual`:
+			- Highlight with a badge: "Manual FX rate".
+			- Show `exchangeRateNote` below when present.
+
+### 5.3 Reporting and balances
+
+- Confirm that account balances and other reports continue to rely only on `amountBase` (current design).
+- For any future "currency reports" (already hinted in requirements):
+	- Use `currencyOriginal` and `amountOriginal` for original-currency totals.
+	- Use `amountBase` for base-currency totals.
+	- Optionally expose counts of manual-rate transactions per currency.
+
+---
+
+## Phase 6 – Testing & Configuration
+
+### 6.1 Environment configuration
+
+- Update `.env.example` with FX settings:
+	- `FX_PROVIDER=EXCHANGERATE_HOST`
+	- `FX_API_BASE_URL=https://api.exchangerate.host` (optional override)
+	- `FX_MAX_LOOKBACK_DAYS=30`
+- Document in a suitable notes file (e.g. `notes/implementations.md` or a new FX-specific note):
+	- What the FX provider is.
+	- That FX runs server-side only.
+	- How to switch to MOCK provider for tests.
+
+### 6.2 Tests
+
+- Unit tests for `lib/fx-service.ts`:
+	- Returns cached rate when present.
+	- On provider failure with `FALLBACK`, uses latest prior rate within `maxLookbackDays`.
+	- Returns `null` when no fallback exists or policy is `MANUAL`.
+- Tests for POST `/transactions`:
+	- Base currency: enforces rate = 1.0, manual flags false.
+	- Foreign currency + auto mode: uses provider rate, sets `exchangeRateIsManual = false`, `exchangeRateSource` correctly.
+	- Foreign currency + manual mode: uses provided rate, sets `exchangeRateIsManual = true`, persists `exchangeRateNote`.
+	- Failure policy:
+		- `FALLBACK` with no history → 400 requiring manual rate.
+		- `MANUAL` → 400 requiring manual rate.
+- Tests for PATCH `/transactions/[id]`:
+	- Changing date/currency with `autoRecalculateRate` updates rate and `amountBase`.
+	- Switching from auto to manual and back.
+	- Base-currency transactions remain pinned to rate 1.0.
+
+---
+
+## Out of Scope for This Plan
+
+- Historical recomputation of all `amountBase` values on base-currency change (current UI explicitly says no recalculation; changing this should be a separate story).
+- Advanced FX reporting (e.g. currency-specific dashboards) beyond ensuring current reports continue to use `amountBase`.
+- Multi-provider routing or paid-provider-specific features beyond the simple pluggable adapter.
 

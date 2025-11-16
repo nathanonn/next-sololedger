@@ -1,275 +1,351 @@
-# Wireframes – Transactions: Filters, Bulk, Trash
+## Multi-Currency & FX – UX Flow & Wireframes
 
-Below is the UX flow map and screen-by-screen ASCII wireframes for the Transactions filters, bulk actions, Trash, and soft-closed period behaviors.
+This document captures the UX flow and screen-by-screen wireframes for the multi-currency and FX features: automatic historical rate suggestions, per-business FX failure policy, and manual rate override with clear indicators.
 
-## 1. UX Flow Map
+---
+
+## 1. High-Level UX Flow Map
 
 ```text
-[Org Dashboard]
-	|
-	v
+[Dashboard]
+	 |
+	 v
+[Settings > Organization > Financial]
+	 - Configure base currency (existing)
+	 - Configure FX failure policy (new)
+
 [Transactions List]
-   |        |            |                |
-   |        |            |                |
-   |        |            |                +--> [Trash - Transactions]
-   |        |            |
-   |        |            +--> [Bulk Actions Dialogs]
-   |        |                   - Change Category
-   |        |                   - Change Status (soft-close confirm)
-   |        |                   - Delete Selected (confirm)
-   |        |                   - Export Selected CSV
-   |        |
-   |        +--> [Transaction Detail / Edit]
-   |                 - Soft-closed warning & confirm
-   |
-   +--> [Advanced Filters]
-		  - Category multi-select
-		  - Vendor dropdown
-		  - Client dropdown
-		  - Amount range (base)
-		  - Currency
-		  - Date range
-		  - Search
+	 - Filter by currency
+	 - See dual amounts and manual FX indicator
+	 |
+	 +--> [New Transaction]
+	 |        - Choose currency and date
+	 |        - Auto-suggest FX rate for foreign currency
+	 |        - Optional manual override + note
+	 |
+	 +--> [Edit Transaction]
+						- View existing FX info (rate, source, manual flag, note)
+						- Change currency/date
+						- Re-suggest FX rate or override manually
+
+[Accounts / Reports]
+	 - Continue to show balances in base currency only (no new UI)
 ```
 
-## 2. Transactions List – Main Screen
+---
+
+## 2. Settings – Financial: FX Failure Policy
+
+### 2.1 Screen: Organization Settings – Financial Tab
+
+**Entry points:**
+- Sidebar: `Settings` → `Organization` → `Financial`
 
 ```text
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ Header: Transactions                                                        │
-│ Org: {Org Name}  |  [Back to Dashboard]                                     │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ Filters Row 1                                                               │
-│                                                                              │
-│  Type: [ All v ]   Status: [ All v ]   Date: [ From ▢▢▢▢-▢▢-▢▢ ] [ To ▢▢▢▢-▢▢-▢▢ ] │
-│                                                                              │
-│ Filters Row 2                                                               │
-│                                                                              │
-│  Category: [ All categories ▾ ]   Vendor: [ All vendors ▾ ]                  │
-│  Client:   [ All clients  ▾ ]    Currency: [ Any currency ▾ ]                │
-│                                                                              │
-│ Filters Row 3                                                               │
-│                                                                              │
-│  Amount (base):  Min [ ▢▢▢▢▢ ]   Max [ ▢▢▢▢▢ ]                               │
-│  Search: [ Description, category, client, vendor...              ]          │
-│                                                                              │
-│ [ Apply Filters ]   [ Reset ]                                               │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ Bulk Selection Toolbar (shown only when ≥1 row selected)                    │
-│                                                                              │
-│  ● 3 selected                                                                │
-│  [ Change category ]  [ Change status ]  [ Delete selected ]  [ Export CSV ] │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ Transactions Table/List                                                     │
-│                                                                              │
-│  ┌────────────────────────────────────────────────────────────────────────┐  │
-│  │ [☐] | Date       | Description / Party      | Category   | Amount      │  │
-│  │─────┼────────────┼──────────────────────────┼────────────┼─────────────│  │
-│  │ [☐] | 2025-11-02 | Website hosting (Vendor) | Software   | -120.00 USD │  │
-│  │     |            | Status: POSTED  Type: EXPENSE                        │  │
-│  │─────┼────────────┼──────────────────────────┼────────────┼─────────────│  │
-│  │ [☐] | 2025-11-01 | Consulting (Client)      | Income     |  800.00 USD │  │
-│  │     |            | Status: DRAFT   Type: INCOME                         │  │
-│  │─────┼────────────┼──────────────────────────┼────────────┼─────────────│  │
-│  │ [☐] | ...        | ...                      | ...        |   ...       │  │
-│  └────────────────────────────────────────────────────────────────────────┘  │
-│                                                                              │
-│  Footer: [ ◀ Prev ]  Page 1 of N  [ Next ▶ ]   |  [ Go to Trash ▸ ]         │
-└──────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│  Header                                                            │
+│  ─────────────────────────────────────────────────────────────────  │
+│  [<] Back   Organization Settings                                  │
+│                                                                     │
+│  Title: Financial Settings                                         │
+│  Subtitle: Configure financial reporting preferences and base      │
+│            currency                                                │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌──────────────── Base Currency (existing) ──────────────────────────┐
+│ Current base currency: [ MYR ]                                     │
+│ [Change Currency] (admin only)                                     │
+│ Info: Changing the base currency does not automatically            │
+│       recalculate historical transaction amounts.                  │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────── Fiscal Year & Formats (existing) ───────────────────┐
+│ [Fiscal Year Start Month]  [v]                                     │
+│ [Date Format]              [v]                                     │
+│ [Number Format]            [Decimal, Thousands]                    │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────── Exchange Rate Behavior (new) ──────────────────┐
+│ Label: On exchange rate failure                                    │
+│                                                                     │
+│ ( ) Fallback to last available rate (recommended)                  │
+│     • If today's rate is unavailable, use the latest prior rate    │
+│       within the allowed lookback window.                          │
+│                                                                     │
+│ ( ) Require manual rate input                                      │
+│     • If an automatic rate cannot be fetched, the transaction      │
+│       form will require you to enter a manual rate before saving.  │
+│                                                                     │
+│ [Optional] Info text:                                              │
+│  "This setting applies to all foreign-currency transactions for    │
+│   this business."                                                  │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ [Cancel]                        [Save Changes] (primary, admin)    │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.1 Category Multi-Select Popover
+State notes:
+- Admins can toggle FX policy and save.
+- Members see the Exchange Rate Behavior block in read-only mode with disabled controls.
+
+---
+
+## 3. Transactions List – Dual Amounts & Manual Indicator
+
+### 3.1 Screen: Transactions List
+
+**Entry points:**
+- Sidebar: `Transactions`
 
 ```text
-Category: [ 3 categories selected ▾ ]
+┌─────────────────────────────────────────────────────────────────────┐
+│  Header                                                            │
+│  ─────────────────────────────────────────────────────────────────  │
+│  Title: Transactions                                               │
+│  Controls: [New Transaction] [Filters...]                          │
+└─────────────────────────────────────────────────────────────────────┘
 
-On click:
+┌──────────────── Filters (excerpt) ─────────────────────────────────┐
+│ Date range: [Last 30 days] [v]                                     │
+│ Currency:   [All currencies v]                                     │
+│   • All currencies                                                 │
+│   • {BaseCurrency} (e.g. MYR)                                      │
+│   • USD, EUR, GBP, ...                                             │
+└─────────────────────────────────────────────────────────────────────┘
 
-┌──────────────────────────────┐
-│ Categories                   │
-│ ───────────────────────────  │
-│ [☑] All categories          │
-│ [ ] Advertising             │
-│ [☑] Software                │
-│ [ ] Travel                  │
-│ [☑] Consulting Income       │
-│ [ ] Other                   │
-│                              │
-│ [ Clear ]             [ Apply ]
-└──────────────────────────────┘
+┌──────────────── Transactions Table ────────────────────────────────┐
+│  Date       Description           Account    Amount                │
+│────────────────────────────────────────────────────────────────────│
+│  2025-11-15 Invoice #1234        Main Acc   USD 1,000.00 •        │
+│                                                MYR 4,200.00  [M]  │
+│                                Category: Consulting                │
+│                                Client: ACME Corp                  │
+│                                                                    │
+│  2025-11-14 Software license     Card       EUR 200.00 •           │
+│                                                MYR 940.00         │
+│                                Category: Software                 │
+│                                Vendor: SaaS Ltd                   │
+│                                                                    │
+│  2025-11-12 Local expense        Cash       MYR 150.00            │
+│                                Category: Meals                     │
+│                                Vendor: Cafe XYZ                    │
+└────────────────────────────────────────────────────────────────────┘
+
+Legend:
+- For foreign-currency transactions:
+	- Show original amount + original currency.
+	- Show base-currency amount separated by a dot or bullet.
+- [M] small badge/icon:
+	- Appears only when `exchangeRateIsManual` is true.
+	- Tooltip on hover: "Manual FX rate" or similar.
 ```
 
-### 2.2 Vendor / Client Dropdowns
+Interactions:
+- Clicking a row opens the Edit Transaction screen.
+- Filtering by currency with "All currencies" / base currency / specific FX currencies behaves as current filters plus the new options.
+
+---
+
+## 4. New Transaction – Auto FX & Manual Override
+
+### 4.1 Screen: New Transaction
+
+**Entry points:**
+- Transactions List → `[New Transaction]`
 
 ```text
-Vendor: [ All vendors ▾ ]
+┌─────────────────────────────────────────────────────────────────────┐
+│  Header                                                            │
+│  ─────────────────────────────────────────────────────────────────  │
+│  [<] Back   New Transaction                                        │
+└─────────────────────────────────────────────────────────────────────┘
 
-On click:
+┌──────────────── Basic Details ─────────────────────────────────────┐
+│ Type:   (• Income) (  Expense )                                    │
+│ Status: (• Posted) (  Draft   )                                    │
+│ Date:   [ 2025-11-16          ]  (date picker)                     │
+│                                                                     │
+│ Description: [___________________________________________]         │
+│ Category:    [Select category v]                                   │
+│ Account:     [Select account  v]                                   │
+│ Client/Vendor fields (as per type)                                 │
+└─────────────────────────────────────────────────────────────────────┘
 
-┌──────────────────────────────┐
-│ Vendors                      │
-│ ───────────────────────────  │
-│ (All vendors)                │
-│ ───────────────────────────  │
-│ Acme Hosting                 │
-│ Figma Inc                    │
-│ Local Print Shop             │
-│ ...                          │
-└──────────────────────────────┘
+┌──────────────── Amount & Currency ─────────────────────────────────┐
+│ Amount (original): [ 1000.00     ]                                 │
+│ Currency:          [ USD v ]                                       │
+│   - MYR (base currency)                                            │
+│   - USD, EUR, GBP, ...                                             │
+│   - Other... (shows custom ISO code field)                         │
+│                                                                     │
+│ (Base currency: MYR)                                               │
+└─────────────────────────────────────────────────────────────────────┘
 
-Client: [ All clients ▾ ]
-(similar pattern to Vendor)
+┌──────────────── Exchange Rate to Base ─────────────────────────────┐
+│ Label: Exchange rate to MYR                                        │
+│                                                                     │
+│ [AUTO/MANUAL TOGGLE ROW]                                           │
+│  (o) Use automatic rate (recommended)                              │
+│  ( ) Use manual rate                                               │
+│                                                                     │
+│ Exchange rate: [ 4.20000000 ]  (read-only in AUTO, editable in     │
+│                                   MANUAL for foreign currency)     │
+│                                                                     │
+│ Helper text (AUTO, success):                                       │
+│  "Rate from Exchangerate.host for 2025-11-16"                      │
+│  If fallback used:                                                 │
+│  "Using 2025-11-15 rate due to market closure/availability."      │
+│                                                                     │
+│ Helper text (AUTO, failure + MANUAL policy):                       │
+│  - Inline error below field: "We couldn't fetch a rate for this    │
+│    date and currency. Please enter a manual rate."                │
+│  - Toast message: similar wording.                                 │
+│                                                                     │
+│ Manual rate note (visible only when 'Use manual rate' selected):   │
+│  Label: "Reason for manual rate (optional)"                        │
+│  [_____________________________________________]                    │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌──────────────── Base Amount Preview ───────────────────────────────┐
+│ Label: Base currency amount                                        │
+│                                                                     │
+│ Display (non-editable):                                            │
+│  "MYR 4,200.00"                                                   │
+│                                                                     │
+│ Helper text:                                                       │
+│  "Calculated as amount × exchange rate. Reports and balances      │
+│   use this amount."                                               │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌──────────────── Notes & Actions ───────────────────────────────────┐
+│ Notes (optional):                                                  │
+│ [_______________________________________________________]         │
+│                                                                     │
+│ [Cancel]                             [Save Transaction] (primary)  │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-## 3. Bulk Actions – Dialogs
+Behavior notes:
+- When the user selects a currency different from base and chooses a date:
+	- On change of currency or date, the form calls the FX suggestion API (AUTO mode only).
+- If the business FX policy is "FALLBACK":
+	- The suggestion attempts provider, then local fallback within lookback window.
+	- If still failing, the UI automatically switches to MANUAL mode with error message.
+- If the policy is "MANUAL":
+	- Any provider failure immediately switches to MANUAL and blocks save until a valid manual rate is provided.
+- For base-currency transactions:
+	- Currency select is base.
+	- Exchange rate section shows a fixed `1.00` and hides the auto/manual toggle and note field.
 
-### 3.1 Bulk Change Category Dialog
+---
+
+## 5. Edit Transaction – FX Details & Recalculation
+
+### 5.1 Screen: Edit Transaction
+
+**Entry points:**
+- Transactions List → click row
 
 ```text
-┌─────────────────────────────────────────────┐
-│ Change Category for 3 Transactions          │
-├─────────────────────────────────────────────┤
-│ New Category                                │
-│                                             │
-│ [ ▾ Select category... ]                    │
-│                                             │
-│ Info: This will update the category for all │
-│ selected transactions.                      │
-├─────────────────────────────────────────────┤
-│ [ Cancel ]                         [ Update ]│
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│  Header                                                            │
+│  ─────────────────────────────────────────────────────────────────  │
+│  [<] Back   Edit Transaction                                       │
+│  Right-side actions: [Delete] [More...]                            │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌──────────────── Basic Details (pre-filled) ────────────────────────┐
+│ Date:        [ 2025-11-15          ]                               │
+│ Type:        (• Income) (  Expense )                                │
+│ Status:      (• Posted) (  Draft   )                                │
+│ Description: [ Invoice #1234                 ]                      │
+│ Category:    [ Consulting v ]                                       │
+│ Account:     [ Main Account v ]                                     │
+│ Client/Vendor fields                                                │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌──────────────── Amount & Currency (pre-filled) ────────────────────┐
+│ Amount (original): [ 1000.00     ]                                 │
+│ Currency:          [ USD v ]                                       │
+│ (Base currency: MYR)                                               │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌──────────────── Exchange Rate to Base ─────────────────────────────┐
+│ Label: Exchange rate to MYR                                        │
+│                                                                     │
+│ Current state summary row:                                         │
+│  "Using manual rate: 4.20000000 (from bank statement)"            │
+│   or                                                               │
+│  "Using automatic rate: 4.19000000 from Exchangerate.host"       │
+│                                                                     │
+│ [AUTO/MANUAL TOGGLE ROW]                                           │
+│  (o) Use automatic rate                                            │
+│  ( ) Use manual rate                                               │
+│                                                                     │
+│ Exchange rate: [ 4.20000000 ]                                      │
+│                                                                     │
+│ Manual rate note (if manual):                                      │
+│  ["Used bank rate from statement"                    ]             │
+│                                                                     │
+│ [Optional button] (visible only in AUTO mode and foreign currency):│
+│  [Re-suggest rate for this date]                                   │
+│   - Triggers FX suggestion using current date & currency.          │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌──────────────── Base Amount & FX Meta ─────────────────────────────┐
+│ Base currency amount:  "MYR 4,200.00"                             │
+│                                                                     │
+│ Metadata (read-only, small text):                                  │
+│  - Source: Manual override / Exchangerate.host                     │
+│  - Last updated: 2025-11-15 10:45                                  │
+│  - (If fallback used) "Based on rate from 2025-11-14"             │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌──────────────── Notes & Actions ───────────────────────────────────┐
+│ Notes (optional):                                                  │
+│ [_______________________________________________________]         │
+│                                                                     │
+│ [Cancel]                         [Save Changes] (primary)          │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 Bulk Change Status Dialog (with Soft-Close Warning)
+Behavior notes:
+- Changing amount or rate automatically updates the base amount preview.
+- Changing date or currency while in AUTO mode can optionally trigger re-suggestion (or rely on server-side recalculation when saving, depending on performance trade-offs).
+- If the user switches from AUTO to MANUAL, we preserve the last suggested rate as starting value.
+
+---
+
+## 6. Supporting Screenlets / States
+
+### 6.1 FX Suggestion Loading State
 
 ```text
-┌───────────────────────────────────────────────────────────┐
-│ Change Status for 5 Transactions                          │
-├───────────────────────────────────────────────────────────┤
-│ New Status                                                │
-│                                                           │
-│ ( ) Draft                                                 │
-│ (•) Posted                                                │
-│                                                           │
-│ ⚠ 2 of the selected transactions are POSTED in           │
-│   soft-closed periods. Changing their status may affect   │
-│   previously reported figures.                            │
-│                                                           │
-│ Please confirm you want to override soft-closed periods.  │
-├───────────────────────────────────────────────────────────┤
-│ [ Cancel ]                             [ Confirm & Update ]│
-└───────────────────────────────────────────────────────────┘
+┌──────────────── Exchange Rate to Base ─────────────────────────────┐
+│ Exchange rate: [ 4.20000000 ]    (field disabled)                  │
+│                                                                     │
+│ [Spinner] Fetching rate for 2025-11-16...                           │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.3 Bulk Delete Confirmation Dialog
+### 6.2 FX Suggestion Error (Auto → Manual switch)
 
 ```text
-┌─────────────────────────────────────────────┐
-│ Delete 4 Transactions                       │
-├─────────────────────────────────────────────┤
-│ These transactions will be moved to Trash.  │
-│ You can restore them later from the Trash.  │
-│                                             │
-│ Are you sure you want to continue?          │
-├─────────────────────────────────────────────┤
-│ [ Cancel ]                         [ Delete ]│
-└─────────────────────────────────────────────┘
+┌──────────────── Exchange Rate to Base ─────────────────────────────┐
+│ Exchange rate: [            ]                                      │
+│                                                                     │
+│ Error (inline):                                                     │
+│  "We couldn't fetch a rate for this date and currency.             │
+│   Please enter a manual rate."                                    │
+│                                                                     │
+│ ( ) Use automatic rate                                             │
+│ (o) Use manual rate                                                │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-## 4. Transaction Detail / Edit Screen
+---
 
-```text
-┌────────────────────────────────────────────────────────────┐
-│ Header: Edit Transaction                                  │
-│ [◀ Back to Transactions]                                 │
-├────────────────────────────────────────────────────────────┤
-│ Soft-Closed Warning (only when applicable)                │
-│                                                            │
-│ ⚠ This transaction is POSTED in a soft-closed period.      │
-│   Editing it may affect previously reported figures.       │
-│                                                            │
-├────────────────────────────────────────────────────────────┤
-│ Form                                                      │
-│                                                            │
-│ Type:   [ INCOME v ]  Status: [ POSTED v ]                 │
-│ Date:   [ 2025-10-15      ]                                │
-│ Amount: [ 800.00     ]  Currency: [ USD v ]                │
-│ Category: [ Consulting Income v ]                          │
-│ Account:  [ Main Bank v ]                                  │
-│ Client:   [ Acme Corp v ]                                  │
-│ Vendor:   [ —           ]                                  │
-│ Description: [ Consulting for October ...           ]      │
-│ Notes:       [ Optional notes ...                   ]      │
-│                                                            │
-├────────────────────────────────────────────────────────────┤
-│ Actions                                                    │
-│                                                            │
-│ [ Cancel ]                                 [ Save Changes ]│
-└────────────────────────────────────────────────────────────┘
-```
-
-### 4.1 Soft-Closed Edit Confirmation Dialog
-
-```text
-┌───────────────────────────────────────────────────────────┐
-│ Edit Posted Transaction in Soft-Closed Period             │
-├───────────────────────────────────────────────────────────┤
-│ This transaction is POSTED in a soft-closed period.       │
-│ Changing it may alter previously reported figures.        │
-│                                                           │
-│ Are you sure you want to proceed?                         │
-├───────────────────────────────────────────────────────────┤
-│ [ Cancel ]                             [ Confirm & Save ]  │
-└───────────────────────────────────────────────────────────┘
-```
-
-## 5. Trash – Transactions Screen
-
-```text
-┌────────────────────────────────────────────────────────────┐
-│ Header: Trash – Transactions                              │
-│ Org: {Org Name}                                           │
-│ [◀ Back to Transactions]                                 │
-├────────────────────────────────────────────────────────────┤
-│ Filters                                                   │
-│                                                            │
-│ Deleted Date: [ From ▢▢▢▢-▢▢-▢▢ ] [ To ▢▢▢▢-▢▢-▢▢ ]          │
-│ Type: [ All v ]   Search: [ Description, vendor, client ] │
-│                                                            │
-│ [ Apply Filters ]   [ Reset ]                             │
-├────────────────────────────────────────────────────────────┤
-│ Trash List                                                │
-│                                                            │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │ Date       | Description           | Deleted At      │   │
-│  │────────────┼───────────────────────┼─────────────────│   │
-│  │ 2025-10-10 | Website hosting       | 2025-11-01 09:21│   │
-│  │            | Vendor: Acme Hosting  |                 │   │
-│  │            | Type: EXPENSE        | Status: POSTED  │   │
-│  │            | [ Restore ] [ Delete permanently ]      │   │
-│  │────────────┼───────────────────────┼─────────────────│   │
-│  │ 2025-09-30 | Consulting September  | 2025-10-15 14:03│   │
-│  │            | Client: Acme Corp     |                 │   │
-│  │            | Type: INCOME         | Status: DRAFT   │   │
-│  │            | [ Restore ] [ Delete permanently ]      │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                            │
-│ Footer: [ ◀ Prev ]  Page 1 of N  [ Next ▶ ]                │
-└────────────────────────────────────────────────────────────┘
-```
-
-### 5.1 Permanent Delete Confirmation Dialog
-
-```text
-┌───────────────────────────────────────────────────────────┐
-│ Permanently Delete Transaction                            │
-├───────────────────────────────────────────────────────────┤
-│ This will permanently delete the transaction and any      │
-│ related links. This action cannot be undone.              │
-│                                                           │
-│ Are you sure you want to continue?                        │
-├───────────────────────────────────────────────────────────┤
-│ [ Cancel ]                             [ Delete forever ] │
-└───────────────────────────────────────────────────────────┘
-```
+These wireframes should be used in combination with the detailed plan in `notes/plan.md` when implementing the multi-currency & FX behavior across settings, APIs, and transaction screens.
 

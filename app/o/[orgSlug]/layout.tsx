@@ -153,6 +153,13 @@ export default async function OrgLayout({
       sectionId: "business",
       // Members can manage clients
     },
+    {
+      id: "reports",
+      label: "Reports",
+      href: `/o/${orgSlug}/reports`,
+      sectionId: "business",
+      // All members can view reports
+    },
     // Settings section
     {
       id: "profile",

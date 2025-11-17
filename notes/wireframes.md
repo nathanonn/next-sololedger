@@ -1,420 +1,360 @@
-## Reporting & Exports – UX Flow & Wireframes
+## Document Management – UX Flow & Wireframes
 
-This document describes the UX flow and ASCII wireframes for the new Reporting area: a `Reports` page under each organization with tabs for Profit & Loss, Category Report, Vendor Report, and Transactions CSV Export, including navigation, filters, drill‑downs into Transactions, and export actions.
+This document describes the UX flow and screen-by-screen wireframes for Sololedger’s document management features (section 10), aligned with the implementation plan in `notes/plan.md`. It covers document upload, library browsing, search and grouping, linking documents with transactions, Trash behavior, and secure download/preview.
 
 ---
 
-## UX Flow Map
+### 1. Flow Map
 
 ```text
-Entry: Org Dashboard Shell
-
-1. Sidebar Navigation
-	 - User is on any `/o/[orgSlug]/...` page
-	 - Left sidebar shows sections (e.g. Overview, Business, Settings)
-	 - Under Business section, a new item appears: [Reports]
-
-2. Reports Home (Tabs)
-	 - Path: /o/[orgSlug]/reports
-	 - Auth: Org member or above
-	 - Layout:
-		 - Header: "Reports" + short description
-		 - Tabs:
-			 - [Profit & Loss]
-			 - [Category Report]
-			 - [Vendor Report]
-			 - [Transactions CSV Export]
-
-3. Profit & Loss Tab
-	 - Path: /o/[orgSlug]/reports (default tab)
-	 - Inputs:
-		 - Date Mode: (Full fiscal year | Year-to-date | Custom)
-		 - Custom From/To (visible when Custom selected)
-		 - Detail Level: (Summary | Detailed)
-	 - Actions:
-		 - View Income/Expense tables
-		 - Drill down: View transactions for a given category
-		 - Export to PDF (admins only)
-
-4. Category Report Tab
-	 - Path: /o/[orgSlug]/reports?tab=categories (or internal tab state)
-	 - Inputs:
-		 - Date Range From/To
-		 - Type Filter: (All | Income | Expense)
-	 - Actions:
-		 - View category/subcategory totals and counts
-		 - Drill down: View transactions for selected category
-		 - Export to PDF (admins only)
-
-5. Vendor Report Tab
-	 - Path: /o/[orgSlug]/reports?tab=vendors
-	 - Inputs:
-		 - Date Range From/To
-		 - View Filter: (All | Income | Expense)
-		 - Optional sort control
-	 - Actions:
-		 - View totals per vendor (Income, Expense, Net)
-		 - Drill down: View transactions for selected vendor
-		 - Export to PDF (admins only)
-
-6. Transactions CSV Export Tab
-	 - Path: /o/[orgSlug]/reports?tab=export
-	 - Inputs:
-		 - Date Range From/To
-		 - Column selection: (All fields | Custom selection)
-		 - Toggles: Include document IDs, Include document names
-	 - Actions:
-		 - Export CSV (admins only)
-
-7. Drill-Down to Transactions
-	 - From P&L/Category/Vendor tables
-	 - Opens `/o/[orgSlug]/transactions` with query params:
-		 - type, status=POSTED, dateFrom/dateTo, categoryIds, vendorId
-	 - User can further refine in Transactions page or navigate back to Reports.
-
-8. Browser-Based Print Flow (Simplified PDF Export)
-	 - From report tab, admin clicks "Export to PDF"
-	 - Opens `/o/[orgSlug]/reports/<report>/print?...` in new tab
-	 - User sees clean, print-optimized HTML view
-	 - User presses Cmd/Ctrl+P to open browser print dialog
-	 - Browser allows saving as PDF with full control over settings
-	 - No server-side PDF generation needed (simpler, faster)
+User (signed in, org selected)
+	|
+	|---> Documents section
+	|       Route: /o/[orgSlug]/documents
+	|       - View all documents for org
+	|       - Filter/search/group
+	|       - Upload new documents
+	|       - Open document detail
+	|       - Move documents to Trash
+	|
+	|---> Upload documents (from Documents page or Transaction page)
+	|       - Select files (drag/drop or file picker)
+	|       - POST /api/orgs/[orgSlug]/documents
+	|       - See success or per-file errors
+	|       - Newly uploaded docs appear in list
+	|
+	|---> Document detail
+	|       Route: /o/[orgSlug]/documents/[id] (or sheet/dialog)
+	|       - Preview document (image/PDF/text)
+	|       - Edit display name, type, document date
+	|       - See linked transactions
+	|       - Link/unlink transactions
+	|       - Download or move to Trash
+	|
+	|---> Transactions section
+	|       Route: /o/[orgSlug]/transactions
+	|       - For each transaction, see doc indicator
+	|       - Open transaction detail
+	|
+	|---> Transaction detail
+	|       Route: /o/[orgSlug]/transactions/[id]
+	|       - View/Edit transaction fields
+	|       - Documents panel
+	|            - See linked docs
+	|            - View / Download / Unlink
+	|            - Add existing doc(s) via picker
+	|            - Optional Upload & link shortcut
+	|
+	|---> Document picker (from Transaction detail)
+	|       - Lightweight list/search of documents
+	|       - Default filter: unlinked docs
+	|       - Select one or more docs and attach
+	|
+	|---> Documents Trash
+	|       Route: /o/[orgSlug]/documents/trash
+	|       - List soft-deleted documents
+	|       - Restore
+	|       - Permanently delete
+	|
+	|---> Download / Preview
+					Route: GET /api/orgs/[orgSlug]/documents/[id]/download?mode=attachment|inline
+					- Used by UI for thumbnails, previews, and downloads
 ```
 
 ---
 
-## Screen Wireframes
-
-### 1. Org Layout – Sidebar with Reports
+### 2. Screen: Documents List (`/o/[orgSlug]/documents`)
 
 ```text
-+---------------------------------------------------------------------------------+
-| Sololedger Logo                                   User Avatar / Org Switcher   |
-+---------------------------------------------------------------------------------+
-| Sidebar (left)                         | Main Content                           |
-|----------------------------------------+----------------------------------------|
-| [Dashboard]                            |                                        |
-| [Transactions]                         |   (Any existing org page)              |
-| [Accounts]                             |                                        |
-| [Categories]                           |                                        |
-| [Vendors]                              |                                        |
-| [Clients]                              |                                        |
-| [Reports]  <-- new                     |                                        |
-|                                        |                                        |
-| [Settings]                             |                                        |
-|   - Organization                       |                                        |
-|   - Members                            |                                        |
-|   - AI / Integrations                  |                                        |
-|                                        |                                        |
-+---------------------------------------------------------------------------------+
+Route: /o/[orgSlug]/documents
+
++----------------------------------------------------------------------------------+
+| [Logo] Sololedger                                             [User Avatar ▾]   |
++----------------------------------------------------------------------------------+
+| Documents                                                                      |
+| Manage your receipts and financial documents                                   |
+|                                                                                |
+| [Upload documents] [Trash]                                                     |
++----------------------------------------------------------------------------------+
+| Filters                                                                        |
+|                                                                                |
+| Date range: [ From: 2025-11-01 ] [ To: 2025-11-30 ]                            |
+|   (Document date, falling back to upload date)                                 |
+|                                                                                |
+| Linked: (• All) (  Linked only  ) (  Unlinked only  )                          |
+|                                                                                |
+| Vendor: [ Any vendor  ▾ ]   Client: [ Any client  ▾ ]                           |
+|                                                                                |
+| Amount: [ Min ______ ]  [ Max ______ ]  (base currency)                        |
+|                                                                                |
+| File type: [ All types ▾ ]  (All / Images / PDFs / Text)                       |
+| Uploader: [ Anyone ▾ ]                                                         |
+|                                                                                |
+| Search: [ 🔍 Search by filename, vendor, text...                ]              |
+|                                                                                |
+| Group by: [ None ▾ ]   (None / Month / Category / Vendor)                      |
+|                                                                                |
++----------------------------------------------------------------------------------+
+| Content                                                                        |
+|                                                                                |
+| (Loading state)                                                                |
+|   [Spinner] Loading documents...                                               |
+|                                                                                |
+| (Empty state)                                                                  |
+|   No documents yet.                                                            |
+|   [Upload documents] to get started.                                           |
+|                                                                                |
+| (Grouped by Month example)                                                     |
+|                                                                                |
+| ▶ November 2025 (12)                                                           |
+|   ├─ [🖼]  invoice-nov-acme.pdf                                                |
+|   |      Document date: 2025-11-10                                            |
+|   |      Type: INVOICE · PDF · 420 KB                                         |
+|   |      Linked: 2 transactions                                               |
+|   |      [View] [Download] [⋯]                                                |
+|   |                                                                            |
+|   ├─ [🖼]  taxi-receipt-2025-11-09.jpg                                         |
+|   |      Document date: 2025-11-09                                            |
+|   |      Type: RECEIPT · Image · 230 KB                                       |
+|   |      Linked: 1 transaction                                                |
+|   |      [View] [Download] [⋯]                                                |
+|   |                                                                            |
+|   └─ ...                                                                       |
+|                                                                                |
+| ▶ October 2025 (5)                                                             |
+|   ├─ ...                                                                       |
+|                                                                                |
++----------------------------------------------------------------------------------+
+| Pagination                                                                     |
+|   [ Prev ]  Page 1 of 4  [ Next ]                                             |
++----------------------------------------------------------------------------------+
 ```
-
----
-
-### 2. Reports Page – Tabs Shell
-
-```text
-Path: /o/[orgSlug]/reports
-
-+---------------------------------------------------------------------------------+
-| Header                                                                        |
-|-------------------------------------------------------------------------------|
-| Reports                                                                       |
-| Small text: Overview of profit & loss, category, vendor and export reports.   |
-+---------------------------------------------------------------------------------+
-| Tabs                                                                          |
-|-------------------------------------------------------------------------------|
-| [ Profit & Loss ] [ Category Report ] [ Vendor Report ] [ Transactions CSV ]  |
-|-------------------------------------------------------------------------------|
-|                                                                               |
-| (Active tab content below)                                                    |
-|                                                                               |
-+---------------------------------------------------------------------------------+
-```
-
----
-
-### 3. Profit & Loss Tab – Summary View
-
-```text
-Path: /o/[orgSlug]/reports  (Profit & Loss tab active)
-
-+---------------------------------------------------------------------------------+
-| Header                                                                        |
-|-------------------------------------------------------------------------------|
-| Business Logo   Business Name                                                 |
-| Title: Profit & Loss Statement                                                |
-| Subtitle: Period: 01 Jan 2025 – 31 Dec 2025 (Base: MYR)                      |
-+---------------------------------------------------------------------------------+
-| Filters Row                                                                   |
-|-------------------------------------------------------------------------------|
-| Date Mode: [ Full fiscal year v ]  [ Year-to-date ]  [ Custom ]               |
-| When Custom: From [ 2025-01-01 ]  To [ 2025-03-31 ]                           |
-|                                                                               |
-| Detail Level: ( ) Summary    ( ) Detailed                                     |
-|                                                                               |
-| [ Refresh ]                         [ Export to PDF ] (admins only)           |
-+---------------------------------------------------------------------------------+
-| Summary Cards                                                                 |
-|-------------------------------------------------------------------------------|
-| +-----------------+  +-----------------+  +-------------------------------+   |
-| | Total Income    |  | Total Expenses  |  | Net Profit / Loss            |   |
-| | MYR 125,000.00  |  | MYR 80,000.00   |  | MYR 45,000.00                |   |
-| | Prev: 110,000   |  | Prev: 70,000    |  | Prev: 40,000                 |   |
-| | +13.6% vs prev  |  | +14.3% vs prev  |  | +12.5% vs prev               |   |
-| +-----------------+  +-----------------+  +-------------------------------+   |
-+---------------------------------------------------------------------------------+
-| Income Section                                                                 |
-|-------------------------------------------------------------------------------|
-| Heading: Income                                                                |
-|                                                                               |
-| Summary mode table (parent categories only):                                   |
-|                                                                               |
-| +-----------------------------------------------+----------------------------+ |
-| | Category                                      | Amount (Base)             | |
-| +-----------------------------------------------+----------------------------+ |
-| | Consulting Revenue                            | MYR 60,000.00             | |
-| | Product Sales                                 | MYR 45,000.00             | |
-| | Other Income                                  | MYR 20,000.00             | |
-| +-----------------------------------------------+----------------------------+ |
-| | Total Income                                  | MYR 125,000.00            | |
-| +-----------------------------------------------+----------------------------+ |
-| (Per-row action: [View transactions])                                            |
-+---------------------------------------------------------------------------------+
-| Expenses Section                                                                |
-|-------------------------------------------------------------------------------|
-| Heading: Expenses                                                               |
-|                                                                               |
-| +-----------------------------------------------+----------------------------+ |
-| | Category                                      | Amount (Base)             | |
-| +-----------------------------------------------+----------------------------+ |
-| | Operating Expenses                           | MYR 30,000.00             | |
-| | Payroll                                      | MYR 35,000.00             | |
-| | Travel & Meals                               | MYR 10,000.00             | |
-| | Other Expenses                               | MYR 5,000.00              | |
-| +-----------------------------------------------+----------------------------+ |
-| | Total Expenses                               | MYR 80,000.00             | |
-| +-----------------------------------------------+----------------------------+ |
-| (Per-row action: [View transactions])                                            |
-+---------------------------------------------------------------------------------+
-```
-
----
-
-### 4. Profit & Loss Tab – Detailed View (with Parent + Child)
-
-```text
-Path: /o/[orgSlug]/reports  (Profit & Loss tab, Detailed)
-
-Filters row same as Summary, Detail Level = Detailed.
-
-Income table (example):
-
-+-----------------------------------------------------------+------------------+
-| Category                                                  | Amount (Base)    |
-+-----------------------------------------------------------+------------------+
-| Consulting Revenue                                       | MYR 60,000.00    |
-|   - Consulting / Retainer                                | MYR 40,000.00    |
-|   - Consulting / Hourly                                  | MYR 20,000.00    |
-| Product Sales                                            | MYR 45,000.00    |
-|   - Product / Hardware                                   | MYR 30,000.00    |
-|   - Product / Software                                   | MYR 15,000.00    |
-| Other Income                                             | MYR 20,000.00    |
-|   - Interest Income                                      | MYR 5,000.00     |
-|   - Miscellaneous                                       | MYR 15,000.00    |
-+-----------------------------------------------------------+------------------+
-| Total Income                                             | MYR 125,000.00   |
-+-----------------------------------------------------------+------------------+
-
-Expenses table structured similarly, with parent rows and indented children.
-Each row can still expose [View transactions] actions.
-```
-
----
-
-### 5. Category Report Tab
-
-```text
-Path: /o/[orgSlug]/reports  (Category Report tab active)
-
-+---------------------------------------------------------------------------------+
-| Header                                                                        |
-|-------------------------------------------------------------------------------|
-| Category Report                                                               |
-| Subtitle: Totals by category and subcategory for a selected date range.      |
-+---------------------------------------------------------------------------------+
-| Filters Row                                                                   |
-|-------------------------------------------------------------------------------|
-| From [ 2025-01-01 ]   To [ 2025-03-31 ]   Type: [ All v ] (Income | Expense) |
-|                                                                               |
-| [ Apply ]                         [ Export to PDF ] (admins only)            |
-+---------------------------------------------------------------------------------+
-| Table                                                                         |
-|-------------------------------------------------------------------------------|
-| Columns: Category | Type | Transactions | Total (Base) | Actions             |
-|                                                                               |
-| +-----------------------------------+--------+-------------+-----------------+ |
-| | Consulting Revenue                | INCOME | 12          | MYR 40,000.00   | |
-| |   - Consulting / Retainer        | INCOME | 7           | MYR 25,000.00   | |
-| |   - Consulting / Hourly          | INCOME | 5           | MYR 15,000.00   | |
-| | Product Sales                    | INCOME | 20          | MYR 30,000.00   | |
-| |   - Product / Hardware           | INCOME | 10          | MYR 18,000.00   | |
-| |   - Product / Software           | INCOME | 10          | MYR 12,000.00   | |
-| | Operating Expenses               | EXPENSE| 15          | MYR 18,000.00   | |
-| |   - Office Supplies              | EXPENSE| 8           | MYR 6,000.00    | |
-| |   - Utilities                    | EXPENSE| 7           | MYR 12,000.00   | |
-| +-----------------------------------+--------+-------------+-----------------+ |
-| | (Action column) [View transactions] for each row                           |
-|-------------------------------------------------------------------------------|
-| Empty state: "No transactions found for this range."                         |
-+---------------------------------------------------------------------------------+
-```
-
----
-
-### 6. Vendor Report Tab
-
-```text
-Path: /o/[orgSlug]/reports  (Vendor Report tab active)
-
-+---------------------------------------------------------------------------------+
-| Header                                                                        |
-|-------------------------------------------------------------------------------|
-| Vendor Report                                                                 |
-| Subtitle: Total income, expenses and net per vendor for a period.            |
-+---------------------------------------------------------------------------------+
-| Filters Row                                                                   |
-|-------------------------------------------------------------------------------|
-| From [ 2025-01-01 ]   To [ 2025-03-31 ]   View: [ All v ]                    |
-| Sort by: [ Net (desc) v ]                                                    |
-|                                                                               |
-| [ Apply ]                         [ Export to PDF ] (admins only)            |
-+---------------------------------------------------------------------------------+
-| Table                                                                         |
-|-------------------------------------------------------------------------------|
-| Columns: Vendor | Total Income | Total Expenses | Net | Actions               |
-|                                                                               |
-| +----------------------+--------------+----------------+--------------------+ |
-| | ACME Supplies        | MYR 0.00     | MYR 25,000.00  | -MYR 25,000.00     | |
-| | Big Client Co        | MYR 60,000.00| MYR 0.00       |  MYR 60,000.00     | |
-| | Freelance Designer   | MYR 5,000.00 | MYR 3,000.00   |  MYR 2,000.00      | |
-| +----------------------+--------------+----------------+--------------------+ |
-| | (Actions) [View transactions] per row                                      |
-|-------------------------------------------------------------------------------|
-| Empty state: "No vendor activity in this period."                            |
-+---------------------------------------------------------------------------------+
-```
-
----
-
-### 7. Transactions CSV Export Tab
-
-```text
-Path: /o/[orgSlug]/reports  (Transactions CSV Export tab active)
-
-+---------------------------------------------------------------------------------+
-| Header                                                                        |
-|-------------------------------------------------------------------------------|
-| Transactions CSV Export                                                      |
-| Subtitle: Export raw transaction data for analysis in spreadsheets.          |
-+---------------------------------------------------------------------------------+
-| Access Notice                                                                 |
-|-------------------------------------------------------------------------------|
-| If user is not admin:                                                        |
-|   "Only organization admins can export transactions to CSV."                |
-|   (Disable the form below.)                                                  |
-| If admin: show full form.                                                    |
-+---------------------------------------------------------------------------------+
-| Export Form (admins only)                                                    |
-|-------------------------------------------------------------------------------|
-| Date Range                                                                   |
-|   From [ 2025-01-01 ]   To [ 2025-03-31 ]                                    |
-|                                                                               |
-| Columns                                                                      |
-|   ( ) All fields                                                             |
-|   (o) Custom selection                                                       |
-|       [x] ID                                                                 |
-|       [x] Date                                                               |
-|       [x] Type                                                               |
-|       [x] Status                                                             |
-|       [x] Description                                                        |
-|       [x] Category                                                           |
-|       [x] Account                                                            |
-|       [x] Vendor                                                             |
-|       [x] Client                                                             |
-|       [x] Amount (Base)                                                      |
-|       [x] Currency (Base)                                                    |
-|       [ ] Amount (Secondary)                                                 |
-|       [ ] Currency (Secondary)                                               |
-|       [ ] Exchange Rate                                                      |
-|       [x] Notes                                                              |
-|       [ ] Document IDs                                                       |
-|       [ ] Document Names                                                     |
-|                                                                               |
-| [ Export CSV ]                                                               |
-| (Shows toast on success/failure; triggers file download)                     |
-+---------------------------------------------------------------------------------+
-```
-
----
-
-### 8. Drill-Down: Transactions Page (Filtered)
-
-```text
-Path example from P&L: /o/[orgSlug]/transactions?type=EXPENSE&status=POSTED&categoryIds=cat123&dateFrom=2025-01-01&dateTo=2025-03-31
-
-+---------------------------------------------------------------------------------+
-| Header: Transactions                                                          |
-|-------------------------------------------------------------------------------|
-| Filters row shows:                                                            |
-|   Type: [ Expense ]    Status: [ Posted ]                                     |
-|   Date From: [ 2025-01-01 ]   Date To: [ 2025-03-31 ]                        |
-|   Category: [ Selected 1 ]                                                   |
-|   Vendor: [ All vendors ]                                                    |
-|   ... (existing filters)                                                     |
-|                                                                               |
-| [ Clear filters ]                                                             |
-+---------------------------------------------------------------------------------+
-| Transactions table as currently implemented.                                  |
-| User can adjust filters or navigate back to Reports.                          |
-+---------------------------------------------------------------------------------+
-```
-
----
-
-### 9. Browser Print Layout (Print-Optimized HTML Routes)
-
-```text
-Used by /o/[orgSlug]/reports/*/print routes.
-Opens in new tab when admin clicks "Export to PDF" button.
-User controls PDF settings via browser print dialog (Cmd/Ctrl+P).
-
-+---------------------------------------------------------------------------------+
-| Top Header (minimal, print-friendly with @media print CSS)                  |
-|-------------------------------------------------------------------------------|
-| [Logo]  Business Name                                                        |
-| Address, Email, Phone, Tax ID (if available)                                |
-|                                                                               |
-| Report Title (e.g. "Profit & Loss Statement")                               |
-| Period: 01 Jan 2025 – 31 Dec 2025                                            |
-| Base Currency: MYR                                                           |
-+---------------------------------------------------------------------------------+
-| Report Body (tables as in interactive view, but without tabs or filters)     |
-|-------------------------------------------------------------------------------|
-| Income table                                                                 |
-| Expenses table                                                               |
-| Totals summary                                                               |
-| (For Category/Vendor reports, the relevant tables)                           |
-+---------------------------------------------------------------------------------+
-| Footer (positioned at bottom via @media print CSS)                           |
-|-------------------------------------------------------------------------------|
-| Business Name • Generated on 2025-11-17                                      |
-+---------------------------------------------------------------------------------+
 
 Notes:
-- Clean HTML with print-optimized CSS (@media print)
-- No interactive elements (buttons, filters, tabs)
-- Browser handles page breaks, margins, headers/footers via print dialog
-- User can choose orientation (portrait/landscape), paper size, etc.
-- Saves as PDF directly from browser print dialog
+- Thumbnails: use inline download URL for images; icon for PDF/TXT.
+- [⋯] opens a small menu with “View”, “Download”, “Move to Trash”.
+
+---
+
+### 3. Screen: Document Detail (`/o/[orgSlug]/documents/[id]`)
+
+```text
+Route: /o/[orgSlug]/documents/[id]
+
++----------------------------------------------------------------------------------+
+| [← Back to Documents]                                   [Download ▼] [Trash]   |
++----------------------------------------------------------------------------------+
+| Document: taxi-receipt-2025-11-09.jpg                                           |
+|                                                                                |
++--------------------------+-----------------------------------------------------+
+| Preview                  | Details                                             |
+|                          |                                                     |
+| +----------------------+ | Display name: [ Taxi – Airport to Client Office ]   |
+| |                      | | Filename:     taxi-receipt-2025-11-09.jpg          |
+| |   [ Image preview ]  | | Type:         [ RECEIPT ▾ ]                        |
+| |                      | | MIME:         image/jpeg                            |
+| +----------------------+ | Size:         230 KB                                |
+|                          |                                                     |
+| (For PDFs: inline       | Document date: [ 2025-11-09 ]                        |
+|  viewer / iframe)       | Uploaded at:  2025-11-10 09:12                       |
+|                          | Uploaded by:  Nathan                                |
+|                          |                                                     |
+|                          | [Save changes]                                      |
++--------------------------+-----------------------------------------------------+
+| Linked Transactions                                                            |
+|                                                                                |
+| [Link to transactions]                                                         |
+|                                                                                |
+| 1) 2025-11-09  Taxi – Airport to Client Office                                 |
+|    Amount: MYR 85.00   Type: EXPENSE                                           |
+|    [View transaction]  [Unlink]                                                |
+|                                                                                |
+| 2) 2025-11-09  Client meeting lunch (split)                                    |
+|    Amount: MYR 40.00   Type: EXPENSE                                           |
+|    [View transaction]  [Unlink]                                                |
+|                                                                                |
++----------------------------------------------------------------------------------+
+```
+
+Notes:
+- “Download ▼” can open a small menu: “Download (attachment)”, “Open in new tab (inline)”.
+- “Trash” moves the document to Trash (soft delete + unlink all transactions).
+
+---
+
+### 4. Screen: Transactions List with Document Indicators
+
+```text
+Route: /o/[orgSlug]/transactions
+
++----------------------------------------------------------------------------------+
+| Transactions                                             [New Transaction]     |
++----------------------------------------------------------------------------------+
+| Filters (date, type, status, vendor, amount, etc.)                             |
+|                                                                                |
+| [Apply] [Reset]                                                                |
++----------------------------------------------------------------------------------+
+| List                                                                           |
+|                                                                                |
+| [ ] 2025-11-10  Invoice #123 – ACME Corp                                      |
+|     INCOME · POSTED · MYR 1,000.00                                            |
+|     Category: Consulting                                                      |
+|     Vendor/Client: ACME Corp                                                  |
+|     [📎 2] [Edit] [⋯]                                                         |
+|                                                                                |
+| [ ] 2025-11-09  Taxi – Airport to Client Office                               |
+|     EXPENSE · POSTED · MYR 85.00                                              |
+|     Category: Travel                                                          |
+|     Vendor: Grab Taxi                                                         |
+|     [📎 1] [Edit] [⋯]                                                         |
+|                                                                                |
+| [ ] 2025-11-08  Coffee with client                                            |
+|     EXPENSE · DRAFT · MYR 15.00                                               |
+|     Category: Meals                                                           |
+|     Vendor: Starbucks                                                         |
+|     [   ] [Edit] [⋯]  (no documents)                                         |
+|                                                                                |
++----------------------------------------------------------------------------------+
+| Bulk actions, pagination, etc.                                                |
++----------------------------------------------------------------------------------+
+```
+
+Notes:
+- `[📎 N]` opens the transaction detail page or a quick overlay focused on documents.
+
+---
+
+### 5. Screen: Transaction Detail with Documents Panel
+
+```text
+Route: /o/[orgSlug]/transactions/[id]
+
++----------------------------------------------------------------------------------+
+| [← Back to Transactions]                               [Save] [Delete]        |
++----------------------------------------------------------------------------------+
+| Edit Transaction                                                              |
+|                                                                                |
+| Date:        [ 2025-11-09 ]                                                    |
+| Type:        (• EXPENSE) (  INCOME )                                          |
+| Status:      (• POSTED)  (  DRAFT )                                           |
+| Amount:      [ 85.00 ]  Currency: [ MYR ]                                     |
+| Category:    [ Travel ▾ ]                                                     |
+| Account:     [ Maybank Business 1234 ▾ ]                                      |
+| Vendor:      [ Grab Taxi ▾ ]                                                  |
+| Description: [ Taxi – Airport to Client Office              ]                 |
+| Notes:       [____________________________________________________]           |
+|                                                                                |
++------------------------------+-------------------------------------------------+
+| Documents                    | (optional: other side panel content)            |
+|                              |                                                 |
+| [Add existing document] [Upload & link]                                       |
+|                                                                                |
+| (If none)                                                                     |
+|   No documents linked yet.                                                    |
+|                                                                                |
+| (If some linked)                                                              |
+|   1) [🖼] taxi-receipt-2025-11-09.jpg                                         |
+|      Date: 2025-11-09  Type: RECEIPT                                          |
+|      [View] [Download] [Unlink]                                               |
+|                                                                                |
+|   2) [📄] bank-statement-2025-11.pdf                                          |
+|      Date: 2025-11-30  Type: BANK_STATEMENT                                   |
+|      [View] [Download] [Unlink]                                               |
+|                                                                                |
++------------------------------+-------------------------------------------------+
+```
+
+Notes:
+- “Upload & link” uses the same upload API, then auto-links returned document IDs to this transaction.
+
+---
+
+### 6. Screen: Document Picker (from Transaction Detail)
+
+```text
+Component: Document Picker Modal / Dialog
+
++--------------------------------------------------------------+
+| [x] Attach existing documents                                |
++--------------------------------------------------------------+
+| Search: [ 🔍 invoice, vendor, text...              ]         |
+|                                                              |
+| Linked filter: (• All) (  Unlinked only  )                    |
+| Date range: [ From: ____ ] [ To: ____ ]                       |
+| File type:  [ All types ▾ ]                                  |
+|                                                              |
+| [ ] [🖼] taxi-receipt-2025-11-09.jpg                          |
+|     Date: 2025-11-09   Type: RECEIPT   Linked: 0             |
+|                                                              |
+| [ ] [📄] invoice-123-acme.pdf                                |
+|     Date: 2025-11-10   Type: INVOICE   Linked: 1             |
+|                                                              |
+| [ ] [🖼] parking-receipt.png                                 |
+|     Date: 2025-11-08   Type: RECEIPT   Linked: 0             |
+|                                                              |
+|  ...                                                         |
+|                                                              |
++--------------------------------------------------------------+
+| [Cancel]                                [Attach selected (3)] |
++--------------------------------------------------------------+
+```
+
+Notes:
+- On confirm, call transaction-side link API with selected `documentIds`.
+
+---
+
+### 7. Screen: Documents Trash (`/o/[orgSlug]/documents/trash`)
+
+```text
+Route: /o/[orgSlug]/documents/trash
+
++----------------------------------------------------------------------------------+
+| Documents Trash                                          [Back to Documents]    |
++----------------------------------------------------------------------------------+
+| Deleted documents remain here until you restore or delete them permanently.     |
+| Your organization’s retention policy may permanently delete old items.         |
+|                                                                                |
+| [Search: _____________________________ ]                                       |
+|                                                                                |
++----------------------------------------------------------------------------------+
+| List                                                                           |
+|                                                                                |
+| [ ] taxi-receipt-2025-11-09.jpg                                               |
+|     Display name: Taxi – Airport to Client Office                             |
+|     Deleted at: 2025-11-16 09:30                                              |
+|     Type: RECEIPT · Image · 230 KB                                            |
+|     [Restore] [Delete permanently]                                            |
+|                                                                                |
+| [ ] invoice-123-acme.pdf                                                      |
+|     Display name: Invoice #123 – ACME Corp                                    |
+|     Deleted at: 2025-11-15 14:02                                              |
+|     Type: INVOICE · PDF · 420 KB                                              |
+|     [Restore] [Delete permanently]                                            |
+|                                                                                |
++----------------------------------------------------------------------------------+
+| Bulk actions: [Restore selected] [Delete selected permanently]                |
+|                                                                                |
++----------------------------------------------------------------------------------+
+```
+
+---
+
+### 8. Download & Preview Usage
+
+```text
+Flow: Download / Preview
+
+Documents List / Detail / Transaction Detail
+	├─ User clicks [Download]
+	│     → Browser navigates to
+	│       /api/orgs/[orgSlug]/documents/[id]/download?mode=attachment
+	│     → Server streams file with Content-Disposition: attachment
+	│     → Browser shows save dialog
+	│
+	└─ User clicks [Open in new tab] or inline preview
+				→ New tab or <iframe> src:
+					/api/orgs/[orgSlug]/documents/[id]/download?mode=inline
+				→ Server streams file with Content-Disposition: inline
+				→ Browser renders PDF/image/text directly
 ```

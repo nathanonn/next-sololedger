@@ -723,7 +723,7 @@ From the review screen, user chooses:
 
 - Search by:
   - Filename
-  - Vendor
+  - Vendor/Client
   - Amount
   - Text content (based on extracted text/OCR when available)
 
@@ -931,9 +931,6 @@ Per business, user can:
 
   - Option to include/exclude:
     - Document references
-
-- Schedule:
-  - Optional recurring export (e.g. monthly) that the system prepares and makes available for download.
 
 ---
 

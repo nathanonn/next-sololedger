@@ -1,476 +1,471 @@
-## Reporting & Exports – Implementation Plan (P&L, Category/Vendor Reports, PDF & CSV)
+## Document Management (Section 10) – Implementation Plan
 
-This plan introduces a dedicated `Reports` area under each organization that provides a configurable Profit & Loss statement (fiscal year/YTD/custom, with comparisons and `includeInPnL` handling), category and vendor summary reports with drill‑downs into the existing Transactions view, plus export capabilities: PDF for P&L and other summary reports (with branding and page numbers) and CSV for transactions (date range, selectable columns, document references), all using base currency and `POSTED` transactions only, and with view vs export access control aligned to roles.
-
----
-
-### Phase 1 – Routing, Navigation, Access Control
-
-1. **Add `Reports` entry to org navigation**
-	 - Update `app/o/[orgSlug]/layout.tsx` to add a new nav item under the `business` section:
-		 - `id: "reports"`, `label: "Reports"`, `href: /o/[orgSlug]/reports`.
-	 - Ensure the item follows existing nav typing and visibility conventions (e.g. same pattern as `transactions`, `accounts`, `categories`).
-
-2. **Create `Reports` route shell**
-	 - Add a new Server Component page at `app/o/[orgSlug]/reports/page.tsx`.
-	 - In this page:
-		 - Resolve `orgSlug` from `params` and load current user and org using `getCurrentUser` and `getOrgBySlug`.
-		 - Require membership using `requireMembership` (redirect if unauthorized) but do not restrict to admins for viewing.
-		 - Fetch necessary financial/org settings to pass down (e.g. `baseCurrency`, `dateFormat`, `fiscalYearStartMonth`).
-		 - Render a page header (title `Reports`, short description) and a set of shadcn Tabs with four tabs:
-			 - `Profit & Loss`
-			 - `Category Report`
-			 - `Vendor Report`
-			 - `Transactions CSV Export`
-		 - Each tab renders a feature component from `components/features/reporting/*` (implemented later).
-
-3. **Role‑based access rules**
-	 - Determine `isAdminOrSuperadmin` for the current user/org (reusing existing helpers such as `requireAdminOrSuperadmin` or equivalent role checks).
-	 - Viewing:
-		 - All members with org access can view the `Reports` page and see all four tabs and their data.
-	 - Exporting:
-		 - Only admins/superadmins may trigger PDF/CSV exports.
-		 - Reflect this both in UI (export buttons hidden/disabled for non‑admins) and in API routes (server‑side checks).
+This plan introduces a first-class document library for each organization, backed by a new Prisma `Document` model and a `TransactionDocument` join table, a pluggable storage abstraction (initially using local disk), and a set of org-scoped APIs and UIs for uploading, browsing, searching, linking, trashing, and downloading documents. It is designed to align with existing Sololedger patterns (multi-tenant org model, soft-delete, activity log, transactions UI) and to leave clean extension points for AI extraction and richer OCR in later phases.
 
 ---
 
-### Phase 2 – Core P&L Aggregation (Server Helpers)
+### 1. Data Model & Storage Abstraction
 
-4. **Define reporting types for P&L**
-	 - Create `lib/reporting-types.ts` with strongly typed interfaces:
-		 - `PnLDateMode = "fiscalYear" | "ytd" | "custom"`.
-		 - `PnLDetailLevel = "summary" | "detailed"`.
-		 - `PnLConfig`:
-			 - `organizationId: string`.
-			 - `fiscalYearStartMonth: number` (1–12).
-			 - `dateMode: PnLDateMode`.
-			 - `customFrom?: string` and `customTo?: string` (ISO `YYYY-MM-DD`, used when `dateMode = "custom"`).
-			 - `detailLevel: PnLDetailLevel`.
-			 - Optionally `referenceDate?: Date` for testing.
-		 - `PnLCategoryRow`:
-			 - `categoryId: string`.
-			 - `parentId: string | null`.
-			 - `name: string`.
-			 - `type: "INCOME" | "EXPENSE"`.
-			 - `level: 0 | 1` (0 = parent, 1 = child).
-			 - `sortOrder: number`.
-			 - `totalBase: number` (aggregated base‑currency amount).
-			 - Optional `children?: PnLCategoryRow[]` when building nested structures.
-		 - `PnLTotals`:
-			 - `income: number`.
-			 - `expenses: number`.
-			 - `net: number`.
-		 - `PnLComparison`:
-			 - `current: PnLTotals`.
-			 - `previous: PnLTotals`.
-			 - `deltaPct: { income: number | null; expenses: number | null; net: number | null }` (percentage changes, null when previous is zero).
-		 - `PnLPeriodBounds`:
-			 - `from: Date`.
-			 - `to: Date`.
-		 - `PnLResult`:
-			 - `incomeRows: PnLCategoryRow[]`.
-			 - `expenseRows: PnLCategoryRow[]`.
-			 - `comparison: PnLComparison`.
-			 - `currentPeriod: PnLPeriodBounds`.
-			 - `previousPeriod: PnLPeriodBounds`.
+1.1 **Prisma models and enums**
 
-5. **Implement P&L date range helpers**
-	 - Create `lib/reporting-helpers.ts` (or extend if it already exists) and import:
-		 - `getFiscalYearRange`, `getYTDRange` from `lib/sololedger-formatters`.
-		 - `computePreviousPeriod` from `lib/dashboard-helpers`.
-	 - Implement `computePnLDateBounds(config: PnLConfig): PnLPeriodBounds`:
-		 - For `dateMode = "fiscalYear"`:
-			 - Use `getFiscalYearRange(config.fiscalYearStartMonth, referenceDate)`.
-		 - For `dateMode = "ytd"`:
-			 - Use `getYTDRange(config.fiscalYearStartMonth, referenceDate)`.
-		 - For `dateMode = "custom"`:
-			 - If `customFrom` and `customTo` are provided, return these as Date objects.
-			 - If missing/invalid, fall back to YTD bounds.
-	 - Implement `computePnLComparisonBounds(current: PnLPeriodBounds, dateMode: PnLDateMode, fiscalYearStartMonth: number): PnLPeriodBounds`:
-		 - For `"fiscalYear"`:
-			 - Use `getFiscalYearRange` with the previous fiscal year (subtract 1 year from the fiscal year determined by current bounds).
-		 - For `"ytd"` or `"custom"`:
-			 - Use `computePreviousPeriod(current)` to get previous period of equal length.
+- Add a new enum `DocumentType` to `prisma/schema.prisma`:
+	- Values: `RECEIPT`, `INVOICE`, `BANK_STATEMENT`, `OTHER`.
+- Add a new model `Document`:
+	- Fields:
+		- `id: String @id @default(cuid())`
+		- `organizationId: String`
+		- `uploadedByUserId: String`
+		- `storageKey: String @db.Text` (internal path/key for the storage backend)
+		- `filenameOriginal: String @db.VarChar(255)`
+		- `displayName: String @db.VarChar(255)` (user-facing, editable)
+		- `mimeType: String @db.VarChar(100)`
+		- `fileSizeBytes: Int`
+		- `type: DocumentType @default(OTHER)`
+		- `documentDate: DateTime?` (optional, invoice/receipt date)
+		- `uploadedAt: DateTime @default(now())`
+		- `textContent: String? @db.Text` (OCR / AI-extracted text for search)
+		- `deletedAt: DateTime?` (soft delete / Trash)
+		- `createdAt: DateTime @default(now())`
+		- `updatedAt: DateTime @updatedAt`
+	- Relations:
+		- `organization: Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)`
+		- `uploadedByUser: User @relation(fields: [uploadedByUserId], references: [id], onDelete: Restrict)`
+		- `transactions: Transaction[] @relation("TransactionDocuments")` (via join model below).
+	- Indexes:
+		- `@@index([organizationId])`
+		- `@@index([organizationId, deletedAt])`
+		- `@@index([organizationId, documentDate])`
+		- `@@index([organizationId, uploadedAt])`
+		- `@@index([organizationId, filenameOriginal])`
+		- `@@index([organizationId, type])`
+		- `@@index([organizationId, mimeType])`
 
-6. **Implement core P&L aggregation**
-	 - In `lib/reporting-helpers.ts` implement `getProfitAndLoss(config: PnLConfig): Promise<PnLResult>`:
-		 - Compute `currentPeriod` using `computePnLDateBounds`.
-		 - Compute `previousPeriod` using `computePnLComparisonBounds`.
-		 - Build a Prisma `TransactionWhereInput` analogous to `buildDashboardTransactionWhere`, but:
-			 - Always constrain to `organizationId = config.organizationId`.
-			 - Restrict to `status = "POSTED"` (exclude Drafts per requirements).
-			 - Filter `date` between `currentPeriod.from` and `currentPeriod.to`.
-			 - Filter categories to only those with `includeInPnL = true`.
-		 - Query current transactions from `db.transaction`:
-			 - Include `category` with `parent` and `type` and `sortOrder`.
-			 - Select `amountBase`, `type`, category identifiers.
-		 - Aggregate current amounts:
-			 - Build a map keyed by categoryId with total `amountBase` per category.
-			 - Ensure parent relationships are captured (parent category may have own transactions or only child transactions).
-		 - Build parent/child structures:
-			 - Load or reuse category metadata (id, name, type, parentId, sortOrder) from the query or via a separate category lookup for the org.
-			 - For each category with nonzero totals:
-				 - If `parentId` is null, treat as parent; else attach as child to its parent.
-			 - For detail level:
-				 - Summary: only parent rows, with totals equal to sum of their own + child totals.
-				 - Detailed: include parent rows plus explicit child rows, using `children` arrays and `level` to indicate nesting.
-			 - Separate rows into `incomeRows` and `expenseRows` by `type`.
-		 - Compute `currentTotals`:
-			 - `income` = sum of totals across all income categories.
-			 - `expenses` = sum of totals across all expense categories.
-			 - `net` = `income - expenses`.
-		 - Repeat aggregation for previous period:
-			 - Run a similar query with dates between `previousPeriod.from` and `previousPeriod.to` and same filters.
-			 - Compute `previousTotals` (income/expenses/net) but you do not need per‑category rows for v1 (unless later needed for comparative breakdowns).
-		 - Compute percentage deltas:
-			 - For each metric, if previous value is 0, set deltaPct to `null`; otherwise `(current - previous) / previous * 100`.
-		 - Return a `PnLResult` object with rows, totals, and period metadata.
+- Add a new join model `TransactionDocument` for the many-to-many relation:
+	- Fields:
+		- `transactionId: String`
+		- `documentId: String`
+		- `createdAt: DateTime @default(now())`
+	- Relations:
+		- `transaction: Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)`
+		- `document: Document @relation(fields: [documentId], references: [id], onDelete: Cascade)`
+	- Primary key and indexes:
+		- `@@id([transactionId, documentId])`
+		- `@@index([documentId])`
+		- `@@index([transactionId])`
 
-7. **(Optional) Unit tests for P&L helper**
-	 - If you decide to add tests:
-		 - Create a small test file (e.g. using your current test tooling) to validate:
-			 - Date bounds for fiscal year/YTD/custom.
-			 - Previous period computation for different modes.
-			 - Correct aggregation of income/expense and net totals for simple synthetic datasets.
+- Update `Transaction` model:
+	- Add relation:
+		- `documents: Document[] @relation("TransactionDocuments")` (via `TransactionDocument`).
+
+1.2 **Organization settings: document retention**
+
+- Extend `OrganizationSettings` with:
+	- `documentRetentionDays: Int?` (nullable; indicates intended retention before hard delete).
+- Add appropriate index if needed (e.g. none for now, as it’s rarely filtered).
+
+1.3 **Database migration**
+
+- Create a new Prisma migration to:
+	- Add `DocumentType` enum.
+	- Create `documents` table with columns and indexes above.
+	- Create `transaction_documents` join table with PK and indexes.
+	- Add `documentRetentionDays` to `organization_settings`.
+	- Add any necessary foreign keys between `documents`, `organizations`, `users`, and `transactions`.
+
+1.4 **Storage abstraction**
+
+- Create `lib/document-storage.ts` with:
+	- Type `StoredDocumentMeta`:
+		- `{ storageKey: string; mimeType: string; fileSizeBytes: number }`.
+	- Interface `DocumentStorage`:
+		- `save(params: { organizationId: string; file: Buffer; mimeType: string; originalName: string }): Promise<StoredDocumentMeta>`
+		- `getStream(params: { organizationId: string; storageKey: string }): NodeJS.ReadableStream`
+		- `delete(params: { organizationId: string; storageKey: string }): Promise<void>`
+	- Implementation `LocalDiskDocumentStorage`:
+		- Writes files under `storage/documents/{organizationId}/{yyyy}/{mm}/{documentId-or-random}`.
+		- Ensures directories exist.
+		- Uses random IDs plus original extension for filenames.
+	- Factory `getDocumentStorage()` returning a singleton instance of `LocalDiskDocumentStorage`.
+- Ensure this abstraction is only used from server-side (Node runtime) code.
 
 ---
 
-### Phase 3 – P&L API and UI
+### 2. Upload API & Document Creation
 
-8. **P&L API route**
-	 - Add `app/api/orgs/[orgSlug]/reports/pnl/route.ts` with `export const runtime = "nodejs"`.
-	 - In `GET` or `POST` handler (choose POST if you prefer JSON body):
-		 - Authenticate user via `getCurrentUser`; return 401 if not authenticated.
-		 - Resolve `{ orgSlug }` from `params` and load org via `getOrgBySlug`; return 404 if missing.
-		 - Require membership via `requireMembership`; return 403 if not a member.
-		 - Load financial settings for the org (base currency, fiscalYearStartMonth, dateFormat) using the existing financial settings APIs/helpers.
-		 - Parse incoming parameters:
-			 - `dateMode` (`fiscalYear` | `ytd` | `custom`).
-			 - `customFrom` and `customTo` (when `dateMode = "custom"`).
-			 - `detailLevel` (`summary` | `detailed`).
-		 - Construct a `PnLConfig` using org id and `fiscalYearStartMonth`.
-		 - Call `getProfitAndLoss(config)`.
-		 - Return the `PnLResult` along with `baseCurrency` and `dateFormat` for client formatting.
+2.1 **Upload endpoint**
 
-9. **P&L tab component (client)**
-	 - Create `components/features/reporting/pnl-report.tsx` as a client component.
-	 - Props:
-		 - `orgSlug: string`.
-		 - `baseCurrency: string`.
-		 - `dateFormat: DateFormat` (from Prisma type).
-		 - `fiscalYearStartMonth: number`.
-		 - `isAdmin: boolean` (for export buttons).
-	 - Internal state:
-		 - `dateMode` (`"fiscalYear"` by default).
-		 - `customFrom`, `customTo` (string dates, initially empty).
-		 - `detailLevel` (`"summary"` by default).
-		 - `loading`, `error`, and `data: PnLResult | null`.
-	 - Behavior:
-		 - On initial mount and when filters change, call `/api/orgs/${orgSlug}/reports/pnl` with the current config.
-		 - Show a loading state (spinner or skeleton) and handle errors with `toast.error`.
-	 - UI layout:
-		 - Filter row:
-			 - Date mode selector (shadcn `Select`) with options `Full fiscal year`, `Year-to-date`, `Custom` mapped to `dateMode`.
-			 - When `Custom` is selected, show from/to date inputs or a `Calendar` picker.
-			 - Detail level selector (e.g. `RadioGroup` for Summary vs Detailed).
-		 - Header:
-			 - Business name and logo (from props or higher‑level header) and report title `Profit & Loss Statement`.
-			 - Period covered: use `formatDateRange(currentPeriod.from, currentPeriod.to, dateFormat)`.
-		 - Summary metrics:
-			 - Use a grid or cards to display `Total Income`, `Total Expenses`, `Net Profit/Loss` in base currency using `formatTransactionAmount` or a dedicated base‑only formatter.
-			 - Show previous period values and `%` changes, with small up/down indicators where appropriate.
-		 - Tables:
-			 - Two sections: `Income` and `Expenses`.
-			 - For each section, render a table:
-				 - Columns: Category, Amount (base currency).
-				 - Summary mode: one row per parent category.
-				 - Detailed mode: parent rows in bold, child rows indented (e.g. `pl-4`) or using `Parent / Child` notation.
-			 - Optional action column with a "View transactions" link (see Phase 6) per row.
-		 - Export button:
-			 - If `isAdmin`, include `Export to PDF` button that triggers the P&L PDF API (wired in Phase 8).
+- Add `app/api/orgs/[orgSlug]/documents/route.ts` with `export const runtime = "nodejs"`.
+- Implement `POST` handler to support single and batch uploads:
+	- Auth:
+		- Use `getCurrentUser` and `requireMembership` to ensure the user is a member of the organization.
+	- Input:
+		- Accept `multipart/form-data` via `request.formData()`.
+		- Field name: `files` (one or more `File` entries).
+	- Validation per file:
+		- Max size 10 MB.
+		- MIME and extension in allowed set: `image/jpeg`, `image/png`, `application/pdf`, `text/plain`.
+	- For each valid file:
+		- Convert `File` to `Buffer`.
+		- Call `DocumentStorage.save` to persist bytes and receive `{ storageKey, mimeType, fileSizeBytes }`.
+		- Create `Document` row with:
+			- `organizationId` from org.
+			- `uploadedByUserId` from current user.
+			- `storageKey`, `mimeType`, `fileSizeBytes`.
+			- `filenameOriginal` from uploaded filename.
+			- `displayName` defaulting to filename without extension.
+			- `type = OTHER`.
+			- `uploadedAt = now()`.
+			- `documentDate = null` (to be set later by user or AI).
+			- `textContent = null` initially.
+		- Log an `AuditLog` entry (e.g. `document.upload`).
+	- Response:
+		- JSON with `{ documents: DocumentSummary[], errors: FileError[] }`, where `DocumentSummary` omits `storageKey`.
+	- Error handling:
+		- For invalid files, include descriptive per-file error but still process others.
+
+2.2 **Integration with AI upload flow (future)**
+
+- Ensure this upload endpoint can be reused by any AI extraction workflow in section 9 by:
+	- Returning the `document.id` and `mimeType` needed later.
+	- Avoiding any AI-specific coupling in this route.
 
 ---
 
-### Phase 4 – Category Report (Server & UI)
+### 3. Linking & Unlinking Documents and Transactions
 
-10. **Category report helper**
-		- Extend `lib/reporting-helpers.ts` to add `getCategoryReport`:
-			- Signature: `getCategoryReport(params: { organizationId: string; from: Date; to: Date; typeFilter?: "INCOME" | "EXPENSE" | "both" }): Promise<CategoryReportResult>`.
-			- Behavior:
-				- Query `db.transaction.findMany` with:
-					- `organizationId`.
-					- `status: "POSTED"`.
-					- `date: { gte: from, lte: to }`.
-					- `category` included with `parent`, `type`, `sortOrder`.
-					- Optional type filter via `category.type` when `typeFilter` is `INCOME` or `EXPENSE`.
-				- Aggregate per category:
-					- `transactionCount: number`.
-					- `totalBase: number` (sum of `amountBase`).
-				- Build a tree/grouping similar to P&L:
-					- Parents and children with sort by `sortOrder`.
-				- Do **not** filter by `includeInPnL`; all categories are eligible (analytics view).
-		- Define `CategoryReportResult` type in `lib/reporting-types.ts`:
-			- `items: Array<{ categoryId: string; parentId: string | null; name: string; type: "INCOME" | "EXPENSE"; level: 0 | 1; sortOrder: number; transactionCount: number; totalBase: number; parentName?: string | null }>`.
+3.1 **Transaction-side link APIs**
 
-11. **Category report API**
-		- Add `app/api/orgs/[orgSlug]/reports/categories/route.ts` with Node runtime.
-		- Handler steps:
-			- Authenticate and require membership, as with P&L.
-			- Read query params `from`, `to`, and optional `type` (`income`, `expense`, `both`).
-			- Validate and parse dates; if missing, consider defaulting to YTD or requiring explicit date range (v1 decision: default to YTD for convenience).
-			- Map `type` to `typeFilter` or default to `"both"`.
-			- Call `getCategoryReport` and return JSON with `items` plus `baseCurrency` and `dateFormat`.
+- Add `app/api/orgs/[orgSlug]/transactions/[transactionId]/documents/route.ts` with `runtime = "nodejs"`.
+- Implement:
+	- `POST` (link documents):
+		- Body: `{ documentIds: string[] }`.
+		- Auth:
+			- Use `requireMembership` and ensure transaction belongs to organization.
+		- Logic:
+			- Fetch documents by IDs within same organization, excluding soft-deleted ones.
+			- For each doc, create `TransactionDocument` entry if not already present.
+			- Return updated list of linked documents (id, displayName, documentDate/uploadedAt, type, basic transaction info if needed).
+			- Log `document.link` events into `AuditLog`.
+	- `DELETE` (unlink documents):
+		- Body: `{ documentIds: string[] }`.
+		- Auth as above.
+		- Logic:
+			- Delete `TransactionDocument` rows for given `transactionId`/`documentId` pairs.
+			- Return remaining linked documents.
+			- Log `document.unlink` events.
 
-12. **Category report UI**
-		- Create `components/features/reporting/category-report.tsx` as a client component.
-		- Props: `orgSlug`, `baseCurrency`, `dateFormat`.
-		- State:
-			- `from`, `to` (strings) and type filter (`"both" | "INCOME" | "EXPENSE"`).
-			- `loading`, `error`, `data: CategoryReportResult | null`.
-		- Behavior:
-			- On mount, default date range to YTD based on org settings (or last 12 months) and fetch report.
-			- On filter change, re-fetch via `/api/orgs/${orgSlug}/reports/categories`.
-		- UI:
-			- Filter bar: date range inputs and type select (All / Income / Expense).
-			- Table:
-				- Columns: Category, Type, Transactions, Total (Base), Action.
-				- Represent parent/child as in P&L with indentation.
-			- Each row has a "View transactions" link/button invoking drill‑down (Phase 6).
-			- Admins see an `Export to PDF` button (if you choose to offer PDF for this report) wired later.
+3.2 **Document-side link APIs**
 
----
+- Add `app/api/orgs/[orgSlug]/documents/[documentId]/transactions/route.ts`.
+- Implement:
+	- `POST` (link to transactions):
+		- Body: `{ transactionIds: string[] }`.
+		- Auth:
+			- Ensure user is member and document belongs to org.
+		- Logic similar to 3.1, but starting from document.
+	- `DELETE` (unlink from transactions):
+		- Body: `{ transactionIds: string[] }`.
+		- Remove join rows for that document.
 
-### Phase 5 – Vendor Report (Server & UI)
+3.3 **Behavior on transaction deletion (soft-delete)**
 
-13. **Vendor report helper**
-		- Extend `lib/reporting-helpers.ts` with `getVendorReport`:
-			- Signature: `getVendorReport(params: { organizationId: string; from: Date; to: Date }): Promise<VendorReportRow[]>`.
-			- Behavior:
-				- Query `db.transaction.findMany` with:
-					- `organizationId`.
-					- `status: "POSTED"`.
-					- `date` between `from` and `to`.
-					- Include `vendor` relation (id, name) where it exists.
-				- Group by vendor (by `vendorId` when present, otherwise treat `vendorName` as key for loose grouping if you want to include non‑linked vendors):
-					- `totalIncomeBase`: sum of `amountBase` where `type = "INCOME"`.
-					- `totalExpenseBase`: sum where `type = "EXPENSE"`.
-					- `netBase = totalIncomeBase - totalExpenseBase`.
-				- Return `VendorReportRow[]` with:
-					- `vendorId: string | null`.
-					- `vendorName: string`.
-					- `totalIncomeBase`, `totalExpenseBase`, `netBase`.
-		- Add `VendorReportRow` type to `lib/reporting-types.ts`.
+- Update transaction delete endpoints and bulk delete logic so that when a transaction is soft-deleted:
+	- `deletedAt` is set as currently implemented.
+	- All corresponding `TransactionDocument` rows are removed to satisfy: “Deleting a transaction removes links to documents; leaves documents intact.”
+	- Documents themselves remain unchanged (no `deletedAt`, no storage deletion).
 
-14. **Vendor report API**
-		- Add `app/api/orgs/[orgSlug]/reports/vendors/route.ts` with Node runtime.
-		- Handler:
-			- Authenticate and require membership.
-			- Parse `from`, `to`, and optional `view` query param (`all`, `income`, `expense`).
-			- Call `getVendorReport`.
-			- If `view = "income"`, filter out rows with `totalIncomeBase = 0` (similar for `view = "expense"`). Otherwise keep all rows.
-			- Return rows plus `baseCurrency` and `dateFormat`.
+3.4 **Behavior on document soft delete and hard delete**
 
-15. **Vendor report UI**
-		- Create `components/features/reporting/vendor-report.tsx`.
-		- Props: `orgSlug`, `baseCurrency`, `dateFormat`.
-		- State:
-			- `from`, `to` date range.
-			- `viewFilter: "all" | "income" | "expense"`.
-			- `sortBy` (e.g. `"name" | "netDesc"`).
-			- Loading/error/data.
-		- Behavior:
-			- Default date range to YTD or last 12 months.
-			- Fetch vendor report when filters change.
-		- UI:
-			- Filter row with date range and view filter.
-			- Table columns: Vendor, Total Income, Total Expenses, Net, Actions.
-			- Sorting controls (e.g. toggle sort by net descending vs name ascending).
-			- "View transactions" action per vendor, linking to `Transactions` page with vendor filter (Phase 6).
-			- Admin‑only `Export to PDF` button pointing to vendor PDF endpoint (Phase 8).
+- When a document is soft-deleted (see section 7):
+	- Remove all `TransactionDocument` rows for that document (ensuring it is unlinked from all transactions).
+- When a document is hard-deleted:
+	- Remove `TransactionDocument` rows.
+	- Delete `Document` row.
+	- Call `DocumentStorage.delete` to remove the file from disk.
 
 ---
 
-### Phase 6 – Drill‑Down to Transactions
+### 4. Document Library API: Listing, Filtering, Grouping
 
-16. **Drill‑down URL conventions**
-		- Reuse existing query parameters handled by `app/o/[orgSlug]/transactions/page.tsx`:
-			- `type`, `status`, `dateFrom`, `dateTo`, `categoryIds`, `vendorId`, `clientId`, etc.
-		- From P&L and Category rows:
-			- For Income category rows: link to `/o/${orgSlug}/transactions?type=INCOME&status=POSTED&categoryIds=<categoryId>&dateFrom=<from>&dateTo=<to>`.
-			- For Expense category rows: same but with `type=EXPENSE`.
-		- From Vendor rows:
-			- Link to `/o/${orgSlug}/transactions?vendorId=<vendorId>&status=POSTED&dateFrom=<from>&dateTo=<to>`.
+4.1 **List/search endpoint**
 
-17. **UI wiring for drill‑downs**
-		- In P&L, Category, and Vendor report tables:
-			- Add an Actions column with a `View transactions` button or link.
-			- Use `useRouter` in client components to `push` to the constructed URL.
-		- Ensure the `Transactions` page continues to interpret URL params as it already does for filters.
+- Add `app/api/orgs/[orgSlug]/documents/list/route.ts` (or reuse `route.ts` with `GET`).
+- Implement `GET` for document listing with filters and pagination:
+	- Query parameters:
+		- `page`, `pageSize`.
+		- `dateFrom`, `dateTo` (ISO strings).
+		- `linked` in `all|linked|unlinked`.
+		- `vendorId`, `clientId` (filter by linked transactions’ vendor/client).
+		- `amountMin`, `amountMax` (numbers in base currency).
+		- `fileType` in `all|image|pdf|text`.
+		- `uploaderId`.
+		- `q` (free-text search).
+	- Base query:
+		- Scope by `organizationId` and `deletedAt IS NULL`.
+	- Include relations:
+		- `transactions` with selected fields: `id`, `date`, `description`, `amountBase`, `currencyBase`, `categoryId`, `vendorId`, `clientId`.
+	- Apply filters:
+		- Linked status:
+			- `linked=linked` → `where: { transactions: { some: {} } }`.
+			- `linked=unlinked` → `where: { transactions: { none: {} } }`.
+		- Vendor/client:
+			- `where: { transactions: { some: { vendorId } } }` and similarly for client.
+		- File type:
+			- Map to mime-type sets: `image/*`, `application/pdf`, `text/plain`.
+		- Uploader:
+			- Filter by `uploadedByUserId`.
+		- Date range (document date fallback):
+			- Use `COALESCE(documentDate, uploadedAt)` semantics in query where possible, or
+			- Filter with OR: `(documentDate between) OR (documentDate is null AND uploadedAt between)`.
+		- Amount (choice c):
+			- For linked docs, filter if any linked transaction has `amountBase` in range.
+			- For unlinked docs, additionally apply simple numeric substring search on `textContent` (e.g. ILIKE `%123.45%`).
+		- Search `q`:
+			- `filenameOriginal ILIKE` or `displayName ILIKE`.
+			- `textContent ILIKE` when present.
+			- `transactions.vendor.name ILIKE` or `transactions.client.name ILIKE` (via joins or a secondary query if needed).
+	- Response:
+		- `{ items: DocumentListItem[], page, pageSize, totalPages, totalItems }`.
+		- `DocumentListItem` includes:
+			- Core document fields (id, displayName, filenameOriginal, mimeType, fileSizeBytes, documentDate, uploadedAt, type).
+			- Derived `isLinked` and `linkedTransactionCount`.
+			- Limited linked transaction metadata (id, date, description, amountBase, type).
 
----
+4.2 **Client-side grouping**
 
-### Phase 7 – Branding Data for Report Headers
-
-18. **Schema update for logo support**
-		- Add `logoUrl` field to `Organization` model (nullable, Text type).
-		- Generate and apply Prisma migration: `npx prisma migrate dev --name add_logo_url_to_organization`.
-
-19. **Branding helper**
-		- Create `lib/reporting-branding.ts` with a helper `getOrgBranding(orgId: string)` that returns:
-			- `displayName: string` (organization name).
-			- `logoUrl: string | null` (from Organization.logoUrl field).
-			- `address: string | null`, `email: string | null`, `phone: string | null`, `taxId: string | null` (from OrganizationSettings).
-		- Returns an `OrgBranding` interface with all fields.
-
-20. **Reusable report header component**
-		- Create `components/features/reporting/report-header.tsx` as a server component.
-		- Props: `branding: OrgBranding`, `reportTitle: string`, `periodDescription: string`, `baseCurrency: string`.
-		- Renders:
-			- Logo (if available) + business name.
-			- Business contact info (address, email, phone, tax ID).
-			- Report title, period, and currency.
-		- Reused across all print routes for consistency.
-
----
-
-### Phase 8 – Browser-Based PDF Export (Simplified Approach)
-
-21. **Print‑optimized HTML routes for each report**
-		- Add the following server component pages that render clean, print‑friendly HTML:
-			- `app/o/[orgSlug]/reports/pnl/print/page.tsx`.
-			- `app/o/[orgSlug]/reports/categories/print/page.tsx`.
-			- `app/o/[orgSlug]/reports/vendors/print/page.tsx`.
-		- Each page:
-			- Authenticates and requires membership using `getCurrentUser`, `getOrgBySlug`, and `requireMembership`.
-			- Parses searchParams mirroring the interactive filters (`dateMode`, `from`, `to`, `detailLevel`, `type`, `view`, etc.).
-			- Fetches data using the same helpers (`getProfitAndLoss`, `getCategoryReport`, `getVendorReport`).
-			- Fetches branding using `getOrgBranding(org.id)`.
-			- Renders:
-				- `ReportHeader` component with branding and report metadata.
-				- Tables displaying report data (income/expenses, categories, or vendors).
-				- Footer with business name and generation date.
-			- Uses print-optimized CSS:
-				- `@media print` styles for clean PDF output (white background, dark text, proper page breaks).
-				- No interactive elements (no buttons, filters, or tabs).
-				- Clean table layouts optimized for A4/Letter paper sizes.
-
-22. **Wire export buttons in UI**
-		- In each report tab component (`pnl-report.tsx`, `category-report.tsx`, `vendor-report.tsx`):
-			- If `isAdmin` is true, enable the `Export to PDF` button (currently disabled placeholder).
-			- On click:
-				- Construct the print route URL with current filter params as search params.
-				- Open URL in new tab using `window.open(url, "_blank")`.
-				- User sees clean print view and can press Cmd/Ctrl+P to save as PDF.
-			- Example:
-				```typescript
-				window.open(`/o/${orgSlug}/reports/pnl/print?dateMode=${dateMode}&detailLevel=${detailLevel}`, "_blank");
-				```
-
-23. **Remove server-side PDF generation dependencies**
-		- Remove `playwright` from `package.json` (no longer needed).
-		- No need for `lib/pdf.ts` wrapper or API endpoints for PDF generation.
-		- Simpler implementation: browser handles PDF rendering with full user control over print settings (margins, orientation, paper size, etc.).
-
-**Benefits of browser-print approach:**
-- Simpler codebase (no headless browser complexity).
-- Faster implementation (no server-side rendering overhead).
-- Better user experience (users control PDF settings via browser print dialog).
-- Reduced server load (no PDF generation compute).
-- Works offline once page is loaded.
+- Grouping (by date, category, vendor) will be performed client-side in the documents UI, using the fields returned from the API:
+	- By date: group by month/year of `documentDate` or `uploadedAt` (fallback logic).
+	- By category: group by primary linked category; if multiple categories, show a “Multiple categories” label.
+	- By vendor: group primarily by the first linked vendor; if multiple, show “Multiple vendors”.
 
 ---
 
-### Phase 9 – Enhanced Transactions CSV Export (Date Range, Columns, Documents)
+### 5. Document Library UI (`/o/[orgSlug]/documents`)
 
-24. **CSV export helper**
-		- Create `lib/export-helpers.ts` with a function `generateTransactionsCsv(config: TransactionCsvExportConfig)`:
-			- `TransactionCsvExportConfig`:
-				- `organizationId: string`.
-				- `from: Date`.
-				- `to: Date`.
-				- Optional filters: `type?`, `status?` (default `POSTED`), `categoryIds?`, `vendorId?`, `clientId?`.
-				- `columns: string[]` representing requested columns (e.g. `"id"`, `"date"`, `"type"`, `"status"`, `"description"`, `"category"`, `"account"`, `"vendor"`, `"client"`, `"amountBase"`, `"currencyBase"`, `"amountSecondary"`, `"currencySecondary"`, `"exchangeRate"`, `"notes"`, `"documentIds"`, `"documentNames"`).
-			- Query `db.transaction.findMany` with includes:
-				- `category`, `account`, `vendor`, `client`, and `documents` (if you have a documents relation; otherwise adjust accordingly).
-			- For each transaction:
-				- Compute `exchangeRate` when both base and secondary amounts exist, reusing the logic from `app/api/orgs/[orgSlug]/transactions/export/route.ts`.
-				- Build CSV rows using only the requested columns.
-				- For document references:
-					- `documentIds`: `;`‑separated list of document IDs.
-					- `documentNames`: `;`‑separated names or filenames.
-			- Generate header row from `columns` to maintain order.
-			- Return `{ filename: string; csv: string }`, with filename including date range.
+5.1 **Page structure**
 
-25. **Date‑range export API**
-		- Add `app/api/orgs/[orgSlug]/transactions/export-range/route.ts` with Node runtime.
-		- Handler behavior:
-			- Authenticate user and require admin/superadmin (export access rule).
-			- Parse request body (POST) containing:
-				- `from`, `to` (required ISO dates).
-				- Optional filters (type/status/categoryIds/vendorId/clientId), default status to `POSTED`.
-				- `columns` array.
-			- Validate date range (e.g. ensure `from <= to` and cap span to a reasonable number of years).
-			- Call `generateTransactionsCsv`.
-			- Return CSV response with content headers mirroring the existing `transactions/export` route.
+- Create `app/o/[orgSlug]/documents/page.tsx` as a client component.
+- Use patterns from `transactions` and `ai-usage-dashboard` pages:
+	- Header section:
+		- Title: “Documents”.
+		- Subtitle: “Manage your receipts and financial documents”.
+		- Actions:
+			- “Upload documents” button (opens file picker and posts to upload API).
+			- “Trash” button linking to `/o/[orgSlug]/documents/trash`.
+	- Filters section:
+		- Date range picker for document date (fallback to upload date) with helper text.
+		- Linked status segmented control: All / Linked / Unlinked.
+		- Vendor and Client selectors (using Command/Select components; fetch via existing APIs).
+		- Amount min/max inputs.
+		- File type select: All / Images / PDFs / Text.
+		- Uploader select: All / “Me” / specific member (requires a small org-members API or reuse existing membership data).
+		- Global search input (`q`) with debounce.
+		- Group by select: None / Month / Category / Vendor.
+	- Content section:
+		- Show loading and empty states.
+		- Render documents as a responsive list/grid of cards or rows:
+			- Thumbnail:
+				- For images: call preview/download endpoint with `inline=1` in an `<img>`.
+				- For PDFs/TXT: show Lucide icons.
+			- Textual info:
+				- `displayName` (primary label).
+				- Document date (fallback to upload date) formatted via existing date helpers.
+				- File type and size labels.
+				- Linked indicator (e.g. paperclip icon + “N linked transactions”).
+			- Row/cell actions:
+				- “View” (opens document detail view).
+				- “Download” (attachment).
+				- “Move to Trash”.
+		- When grouping is enabled:
+			- Render grouping headers (e.g. “November 2025”, vendor names, or categories) with grouped document lists beneath.
 
-26. **Reuse helper in existing selected‑IDs export**
-		- Refactor `app/api/orgs/[orgSlug]/transactions/export/route.ts` to:
-			- Map its `ids` query parameter to a config that filters `id: { in: [...] }` instead of date range.
-			- Optionally allow specifying columns and document flags in query/body; if not provided, default to the current v1 columns.
-			- Call `generateTransactionsCsv` to produce the CSV, to keep logic centralized.
+5.2 **Document detail view**
 
-27. **Transactions CSV Export UI (Report tab)**
-		- Create `components/features/reporting/transactions-export.tsx` as a client component used in the `Transactions CSV Export` tab.
-		- Props: `orgSlug`, `isAdmin`.
-		- State:
-			- `from`, `to` date range.
-			- Column selection:
-				- Option `All fields` (preselect all columns).
-				- Option for custom columns via a checklist (likely using `Checkbox` and a simple list of field labels).
-			- Toggles for `Include document IDs` and `Include document names`.
-			- `isSubmitting` flag.
-		- Behavior:
-			- If user is not admin, show a read‑only message explaining that only admins can export CSV.
-			- On submit (admin only):
-				- POST to `/api/orgs/${orgSlug}/transactions/export-range` with chosen dates and columns.
-				- On success, trigger file download (e.g. by creating a Blob URL or by letting the endpoint return a file directly if you call it via `window.location.href` with encoded payload token).
-			- Use `toast` for errors and success acknowledgments.
-
-28. **Bulk export improvements (optional v1)**
-		- Enhance `handleBulkExportCSV` in `app/o/[orgSlug]/transactions/page.tsx` to:
-			- Optionally open a small dialog to collect column preferences before calling the export endpoint.
-			- Call either the existing `transactions/export` route (with `ids`) or a new `transactions/export-selected` route that uses the shared helper with id filters.
-			- This can reuse the same column definitions used in the `Transactions CSV Export` tab.
+- Implement a document detail UI either as:
+	- A dedicated page `app/o/[orgSlug]/documents/[id]/page.tsx`, or
+	- A `Sheet`/`Dialog` component within `documents/page.tsx`.
+- Content:
+	- Large preview area:
+		- Images: actual image preview via inline download.
+		- PDFs: `<iframe>`/`embed` of inline download URL.
+		- TXT: `<pre>` showing text (possibly truncated).
+	- Metadata panel:
+		- Display and allow editing of `displayName`.
+		- Show `filenameOriginal`, type enum (select), mime-type, file size.
+		- Show and allow editing of `documentDate`.
+		- Show `uploadedAt`, uploader name.
+	- Linked transactions panel:
+		- List linked transactions with date, description, amount, type.
+		- Each item links to transaction detail.
+		- “Unlink” button per transaction.
+		- “Link to transactions” button that opens a transaction picker (see section 6).
+	- Actions:
+		- “Download” (attachment).
+		- “Move to Trash”.
 
 ---
 
-### Phase 10 – Constraints, Performance, and Polish
+### 6. Transaction-Side Integration
 
-29. **Status and date caps**
-		- Ensure all reporting queries (P&L, Category, Vendor, CSV) explicitly filter `status = "POSTED"` (per accounting expectations).
-		- Enforce a maximum allowed date span for heavy reports (e.g. max 5 years) to avoid pathological queries; return a clear error if exceeded.
+6.1 **Transaction list indicators**
 
-30. **Sorting and pagination decisions**
-		- P&L:
-			- No pagination; number of categories is expected to be manageable.
-			- Sort parents and children by `sortOrder` to reflect user‑configured ordering.
-		- Category report:
-			- Sort primarily by `totalBase` descending or `name` ascending; no pagination in v1 unless you encounter performance issues.
-		- Vendor report:
-			- Provide sorting (e.g. net descending, name ascending); pagination can be added later if there are many vendors.
+- Extend transaction list API (`/api/orgs/[orgSlug]/transactions`) to include, for each transaction:
+	- `documentCount` or `hasDocuments` flag based on `TransactionDocument` joins.
+- Update `app/o/[orgSlug]/transactions/page.tsx` to:
+	- Show a paperclip icon and document count in each row when `documentCount > 0`.
+	- Add a quick “View documents” action that navigates to transaction detail or opens a small overlay.
 
-31. **Error handling and UX polish**
-		- Standardize JSON error responses in report/exports APIs to match existing patterns (e.g. `{ error: string }`).
-		- In all client components:
-			- Use `toast.error` for failures.
-			- Show friendly empty states when no data is returned for a given date range.
-		- Ensure the `Reports` page and tab components degrade gracefully when org settings (e.g. fiscal year) are missing or misconfigured.
+6.2 **Transaction detail document panel**
 
-32. **Incremental rollout strategy**
-		- Recommended implementation order:
-			1. P&L server helper + API + UI tab (no exports yet).
-			2. Category and Vendor server helpers + APIs + UI tabs.
-			3. Drill‑downs to Transactions from P&L/Category/Vendor.
-			4. CSV export helper + export‑range API + Transactions CSV Export tab.
-			5. PDF exports for P&L, Category, Vendor (print views + headless browser integration).
-			6. Optional refinements (bulk export column selection, pagination, additional comparisons).
+- In `app/o/[orgSlug]/transactions/[id]/page.tsx`:
+	- Add a “Documents” section or right-hand drawer:
+		- List currently linked documents with icon, name, date.
+		- “View” button opens document detail.
+		- “Unlink” button uses transaction-side unlink API.
+		- “Add existing document” button:
+			- Opens a modal with a mini document picker:
+				- Allows search by filename/text and filter by linked/unlinked, date.
+				- Reuses the list API but scoped to unlinked docs by default.
+			- On confirm, calls transaction-side link API with selected `documentIds`.
+		- Optional “Upload & link” shortcut:
+			- Allows uploading new documents in-place; on success, auto-links them to the transaction.
+
+---
+
+### 7. Trash & Deletion Behavior for Documents
+
+7.1 **Soft delete (move to Trash)**
+
+- Add `DELETE /api/orgs/[orgSlug]/documents/[id]` (Node runtime):
+	- Auth: member/admin of org.
+	- Logic:
+		- Ensure document belongs to org and is not already deleted.
+		- Set `deletedAt = now()`.
+		- Remove all `TransactionDocument` rows for that document (unlink from all transactions).
+		- Log `document.delete` in `AuditLog`.
+
+7.2 **Restore from Trash**
+
+- Add `POST /api/orgs/[orgSlug]/documents/[id]/restore`:
+	- Auth as above.
+	- Logic:
+		- Ensure document belongs to org and `deletedAt` is not null.
+		- Set `deletedAt = null`.
+		- Do **not** restore previous transaction links (they remain removed per requirements).
+		- Log `document.restore`.
+
+7.3 **Hard delete**
+
+- Add `DELETE /api/orgs/[orgSlug]/documents/[id]/hard`:
+	- Auth: restrict to admins (and/or superadmins) as appropriate.
+	- Logic:
+		- Ensure document is soft-deleted (defensive check).
+		- Delete `TransactionDocument` rows.
+		- Call `DocumentStorage.delete` to remove file.
+		- Delete `Document` row.
+		- Log `document.hard_delete`.
+
+7.4 **Documents Trash UI**
+
+- Create `app/o/[orgSlug]/documents/trash/page.tsx` similar to transactions trash:
+	- List documents where `deletedAt` is not null.
+	- Show `displayName`, `filenameOriginal`, `deletedAt`, size, type.
+	- Actions:
+		- “Restore” (calls restore endpoint).
+		- “Delete permanently” (calls hard delete endpoint).
+	- Include a note about retention (e.g. “Documents may be permanently deleted after N days”).
+
+---
+
+### 8. Download & Preview Endpoints
+
+8.1 **Download route**
+
+- Add `GET /api/orgs/[orgSlug]/documents/[id]/download` (Node runtime):
+	- Auth: ensure user is member of org and document belongs to org.
+	- Query param:
+		- `inline=1` or `mode=inline|attachment` (default to attachment).
+	- Logic:
+		- Lookup `Document` by id and org.
+		- Optionally block if `deletedAt` is set (or allow downloads from Trash, depending on policy).
+		- Call `DocumentStorage.getStream` with `organizationId` and `storageKey`.
+		- Stream file in response with:
+			- `Content-Type: document.mimeType`.
+			- `Content-Disposition` set to inline or attachment with `filenameOriginal`.
+		- Log `document.download` in `AuditLog` with user and document id.
+
+8.2 **Preview usage in UI**
+
+- In UI components:
+	- For thumbnails and previews, use the download URL with `inline=1`.
+	- For images, show small `<img>` previews.
+	- For PDFs/TXT, embed in `<iframe>` or open in new tab as appropriate.
+
+---
+
+### 9. Search & Amount Handling Details
+
+9.1 **Filename and display name search**
+
+- Implement ILIKE-based search on `filenameOriginal` and `displayName` in the list endpoint when `q` is provided.
+
+9.2 **Vendor/client search**
+
+- When `q` is provided, additionally search linked transactions’ vendor/client names via:
+	- Join or nested Prisma query using `transactions: { some: { vendor: { name: { contains: q, mode: "insensitive" } } } }` and similar for clients.
+
+9.3 **Text content search**
+
+- When `q` is provided and `textContent` is not null, include `textContent` in the OR search using `contains`/ILIKE.
+- Keep implementation basic for v1; full-text search and indexes can be added later without changing the contract.
+
+9.4 **Amount search semantics**
+
+- For linked documents:
+	- If `amountMin` or `amountMax` provided, require that at least one linked transaction has `amountBase` in the specified range.
+- For unlinked documents:
+	- Implement a simple fallback search in `textContent` for numeric patterns when `amountMin` or `amountMax` is provided.
+	- Normalize user input to a few common formats and search strings like `"123.45"` and `"123,45"`.
+
+---
+
+### 10. Permissions & Security
+
+- Ensure all document-related routes:
+	- Use `runtime = "nodejs"` for DB and storage access.
+	- Use `getOrgBySlug` and `requireMembership` to scope data to the active organization.
+	- Enforce that only members/admins of the org can upload, list, search, link, unlink, soft-delete, restore, and download documents.
+- Do **not** include `storageKey` in any API responses.
+- Keep any future AI extraction logic strictly server-side; do not expose raw document bytes or AI calls to the client.
+
+---
+
+### 11. Activity Log Integration
+
+- For each document-related action, record an `AuditLog` entry with:
+	- `userId`, `organizationId`, timestamp, and a structured `action` string:
+		- `document.upload`
+		- `document.link`
+		- `document.unlink`
+		- `document.delete`
+		- `document.restore`
+		- `document.hard_delete`
+		- `document.download`
+- Include minimal metadata (e.g. document id, filename, transaction id) in the log details JSON field.
+
+---
+
+### 12. Testing & Validation
+
+- Add targeted tests (where test infrastructure exists) for:
+	- Uploading documents of allowed and disallowed types/sizes.
+	- Linking and unlinking documents to transactions, including duplicate link handling.
+	- Transaction soft-delete removing links while preserving documents.
+	- Document soft-delete moving items to Trash and removing links.
+	- Document restore and hard delete behavior.
+	- List endpoint filters: linked/unlinked, vendor/client, amount range, file type, uploader, search, and date ranges.
+- Perform manual flows:
+	- Upload multiple documents and confirm they appear in `/o/[orgSlug]/documents` with correct metadata.
+	- Link/unlink documents from both transaction and document sides.
+	- Use search and filters to find documents by filename, vendor/client, amount, and text content (populated manually or via AI later).
+	- Download and preview documents with correct authorization and headers.

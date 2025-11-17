@@ -137,9 +137,9 @@ export function VendorReport({
     <div className="space-y-6">
       {/* Header */}
       <div className="space-y-2">
-        <h2 className="text-2xl font-bold">Vendor Report</h2>
+        <h2 className="text-2xl font-bold">Vendor/Client Report</h2>
         <p className="text-muted-foreground">
-          Total income, expenses and net per vendor for a period.
+          Total income, expenses and net per vendor/client for a period.
         </p>
       </div>
 
@@ -241,14 +241,14 @@ export function VendorReport({
             <CardContent className="pt-6">
               {sortedRows.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
-                  No vendor activity in this period.
+                  No vendor/client activity in this period.
                 </div>
               ) : (
                 <div className="border rounded-md overflow-hidden">
                   <table className="w-full">
                     <thead className="bg-muted/50">
                       <tr>
-                        <th className="text-left p-3 font-medium">Vendor</th>
+                        <th className="text-left p-3 font-medium">Vendor/Client</th>
                         <th className="text-right p-3 font-medium">Total Income</th>
                         <th className="text-right p-3 font-medium">Total Expenses</th>
                         <th className="text-right p-3 font-medium">Net</th>

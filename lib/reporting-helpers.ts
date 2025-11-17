@@ -551,8 +551,9 @@ export async function getCategoryReport(params: {
 }
 
 /**
- * Get Vendor Report
- * Returns income/expense totals per vendor for a given period
+ * Get Vendor/Client Report
+ * Returns income/expense totals per vendor/client for a given period
+ * Uses vendor for EXPENSE transactions, client for INCOME transactions
  */
 export async function getVendorReport(params: {
   organizationId: string;
@@ -579,10 +580,16 @@ export async function getVendorReport(params: {
           name: true,
         },
       },
+      client: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
     },
   });
 
-  // Aggregate by vendor
+  // Aggregate by vendor/client (unified as contacts)
   const vendorMap = new Map<
     string,
     {
@@ -594,19 +601,33 @@ export async function getVendorReport(params: {
   >();
 
   transactions.forEach((t) => {
-    // Use vendor ID if present, otherwise use vendorName as key (for non-linked vendors)
-    const vendorKey = t.vendorId || `name:${t.vendorName || "No vendor"}`;
+    // Determine the contact based on transaction type
+    // For expenses, use vendor; for income, use client
+    let contactId: string | null;
+    let contactName: string;
 
-    if (!vendorMap.has(vendorKey)) {
-      vendorMap.set(vendorKey, {
-        vendorId: t.vendorId,
-        vendorName: t.vendor?.name || t.vendorName || "No vendor",
+    if (t.type === "EXPENSE") {
+      contactId = t.vendorId;
+      contactName = t.vendor?.name || t.vendorName || "No vendor";
+    } else {
+      // For INCOME transactions, use client
+      contactId = t.clientId;
+      contactName = t.client?.name || t.clientName || "No client";
+    }
+
+    // Use contact ID if present, otherwise use contactName as key
+    const contactKey = contactId || `name:${contactName}`;
+
+    if (!vendorMap.has(contactKey)) {
+      vendorMap.set(contactKey, {
+        vendorId: contactId,
+        vendorName: contactName,
         totalIncomeBase: 0,
         totalExpenseBase: 0,
       });
     }
 
-    const data = vendorMap.get(vendorKey)!;
+    const data = vendorMap.get(contactKey)!;
     const amount = Number(t.amountBase);
 
     if (t.type === "INCOME") {

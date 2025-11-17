@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getOrgBySlug, requireMembership, isSuperadmin } from "@/lib/org-helpers";
+import {
+  getOrgBySlug,
+  requireMembership,
+  isSuperadmin,
+} from "@/lib/org-helpers";
 import { db } from "@/lib/db";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PnLReport } from "@/components/features/reporting/pnl-report";
@@ -36,7 +40,9 @@ export default async function ReportsPage({
   const userIsSuperadmin = await isSuperadmin(user.id);
 
   // Require membership (all members can view reports)
-  const membership = userIsSuperadmin ? null : await requireMembership(user.id, org.id);
+  const membership = userIsSuperadmin
+    ? null
+    : await requireMembership(user.id, org.id);
 
   // Check if user is admin/superadmin (for export permissions)
   const isAdmin = userIsSuperadmin || membership?.role === "admin";
@@ -69,7 +75,7 @@ export default async function ReportsPage({
         <TabsList>
           <TabsTrigger value="pnl">Profit & Loss</TabsTrigger>
           <TabsTrigger value="categories">Category Report</TabsTrigger>
-          <TabsTrigger value="vendors">Vendor Report</TabsTrigger>
+          <TabsTrigger value="vendors">Vendor/Client Report</TabsTrigger>
           <TabsTrigger value="export">Transactions CSV Export</TabsTrigger>
         </TabsList>
 

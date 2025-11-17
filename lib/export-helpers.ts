@@ -8,6 +8,8 @@ import type { Prisma } from "@prisma/client";
 
 /**
  * Available CSV columns
+ * Note: documentIds and documentNames are commented out because the Transaction model
+ * does not have a documents relation in the current schema
  */
 export const AVAILABLE_CSV_COLUMNS = [
   "id",
@@ -25,8 +27,8 @@ export const AVAILABLE_CSV_COLUMNS = [
   "currencySecondary",
   "exchangeRate",
   "notes",
-  "documentIds",
-  "documentNames",
+  // "documentIds",
+  // "documentNames",
 ] as const;
 
 export type CsvColumn = (typeof AVAILABLE_CSV_COLUMNS)[number];
@@ -109,8 +111,6 @@ export async function generateTransactionsCsv(
   const includeAccount = columns.includes("account");
   const includeVendor = columns.includes("vendor");
   const includeClient = columns.includes("client");
-  const includeDocuments =
-    columns.includes("documentIds") || columns.includes("documentNames");
 
   // Fetch transactions
   const transactions = await db.transaction.findMany({
@@ -120,14 +120,6 @@ export async function generateTransactionsCsv(
       account: includeAccount,
       vendor: includeVendor,
       client: includeClient,
-      documents: includeDocuments
-        ? {
-            select: {
-              id: true,
-              filename: true,
-            },
-          }
-        : false,
     },
     orderBy: { date: "desc" },
   });
@@ -180,8 +172,8 @@ function getColumnLabel(column: CsvColumn): string {
     currencySecondary: "Currency (Secondary)",
     exchangeRate: "Exchange Rate",
     notes: "Notes",
-    documentIds: "Document IDs",
-    documentNames: "Document Names",
+    // documentIds: "Document IDs",
+    // documentNames: "Document Names",
   };
 
   return labels[column];
@@ -207,7 +199,6 @@ type TransactionWithIncludes = {
   account?: { name: string } | null;
   vendor?: { name: string } | null;
   client?: { name: string } | null;
-  documents?: Array<{ id: string; filename: string }> | null;
 };
 
 /**
@@ -283,17 +274,19 @@ function formatCsvValue(column: CsvColumn, transaction: TransactionWithIncludes)
     case "notes":
       return transaction.notes ? escapeCsv(transaction.notes) : "";
 
-    case "documentIds":
-      if (transaction.documents && transaction.documents.length > 0) {
-        return transaction.documents.map((d) => d.id).join(";");
-      }
-      return "";
+    // Document columns are commented out because the Transaction model
+    // does not have a documents relation in the current schema
+    // case "documentIds":
+    //   if (transaction.documents && transaction.documents.length > 0) {
+    //     return transaction.documents.map((d) => d.id).join(";");
+    //   }
+    //   return "";
 
-    case "documentNames":
-      if (transaction.documents && transaction.documents.length > 0) {
-        return transaction.documents.map((d) => d.filename).join(";");
-      }
-      return "";
+    // case "documentNames":
+    //   if (transaction.documents && transaction.documents.length > 0) {
+    //     return transaction.documents.map((d) => d.filename).join(";");
+    //   }
+    //   return "";
 
     default:
       return "";

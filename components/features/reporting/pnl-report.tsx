@@ -105,12 +105,20 @@ export function PnLReport({
   const handleViewTransactions = (categoryId: string, type: "INCOME" | "EXPENSE") => {
     if (!data) return;
 
+    // currentPeriod.from and .to are ISO strings from the API, not Date objects
+    const dateFrom = typeof data.currentPeriod.from === 'string'
+      ? data.currentPeriod.from.split("T")[0]
+      : new Date(data.currentPeriod.from).toISOString().split("T")[0];
+    const dateTo = typeof data.currentPeriod.to === 'string'
+      ? data.currentPeriod.to.split("T")[0]
+      : new Date(data.currentPeriod.to).toISOString().split("T")[0];
+
     const params = new URLSearchParams({
       type,
       status: "POSTED",
       categoryIds: categoryId,
-      dateFrom: data.currentPeriod.from.toISOString().split("T")[0],
-      dateTo: data.currentPeriod.to.toISOString().split("T")[0],
+      dateFrom,
+      dateTo,
     });
 
     router.push(`/o/${orgSlug}/transactions?${params.toString()}`);

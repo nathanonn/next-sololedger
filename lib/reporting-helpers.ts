@@ -201,6 +201,17 @@ export async function getProfitAndLoss(
         parentSortOrder: t.category.parent?.sortOrder,
       });
     }
+
+    // Also add parent metadata if this is a child category and parent not yet in map
+    if (t.category.parentId && t.category.parent && !categoryMetadata.has(t.category.parentId)) {
+      categoryMetadata.set(t.category.parentId, {
+        id: t.category.parent.id,
+        name: t.category.parent.name,
+        type: t.category.type, // Inherit type from child (same type for parent/child)
+        parentId: null,
+        sortOrder: t.category.parent.sortOrder,
+      });
+    }
   });
 
   // Build parent/child structures
@@ -248,7 +259,7 @@ export async function getProfitAndLoss(
       ? null
       : ((expenses - prevExpenses) / prevExpenses) * 100;
   const netDeltaPct =
-    prevNet === 0 ? null : ((net - prevNet) / Math.abs(prevNet)) * 100;
+    prevNet === 0 ? null : ((net - prevNet) / prevNet) * 100;
 
   const comparison: PnLComparison = {
     current: currentTotals,
@@ -500,9 +511,9 @@ export async function getCategoryReport(params: {
     data.totalBase += Number(t.amountBase);
   });
 
-  // Convert to array and sort
-  const items: CategoryReportRow[] = Array.from(categoryMap.values())
-    .map((cat) => ({
+  // Convert to array
+  const allItems: CategoryReportRow[] = Array.from(categoryMap.values()).map(
+    (cat) => ({
       categoryId: cat.id,
       parentId: cat.parentId,
       name: cat.name,
@@ -512,14 +523,29 @@ export async function getCategoryReport(params: {
       transactionCount: cat.transactionCount,
       totalBase: cat.totalBase,
       parentName: cat.parentName,
-    }))
-    .sort((a, b) => {
-      // Sort by parent first (parents before children), then by sortOrder
-      if (a.level !== b.level) {
-        return a.level - b.level;
-      }
-      return a.sortOrder - b.sortOrder;
-    });
+    })
+  );
+
+  // Group children under parents
+  const parents = allItems.filter((item) => item.level === 0).sort((a, b) => a.sortOrder - b.sortOrder);
+  const children = allItems.filter((item) => item.level === 1);
+
+  const items: CategoryReportRow[] = [];
+  parents.forEach((parent) => {
+    items.push(parent);
+    // Add children of this parent, sorted by sortOrder
+    const parentChildren = children
+      .filter((child) => child.parentId === parent.categoryId)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    items.push(...parentChildren);
+  });
+
+  // Add any orphaned children (children whose parent is not in the list)
+  const parentIds = new Set(parents.map((p) => p.categoryId));
+  const orphanedChildren = children
+    .filter((child) => child.parentId && !parentIds.has(child.parentId))
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  items.push(...orphanedChildren);
 
   return { items };
 }

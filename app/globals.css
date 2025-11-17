@@ -120,3 +120,27 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Print-specific styles for report exports */
+@media print {
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  @page {
+    margin: 2cm;
+    size: A4;
+  }
+
+  /* Named page for landscape orientation */
+  @page landscape {
+    size: A4 landscape;
+    margin: 2cm;
+  }
+
+  /* Apply landscape page to elements with this class */
+  .landscape-print {
+    page: landscape;
+  }
+}

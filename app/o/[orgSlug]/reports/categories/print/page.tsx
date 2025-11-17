@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getOrgBySlug, requireMembership } from "@/lib/org-helpers";
+import { getOrgBySlug, requireMembership, isSuperadmin } from "@/lib/org-helpers";
 import { getCategoryReport } from "@/lib/reporting-helpers";
 import { getOrgBranding } from "@/lib/reporting-branding";
 import { getYTDRange } from "@/lib/sololedger-formatters";
@@ -12,6 +12,7 @@ import type { CategoryReportRow } from "@/lib/reporting-types";
 /**
  * Category Report Print Page
  * Print-optimized view of category breakdown report
+ * Restricted to admins and superadmins only
  */
 
 export default async function CategoryReportPrintPage({
@@ -40,8 +41,19 @@ export default async function CategoryReportPrintPage({
     redirect("/");
   }
 
+  // Check if user is superadmin
+  const userIsSuperadmin = await isSuperadmin(user.id);
+
   // Require membership
-  await requireMembership(user.id, org.id);
+  const membership = userIsSuperadmin ? null : await requireMembership(user.id, org.id);
+
+  // Check if user is admin/superadmin (exports are admin-only)
+  const isAdmin = userIsSuperadmin || membership?.role === "admin";
+
+  // Require admin or superadmin for PDF exports
+  if (!isAdmin) {
+    redirect(`/o/${orgSlug}/reports`);
+  }
 
   // Get organization settings and branding
   const [settings, branding] = await Promise.all([
@@ -211,45 +223,6 @@ export default async function CategoryReportPrintPage({
         <div className="mt-12 pt-6 border-t text-sm text-gray-500 text-center print:fixed print:bottom-0 print:left-0 print:right-0 print:p-4">
           {branding.displayName} • Generated on {new Date().toLocaleDateString("en-GB")}
         </div>
-
-        {/* Print Styles */}
-        <style jsx global>{`
-          @media print {
-            body {
-              print-color-adjust: exact;
-              -webkit-print-color-adjust: exact;
-            }
-
-            @page {
-              margin: 2cm;
-              size: A4;
-            }
-
-            .print\\:p-0 {
-              padding: 0 !important;
-            }
-
-            .print\\:fixed {
-              position: fixed;
-            }
-
-            .print\\:bottom-0 {
-              bottom: 0;
-            }
-
-            .print\\:left-0 {
-              left: 0;
-            }
-
-            .print\\:right-0 {
-              right: 0;
-            }
-
-            .print\\:p-4 {
-              padding: 1rem;
-            }
-          }
-        `}</style>
       </div>
     </div>
   );

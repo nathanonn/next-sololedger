@@ -4,7 +4,7 @@
 
 ```
 ./worktrees.sh setup \
-  --branches feat/dashboard_analytics \
+  --branches feat/profit_loss_statement \
   --db-url postgresql://pi:password@localhost:5432/nextsololedger
 ```
 
@@ -17,7 +17,7 @@
 ## merge
 
 ```
-./worktrees.sh merge --branches feat/dashboard_analytics --into main
+./worktrees.sh merge --branches feat/profit_loss_statement --into main
 ```
 
 # create wireframes based on plan

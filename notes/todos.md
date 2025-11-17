@@ -77,9 +77,9 @@ For the currency requirements, help me update it based on the following:
 
 ## Dashboard & Analytics
 
-- [ ] Date range selector (last 30 days, YTD, custom) affecting metrics
-- [ ] Trends: income vs expense monthly chart with hover + click drill-down
-- [ ] Dashboard customization: reorder/hide widgets; per-user per-business persistence
+- [x] Date range selector (last 30 days, YTD, custom) affecting metrics
+- [x] Trends: income vs expense monthly chart with hover + click drill-down
+- [x] Dashboard customization: reorder/hide widgets; per-user per-business persistence
 
 ## Reporting & Exports
 

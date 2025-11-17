@@ -54,3 +54,4 @@ backup_*.sql
 
 # claude skills
 .claude/skills/skill-creator/scripts/__pycache__
+.claude/insights

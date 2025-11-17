@@ -2,25 +2,29 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { getOrgBySlug, getUserMembership, isSuperadmin } from "@/lib/org-helpers";
 import { db } from "@/lib/db";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
-import { getYTDRange, formatCurrency, formatDate } from "@/lib/sololedger-formatters";
-import { TrendingUp, TrendingDown, Wallet } from "lucide-react";
-import { AccountsOverviewWidget } from "@/components/features/dashboard/accounts-overview-widget";
+import { DashboardClient } from "@/components/features/dashboard/dashboard-client";
+import type { DashboardTransactionFilters } from "@/lib/dashboard-types";
+import {
+  getDashboardSummary,
+  getDashboardMonthlyTrends,
+  getDashboardCategoryBreakdown,
+  getDashboardLayoutForMembership,
+} from "@/lib/dashboard-helpers";
 
 /**
- * Business Dashboard
- * Shows YTD metrics, account balances, and recent activity
+ * Business Dashboard with Analytics
+ * Shows dynamic metrics, charts, and insights with customizable widgets
  */
 
 export default async function DashboardPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ orgSlug: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }): Promise<React.JSX.Element> {
   const { orgSlug } = await params;
+  const search = await searchParams;
 
   // Validate session and membership
   const user = await getCurrentUser();
@@ -46,249 +50,134 @@ export default async function DashboardPage({
   });
 
   if (!settings) {
-    // No settings yet, shouldn't happen if onboarding is complete
     return (
       <div className="p-6">
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-center text-muted-foreground">
-              Please complete onboarding to view your dashboard
-            </p>
-          </CardContent>
-        </Card>
+        <div className="border rounded-lg p-6">
+          <p className="text-center text-muted-foreground">
+            Please complete onboarding to view your dashboard
+          </p>
+        </div>
       </div>
     );
   }
 
-  // Get YTD date range
-  const { startDate, endDate } = getYTDRange(settings.fiscalYearStartMonth);
+  // Parse filters from URL params
+  const dateKind = (search.dateKind as string) || "ytd";
+  const from = search.from as string | undefined;
+  const to = search.to as string | undefined;
+  const view = (search.view as string) || "both";
+  const origin = (search.origin as string) || "all";
+  const categoryIdsParam = search.categoryIds as string | undefined;
+  const categoryIds = categoryIdsParam ? categoryIdsParam.split(",").filter(Boolean) : [];
 
-  // Get YTD transactions (Posted only)
-  const ytdTransactions = await db.transaction.findMany({
-    where: {
-      organizationId: org.id,
-      status: "POSTED",
-      deletedAt: null,
-      date: {
-        gte: startDate,
-        lte: endDate,
-      },
+  // Build dashboard filters
+  const filters: DashboardTransactionFilters = {
+    organizationId: org.id,
+    dateRange: {
+      kind: (dateKind as "ytd" | "last30" | "thisMonth" | "lastMonth" | "custom") || "ytd",
+      from,
+      to,
     },
-    include: {
-      category: true,
-    },
+    categoryIds,
+    view: (view as "income" | "expense" | "both") || "both",
+    originCurrency: origin,
+    fiscalYearStartMonth: settings.fiscalYearStartMonth,
+  };
+
+  // Fetch dashboard data in parallel
+  const [summary, monthlyTrends, categoryBreakdown, categories, recentTransactions, userLayout] =
+    await Promise.all([
+      getDashboardSummary(filters),
+      getDashboardMonthlyTrends(filters),
+      getDashboardCategoryBreakdown(filters, 10),
+      db.category.findMany({
+        where: {
+          organizationId: org.id,
+          active: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+        },
+        orderBy: [{ type: "asc" }, { name: "asc" }],
+      }),
+      db.transaction.findMany({
+        where: {
+          organizationId: org.id,
+          deletedAt: null,
+        },
+        include: {
+          category: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          account: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+        orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+        take: 20,
+      }),
+      getDashboardLayoutForMembership(user.id, org.id),
+    ]);
+
+  // Get available origin currencies from recent transactions
+  const currencySet = new Set<string>();
+  recentTransactions.forEach((t) => {
+    if (t.currencySecondary) {
+      currencySet.add(t.currencySecondary);
+    }
   });
+  const availableOriginCurrencies = Array.from(currencySet).sort();
 
-  // Calculate YTD metrics
-  const ytdIncome = ytdTransactions
-    .filter((t) => t.type === "INCOME" && t.category.includeInPnL)
-    .reduce((sum, t) => sum + Number(t.amountBase), 0);
-
-  const ytdExpenses = ytdTransactions
-    .filter((t) => t.type === "EXPENSE" && t.category.includeInPnL)
-    .reduce((sum, t) => sum + Number(t.amountBase), 0);
-
-  const ytdProfitLoss = ytdIncome - ytdExpenses;
-
-  // Get recent activity (last 20 transactions)
-  const recentTransactions = await db.transaction.findMany({
-    where: {
-      organizationId: org.id,
-      deletedAt: null,
-    },
-    include: {
-      category: true,
-      account: true,
-    },
-    orderBy: { date: "desc" },
-    take: 20,
-  });
-
+  // Pass all data to client component
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold">{org.name} Dashboard</h1>
-        <p className="text-muted-foreground">
-          Overview (YTD in {settings.baseCurrency})
-        </p>
-      </div>
-
-      {/* YTD Metrics Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">YTD Income</CardTitle>
-            <TrendingUp className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {formatCurrency(
-                ytdIncome,
-                settings.baseCurrency,
-                settings.decimalSeparator,
-                settings.thousandsSeparator
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              From {formatDate(startDate, settings.dateFormat)}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">YTD Expenses</CardTitle>
-            <TrendingDown className="h-4 w-4 text-red-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">
-              {formatCurrency(
-                ytdExpenses,
-                settings.baseCurrency,
-                settings.decimalSeparator,
-                settings.thousandsSeparator
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              From {formatDate(startDate, settings.dateFormat)}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              YTD Profit/Loss
-            </CardTitle>
-            <Wallet className="h-4 w-4" />
-          </CardHeader>
-          <CardContent>
-            <div
-              className={`text-2xl font-bold ${
-                ytdProfitLoss >= 0 ? "text-green-600" : "text-red-600"
-              }`}
-            >
-              {formatCurrency(
-                ytdProfitLoss,
-                settings.baseCurrency,
-                settings.decimalSeparator,
-                settings.thousandsSeparator
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {ytdProfitLoss >= 0 ? "Profit" : "Loss"}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Account Balances */}
-      <AccountsOverviewWidget
-        orgSlug={orgSlug}
-        baseCurrency={settings.baseCurrency}
-        dateRange="ytd"
-        fromDate={startDate.toISOString().split("T")[0]}
-        toDate={endDate.toISOString().split("T")[0]}
-      />
-
-      {/* Recent Activity */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Recent Activity</CardTitle>
-            <CardDescription>Last 20 transactions</CardDescription>
-          </div>
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/o/${orgSlug}/transactions`}>
-              View all transactions
-            </Link>
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {recentTransactions.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">
-              No transactions yet.{" "}
-              <Link
-                href={`/o/${orgSlug}/transactions`}
-                className="underline"
-              >
-                Create your first transaction
-              </Link>
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {recentTransactions.map((transaction) => (
-                <div
-                  key={transaction.id}
-                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">
-                        {transaction.description}
-                      </span>
-                      <Badge
-                        variant={
-                          transaction.type === "INCOME"
-                            ? "default"
-                            : "secondary"
-                        }
-                        className="text-xs"
-                      >
-                        {transaction.type}
-                      </Badge>
-                      <Badge
-                        variant={
-                          transaction.status === "POSTED"
-                            ? "default"
-                            : "outline"
-                        }
-                        className="text-xs"
-                      >
-                        {transaction.status}
-                      </Badge>
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {formatDate(transaction.date, settings.dateFormat)} •{" "}
-                      {transaction.category.name} • {transaction.account.name}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div
-                      className={`font-semibold ${
-                        transaction.type === "INCOME"
-                          ? "text-green-600"
-                          : "text-red-600"
-                      }`}
-                    >
-                      {transaction.type === "INCOME" ? "+" : "-"}
-                      {formatCurrency(
-                        Number(transaction.amountBase),
-                        settings.baseCurrency,
-                        settings.decimalSeparator,
-                        settings.thousandsSeparator
-                      )}
-                    </div>
-                    <Button
-                      asChild
-                      variant="ghost"
-                      size="sm"
-                      className="mt-1"
-                    >
-                      <Link
-                        href={`/o/${orgSlug}/transactions/${transaction.id}`}
-                      >
-                        Edit
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    <DashboardClient
+      orgSlug={orgSlug}
+      orgName={org.name}
+      settings={{
+        baseCurrency: settings.baseCurrency,
+        fiscalYearStartMonth: settings.fiscalYearStartMonth,
+        dateFormat: settings.dateFormat,
+        decimalSeparator: settings.decimalSeparator,
+        thousandsSeparator: settings.thousandsSeparator,
+      }}
+      summary={summary}
+      monthlyTrends={monthlyTrends}
+      categoryBreakdown={categoryBreakdown}
+      categories={categories}
+      recentTransactions={recentTransactions.map((t) => ({
+        id: t.id,
+        type: t.type,
+        status: t.status,
+        date: t.date.toISOString().split("T")[0],
+        description: t.description,
+        amountBase: Number(t.amountBase),
+        currencyBase: settings.baseCurrency,
+        category: t.category,
+        account: t.account,
+        hasDocuments: false, // TODO: Add document relation check
+        clientName: t.clientName,
+        vendorName: t.vendorName,
+      }))}
+      availableOriginCurrencies={availableOriginCurrencies}
+      initialFilters={{
+        dateRange: {
+          kind: (dateKind as "ytd" | "last30" | "thisMonth" | "lastMonth" | "custom") || "ytd",
+          from,
+          to,
+        },
+        categoryIds,
+        view: (view as "income" | "expense" | "both") || "both",
+        originCurrency: origin,
+      }}
+      userLayout={userLayout}
+    />
   );
 }

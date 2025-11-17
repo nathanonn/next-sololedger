@@ -1,268 +1,267 @@
-In this phase we will refactor Sololedger’s multi-currency handling from an exchange-rate–centric model to an explicit dual-currency model, where each transaction always stores an authoritative base-currency amount and optionally a secondary (original) currency amount. We will apply this through the data model, APIs, transaction forms, and UI displays, while preserving backwards compatibility via a migration from the existing `amountOriginal` / `exchangeRateToBase` fields. All filtering, sorting, reporting, and dashboards will continue to run purely on base-currency amounts, with secondary currency used only for display and reference.
-
-## Implementation Plan – Dual Currency Model (Section 7)
-
-### 1. Data Model & Prisma
-
-1.1 Extend `Transaction` model
-
-- In `prisma/schema.prisma`, extend the `Transaction` model to support explicit base and secondary currencies:
-  - Keep `amountBase Decimal(18, 2)` as the canonical base amount field (already present).
-  - Add `currencyBase String @db.VarChar(3)` (required) to store the organization’s base currency code per transaction.
-  - Add `amountSecondary Decimal @db.Decimal(18, 2)?` (optional) to store the original/secondary transaction amount.
-  - Add `currencySecondary String? @db.VarChar(3)` (optional) for the original/secondary currency code.
-- Retain legacy fields for now (for migration and audit only): - `amountOriginal`, `currencyOriginal`, `exchangeRateToBase` and any related metadata. - Mark them as legacy in comments and stop using them in new business logic after migration.
-
-  1.2 Database migration
-
-- Create a Prisma migration to add `currencyBase`, `amountSecondary`, and `currencySecondary` to `Transaction`:
-  - Temporarily allow `currencyBase` to be nullable or default to a placeholder, then backfill values via a script and enforce non-null.
-- Verify that `organization_settings.baseCurrency` values are:
-  - Non-null.
-  - Uppercased 3-letter codes.
-  - Valid ISO 4217 codes (or at least syntactically valid) before relying on them for migration.
-
-### 2. Shared Currency Utilities & ISO Validation
-
-2.1 Shared currency list and helpers
-
-- Add a new module `lib/currencies.ts` that exports: - A full ISO 4217 currency list as an array of `{ code: string; name: string }`. - `isValidCurrencyCode(code: string): boolean` that checks uppercase 3-letter codes against this list.
-
-  2.2 Server-side currency validation
-
-- Use `isValidCurrencyCode` in server routes to enforce ISO codes:
-  - `app/api/orgs/[orgSlug]/settings/financial/route.ts` when saving `baseCurrency`.
-  - `app/api/orgs/[orgSlug]/transactions/route.ts` and `app/api/orgs/[orgSlug]/transactions/[transactionId]/route.ts` for `currencySecondary` (and any `currencyBase` input if accepted).
-- Update Zod schemas to refine currency strings: - `.string().length(3).transform((v) => v.toUpperCase()).refine(isValidCurrencyCode, { message: "Invalid currency code" })`.
-
-  2.3 Client-side usage (mirroring server)
-
-- Replace ad-hoc currency lists with shared ISO data where appropriate:
-  - `app/onboarding/[orgSlug]/financial/page.tsx` (base currency selection).
-  - `app/o/[orgSlug]/settings/organization/(tabs)/financial/page.tsx` (base currency change dialog).
-  - `components/features/transactions/transaction-form.tsx` (secondary currency selection).
-- Keep a “common currencies” subset at the top of dropdowns for UX, but still validate against the full ISO list.
-
-### 3. Transaction API – Dual Currency Fields
-
-3.1 Create transaction (POST /api/orgs/[orgSlug]/transactions)
-
-- In `app/api/orgs/[orgSlug]/transactions/route.ts`, update the POST schema and handler:
-  - New primary fields:
-    - `amountBase: z.number().positive("Amount must be greater than 0")`.
-  - Optional secondary fields (all-or-nothing):
-    - `amountSecondary: z.number().positive().optional()`.
-    - `currencySecondary: z
-	 .string()
-	 .length(3)
-	 .transform((v) => v.toUpperCase())
-	 .refine(isValidCurrencyCode, { message: "Invalid currency code" })
-	 .optional()`.
-  - Cross-field validation for secondary:
-    - If `amountSecondary` is provided → `currencySecondary` must be present and valid.
-    - If `currencySecondary` is provided → `amountSecondary` must be present and positive.
-  - Base currency handling:
-    - Load `orgSettings` and read `baseCurrency`.
-    - Force `currencyBase` to `orgSettings.baseCurrency` (ignore or hard-validate any incoming `currencyBase` field).
-  - Data persistence:
-    - Write `amountBase` and `currencyBase` for every transaction.
-    - Write `amountSecondary` and `currencySecondary` only when valid secondary data is provided; otherwise leave them null.
-- Backwards-compatibility path during rollout: - Optionally keep accepting `amountOriginal` + `currencyOriginal` + `exchangeRateToBase` for a short transition period. - If these legacy fields are present and new dual-currency fields are not, derive: - `amountBase` from `amountOriginal * exchangeRateToBase`. - Secondary from `amountOriginal`/`currencyOriginal` per migration logic. - Mark this path as deprecated and remove once clients are updated.
-
-  3.2 Update transaction (PATCH /api/orgs/[orgSlug]/transactions/[transactionId])
-
-- In `app/api/orgs/[orgSlug]/transactions/[transactionId]/route.ts`, extend the Zod schema for PATCH:
-  - Allow optional `amountBase`, `amountSecondary`, and `currencySecondary` with the same constraints as POST.
-  - Reuse cross-field validation for secondary.
-- Update handler logic:
-  - When `amountBase` is provided, update `amountBase` for the transaction (respect soft-closed period rules and activity logging).
-  - Always enforce that `currencyBase` remains equal to `orgSettings.baseCurrency` (if base currency settings change later, handle recompute via separate logic, not per-transaction PATCH).
-  - For secondary fields:
-    - If both `amountSecondary` and `currencySecondary` are present and valid → update them.
-    - If both are explicitly cleared (e.g. null/undefined in payload semantics) → clear `amountSecondary` and `currencySecondary` to represent base-only.
-- Keep existing rules (type/category alignment, soft-close warnings, vendor/client handling) unchanged.
-
-  3.3 List transactions (GET /api/orgs/[orgSlug]/transactions)
-
-- In the GET handler in `transactions/route.ts`:
-  - Confirm amount range filters use `where.amountBase` only (already implemented but re-verify).
-  - Adjust currency filter semantics to operate on original/secondary currency:
-    - Interpret `?currency=` query as follows:
-      - `currency=all` (or no param) → no filter.
-      - `currency=BASE` (reserved value) → `where.currencySecondary = null` (base-only transactions).
-      - `currency=XXX` → `where.currencySecondary = XXX` (transactions originally in that currency).
-  - Include new fields in the response payload:
-    - `amountBase`, `currencyBase`, `amountSecondary`, `currencySecondary`.
-- Ensure ordering by amount (if present) uses `amountBase`.
+In this phase we will turn the existing organization dashboard into a fully featured analytics hub. Server-side, we’ll add Prisma-powered aggregations and a small API surface for YTD/period summaries, month-by-month trends, category breakdowns, and account balances, filtered by date range, category, income/expense view, and origin currency. Client-side, we’ll use Recharts for visualizations, a shared dashboard filter bar (driven by URL params plus per-user defaults), and a widget shell that supports hide/show and reset, with layout stored per membership, while keeping drill-down flows consistent with the existing transactions list.
 
-### 4. Migration – Exchange-Rate Model to Dual Currency
+## Implementation Plan – Dashboard & Analytics (Section 11)
 
-4.1 Migration script
+### 1. Inventory existing pieces and define target behavior
 
-- Create `scripts/migrate-currency-model.ts` that uses Prisma to transform existing data according to Section 7.6: - Load all organizations and their `organizationSettings.baseCurrency` values. - Iterate transactions in manageable batches (e.g. by organization and createdAt).
+1.1 Audit current dashboard implementation
 
-  4.2 Transformation rules
+- Review `app/o/[orgSlug]/dashboard/page.tsx` to confirm:
+  - YTD cards for income, expenses, profit/loss using `getYTDRange`, `formatCurrency`.
+  - Recent activity panel (last 20 transactions) with type/status and “Edit” links.
+  - `AccountsOverviewWidget` integration for account balances in base currency.
+- Review `components/features/dashboard/accounts-overview-widget.tsx`, `dashboard-shell.tsx`, and `sidebar.tsx` to understand:
+  - How widgets are currently composed within the shell.
+  - Any existing notions of “widgets” or layout that can be reused.
+- Confirm transaction and account model details in `prisma/schema.prisma`:
+  - `Transaction`: `type`, `status`, `amountBase`, `currencyBase`, `amountSecondary`, `currencySecondary`, `date`, `deletedAt`, `categoryId`, `accountId`.
+  - `Category`: `includeInPnL`, parent/child relationships, color, icon.
+  - `Account`: fields used in account balance calculations.
+- Review `app/o/[orgSlug]/transactions/page.tsx` to map:
+  - Existing filters (date, type, status, category, vendor, amount, currency).
+  - URL query param parsing for filters to align drill-down behavior.
 
-- For each transaction, read `amountOriginal`, `currencyOriginal`, `amountBase` (legacy), and the organization’s `baseCurrency`:
-  - If `currencyOriginal !== baseCurrency`:
-    - Set `amountSecondary = amountOriginal`.
-    - Set `currencySecondary = currencyOriginal`.
-    - Keep existing `amountBase` unchanged.
-    - Set `currencyBase = baseCurrency`.
-  - If `currencyOriginal === baseCurrency`:
-    - Set `amountBase = amountOriginal` (overwriting if necessary).
-    - Set `currencyBase = baseCurrency`.
-    - Set `amountSecondary = null` and `currencySecondary = null`.
-- Optional consistency checks: - For foreign-currency transactions, log rows where existing `amountBase` differs from `amountOriginal * exchangeRateToBase` beyond a small epsilon.
+Outcome: clear map of what is already satisfied (YTD summary, accounts overview, recent activity) and what must be added (filters, trends, charts, customization, origin currency filters).
 
-  4.3 Execution & safety
+### 2. Shared data contracts for dashboard analytics
 
-- Add CLI flags for:
-  - `--dry-run`: log planned updates without writing.
-  - `--batch-size`: tune performance.
-- Run migration in staging first and manually inspect a sample of transactions per organization.
-- Once satisfied, run in production during a controlled window.
+2.1 Types for filters and data
 
-  4.4 Cleanup migration
+- Define `DashboardDateRange`:
+  - `{ kind: "ytd" | "last30" | "thisMonth" | "lastMonth" | "custom"; from?: string; to?: string }`.
+- Define `DashboardFilters`:
+  - `dateRange: DashboardDateRange`.
+  - `categoryIds: string[]` (selected categories; may include parents that expand to children server-side).
+  - `view: "income" | "expense" | "both"` (user choice for income/expense/both view).
+  - `originCurrency: "all" | "base" | string` (ISO code for original/secondary currency filter).
+- Define core DTOs: - `DashboardSummary`: - `income`, `expenses`, `profitLoss` (current period totals in base currency). - `prevIncome`, `prevExpenses`, `prevProfitLoss` (previous period totals). - `incomeDeltaPct`, `expensesDeltaPct`, `profitLossDeltaPct` (percentage changes). - `DashboardMonthlyPoint`: - `month: string` (e.g. `"2025-01"`). - `income`, `expenses`, `profitLoss`. - `CategoryBreakdownItem`: - `categoryId | "other"`, `name`, `type`, `amountBase`, `transactionCount`, `color?`, `icon?`.
+
+  2.2 Placement
+
+- Put shared types in a central TS file (e.g. `lib/dashboard-types.ts`) to be reused by:
+  - `DashboardPage` server logic.
+  - Dashboard API routes (if created).
+  - Client widgets and chart components.
 
-- After successful migration and verification:
-  - Create a follow-up Prisma migration to drop obsolete fields from `Transaction`:
-    - `exchangeRateToBase`.
-    - Any optional `rateSource`, `rateTimestamp`, manual override fields if present.
-  - Decide separately when to remove `amountOriginal` and `currencyOriginal` (they can be kept longer-term as legacy/audit fields).
+### 3. Server-side aggregation and filtering logic
 
-### 5. Base Currency Settings & Changes
+3.1 Filter-building helper
 
-5.1 Onboarding and financial settings
+- Implement a helper (e.g. `buildDashboardTransactionWhere(filters, orgId)`): - Base constraints: - `organizationId = orgId`. - `status = "POSTED"` (exclude drafts). - `deletedAt = null` (exclude soft-deleted). - Date range: - Use `getYTDRange(settings.fiscalYearStartMonth)` for `kind="ytd"`. - Compute `from/to` for `last30`, `thisMonth`, `lastMonth` on server. - For `custom`, use `from/to` parsed from filters (validate and clamp if needed). - Category filter: - If `categoryIds` is non-empty, restrict to `categoryId in categoryIds`. - Optionally expand parent IDs to include their children by querying `Category` first. - View filter: - `view="income"` → `type = "INCOME"`. - `view="expense"` → `type = "EXPENSE"`. - `view="both"` → no additional type constraint. - Origin currency filter (choice 6/a): - `originCurrency = "all"` → no constraint. - `originCurrency = "base"` → `currencySecondary = null`. - ISO code (e.g. `"USD"`) → `currencySecondary = originCurrency`. - P&L flag: - For summary and P&L-style metrics, ensure `category.includeInPnL = true` via joins or separate queries.
 
-- In `app/onboarding/[orgSlug]/financial/page.tsx` and `app/api/orgs/[orgSlug]/settings/financial/route.ts`: - Replace hardcoded currency lists with the shared ISO currency list. - Validate base currency via `isValidCurrencyCode` on the server. - Ensure base currency is stored in uppercase and used consistently across the app.
+  3.2 Summary metrics (11.1 financial summary)
 
-  5.2 Base currency change behavior (v1 – no recompute)
+- Query current period:
+  - Aggregate `amountBase` grouped by `type` (INCOME/EXPENSE) using Prisma `groupBy` or raw SQL.
+  - Apply `buildDashboardTransactionWhere` for current `from/to`.
+- Query previous period:
+  - Given `[from, to]`, derive `[prevFrom, prevTo]` as a period of equal length immediately before `from`.
+  - Run the same aggregate query against the previous range.
+- Compute: - `income`, `expenses`, `profitLoss = income - expenses` for current period. - `prevIncome`, `prevExpenses`, `prevProfitLoss` similarly. - % deltas with safe handling for zero previous values: - `deltaPct = prev === 0 ? null : ((current - prev) / prev) * 100`.
 
-- Maintain the current behavior where changing base currency does not recompute historical `amountBase` values:
-  - `organizationSettings.baseCurrency` changes.
-  - Existing `amountBase` values remain numerically the same.
-  - UI labels for base currency update to the new code.
-- Update copy in `app/o/[orgSlug]/settings/organization/(tabs)/financial/page.tsx` to clearly state:
-  - Historical transaction amounts are not recalculated.
-  - Reports may be misleading across a base-currency change.
-  - New transactions use the new base currency code.
-- Reserve room in the design for a future enhancement that recomputes base amounts for transactions that have `currencySecondary` populated.
-
-### 6. Transaction Form UX (Create/Edit)
-
-6.1 Form state model changes
-
-- In `components/features/transactions/transaction-form.tsx`, refactor state: - Replace `amountOriginal`, `currencyOriginal`, and `exchangeRate` state with: - `amountBase` (string; required). - `amountSecondary` (string; optional). - `currencySecondary` (string; optional, uppercase 3-letter code). - Keep `settings.baseCurrency` as a read-only reference for the base currency.
-
-  6.2 Inputs and client-side validation
-
-- Base amount:
-  - Input labeled “Amount (Base)” with a required indicator.
-  - Helper text showing the base currency code, e.g. `Base currency: MYR`.
-  - Validate that `amountBase` is a positive number before submit.
-- Secondary currency (optional, all-or-nothing):
-  - Numeric `Secondary amount` input.
-  - Searchable dropdown for `Secondary currency` using the ISO list module:
-    - Implement via existing `Select` + an internal searchable component (e.g. `Command`), or a custom searchable dropdown pattern.
-  - Client-side rules:
-    - If `amountSecondary` is non-empty → require a valid `currencySecondary` and show inline error/toast if missing.
-    - If `currencySecondary` is set → require `amountSecondary` > 0.
-- Remove the explicit `exchangeRate` UI entirely.
-
-  6.3 Submit payloads
-
-- For create:
-  - POST body should send `{ type, status, amountBase, amountSecondary?, currencySecondary?, date, description, categoryId, accountId, vendorName?, clientName?, notes? }`.
-- For edit:
-  - PATCH body should send only changed fields, including `amountBase`, `amountSecondary`, and `currencySecondary` when modified.
-- Ensure date rules, category type matching, account selection, and soft-close confirmations continue to operate as before.
-
-### 7. Dual-Currency Display in UI
-
-7.1 Transactions list page
-
-- In `app/o/[orgSlug]/transactions/page.tsx`, enhance the amount display for each row: - Primary line (base currency): - Use `formatCurrency(amountBase, settings.baseCurrency, settings.decimalSeparator, settings.thousandsSeparator)` as today. - Secondary line (only when present): - If `currencySecondary && amountSecondary`: - Render below the primary line in smaller, muted text. - Display as `currencySecondary` + formatted `amountSecondary` using `formatCurrency` with `currencySecondary`. - If no secondary currency, render only the primary line (no “N/A” text).
-
-  7.2 Transaction detail page
-
-- In `app/o/[orgSlug]/transactions/[id]/page.tsx`, mirror the list behavior with more detail: - Show a prominent base amount section. - If secondary exists, add a labeled “Original currency” section beneath, displaying secondary amount and code.
-
-  7.3 Trash and other views
-
-- In `app/o/[orgSlug]/transactions/trash/page.tsx` and any other views that show transaction amounts: - Continue to use base amount as the main figure. - Optionally show a secondary line similar to the main list for consistency.
-
-  7.4 Helper function for dual display
-
-- In `lib/sololedger-formatters.ts` (or a new module), add:
-  - `formatDualCurrency(amountBase, currencyBase, amountSecondary, currencySecondary, decimalSeparator, thousandsSeparator)` that returns `{ primary: string; secondary: string | null }`.
-- Use this helper in list, detail, and trash views to keep formatting logic centralized.
-
-### 8. Searching, Filtering & Sorting
-
-8.1 Amount range filters and sorting
-
-- Ensure all amount-based operations use `amountBase` only: - `GET /transactions` amount filters (`amountMin`, `amountMax`) already apply to `where.amountBase`; re-confirm and update labels if needed. - Any sorting by amount in the transactions list should order by `amountBase`.
-
-  8.2 Currency filters
-
-- Adjust the currency filter on the transactions page: - In the UI (`transactions/page.tsx`): - Provide options: “All currencies”, “Base currency only”, and a set of specific original currencies (e.g. USD, EUR, etc.). - In the API (`GET /transactions`): - Map UI selections to query params and apply filters as defined in 3.3.
-
-  8.3 Search by amount
-
-- Document and ensure that any free-text search by amount (if implemented) treats values as base-currency amounts.
-- Do not attempt to search by secondary amount for v1.
-
-### 9. Reporting & Dashboard
-
-9.1 Dashboard metrics
-
-- In `app/o/[orgSlug]/dashboard/page.tsx` and any other dashboard code: - Confirm that all aggregates (YTD income, expenses, profit/loss) sum `amountBase` only. - Ensure labels use `settings.baseCurrency`.
-
-  9.2 Future currency reports (design alignment)
-
-- When implementing Section 12.2 “Currency Reports” later, plan to:
-  - Group by `currencySecondary`.
-  - For each currency group, show:
-    - Total income/expense in original (secondary) currency (sum of `amountSecondary`).
-    - Corresponding totals in base currency (sum of `amountBase`).
-  - Keep this design in mind while modeling data and APIs now.
-
-### 10. Export & Import Adjustments
-
-10.1 CSV export
-
-- In `app/api/orgs/[orgSlug]/transactions/export/route.ts`: - Update the exported columns to reflect the new model: - Include `amountBase` and `currencyBase`. - Include `amountSecondary` and `currencySecondary` (blank for base-only transactions). - Remove `exchangeRateToBase` from exported CSV per Section 7.6. - Update header labels and any related docs.
-
-  10.2 CSV import
-
-- When refining CSV import (Section 13.1):
-  - Treat base amount and currency as required:
-    - Either infer base currency from org settings or require an explicit column that matches it.
-  - Treat secondary amount and currency as optional but all-or-nothing:
-    - Apply the same validation rules as the transaction API.
-  - Validate currency codes via `isValidCurrencyCode` during import.
-
-### 11. Testing & Verification
-
-11.1 Unit tests
-
-- Add unit tests for: - `isValidCurrencyCode` and any helper functions in `lib/currencies.ts`. - New Zod schemas for POST/PATCH transaction payloads (including all combinations of base/secondary fields). - Pure transformation logic used in the migration script (given a transaction + baseCurrency, assert the correct new fields).
-
-  11.2 Integration tests
-
-- If you have API test infrastructure (e.g. Jest + supertest or similar): - Test creating a base-only transaction via POST. - Test creating a dual-currency transaction (both base and secondary) via POST. - Test updating secondary currency and amount via PATCH. - Test currency filter semantics in GET (`BASE`, specific secondary currency, all).
-
-  11.3 UI tests / manual QA
-
-- Manually or via E2E tests: - Create/edit transactions through `TransactionForm` with and without secondary currency. - Verify dual-currency display in the list, detail, and trash views. - Verify amount filters and currency filters behave as expected.
-
-  11.4 Migration dry-run and rollout
-
-- Run the migration script in dry-run mode against staging or a snapshot:
-  - Inspect logs for anomalies and sample-check per organization.
-- After running for real:
-  - Compare a sample of transactions before and after migration to confirm:
-    - Base amounts and codes are correct.
-    - Secondary amounts and codes are correctly assigned.
-  - Only then proceed to drop legacy fields and flip clients fully to the new model.
+  3.3 Month-over-month trends (11.1 Trends, 11.2 Income vs Expense chart)
+
+- Use `groupBy` or raw SQL with `date_trunc('month', date)`:
+  - Group by truncated `month` and `type`.
+  - Sum `amountBase` per (month, type).
+- Build a normalized list of `DashboardMonthlyPoint` covering all months in the date range, filling missing months with zeros.
+- Compute `profitLoss` per month as `income - expenses`.
+- Optionally compute month-on-month % change per metric for use in advanced tooltips.
+
+  3.4 Category breakdown (11.2 Category breakdown chart)
+
+- Aggregate by `(categoryId, category.type)` over the current filters:
+  - Sum `amountBase` and count transactions.
+  - Join `Category` to fetch `name`, `color`, `icon`, `includeInPnL`.
+- Apply `includeInPnL` constraint if the breakdown is intended for P&L-style reporting only.
+- Build `CategoryBreakdownItem[]` and then: - Sort by absolute `amountBase` descending. - Apply a `topN` slice (e.g. `5/10/15`), summing the rest into an `"other"` bucket.
+
+  3.5 Recent activity (11.2 Recent activity panel)
+
+- Reuse existing `recentTransactions` query in `DashboardPage`:
+  - Ensure it includes `status`, `type`, `category`, `account`, and any document linkage or a boolean flag.
+  - Limit to 20 items (choice 9/b) ordered by `date desc` and maybe `createdAt desc` as a secondary sort.
+- If document linkage is currently modeled as a relation (e.g. `documents`), either: - Include `documents` and check `documents.length > 0` in UI, or - Add a cheap `select` of `documents: { select: { id: true }, take: 1 }` to avoid loading all docs.
+
+  3.6 Account overview alignment (11.1 Account overview)
+
+- Check `AccountsOverviewWidget`:
+  - Ensure it uses `amountBase` and respects `status = POSTED`, `deletedAt = null`.
+  - Decide whether balances should respect the dashboard’s date range or remain “current to date”:
+    - For v1, keep current behavior if it already communicates “current balance”, but accept a `dateRange` prop for future alignment.
+
+### 4. Dashboard filters and state flow
+
+4.1 `DashboardFiltersBar` component
+
+- Create `DashboardFiltersBar` in `components/features/dashboard/` as a client component.
+- Props:
+  - `initialFilters: DashboardFilters`.
+  - `categories: Category[]` (or a minimal view type).
+  - `availableOriginCurrencies: string[]` (derived from data or a static list).
+  - `orgSlug: string`.
+- Controls: - Date range selector (buttons or segmented control): `YTD` (default), `Last 30 days`, `This month`, `Last month`, `Custom`. - For `Custom`, show `from` and `to` date pickers using existing UI primitives. - Category multi-select: - Reuse UX from `TransactionsPage` (popover with search + checkboxes for parent/child categories). - View toggle (choice 7/c but as global view): - Segmented control: `Income`, `Expense`, `Both`. - Origin currency filter (choice 6/a): - Dropdown: `All currencies`, `Base currency only`, followed by a list of ISO codes seen in data (or from your currency list).
+
+  4.2 URL + localStorage persistence (choice 4/c)
+
+- Treat URL query params as source of truth:
+  - Encode filters as `?view=both&origin=all&dateKind=ytd&from=YYYY-MM-DD&to=YYYY-MM-DD&categoryIds=id1,id2`.
+- On first load in `DashboardPage`:
+  - Parse query params into `DashboardFilters`.
+  - If no relevant params exist, read defaults from `localStorage` using a key like `dashboardFilters:${userId}:${orgId}`; if none, fall back to `YTD` + `view="both"` + `origin="all"` + no categories.
+- On filter change in `DashboardFiltersBar`:
+  - Use `router.replace`/`router.push` to update URL query params.
+  - Save current `DashboardFilters` to `localStorage` under the same key.
+- `DashboardPage` uses the current query params to compute filters and fetch data on each request (SSR), ensuring sharable URLs.
+
+### 5. Metrics cards & visual indicators (11.1)
+
+5.1 Cards layout and content
+
+- Keep three cards in the header area of `DashboardPage`:
+  - `YTD/period Income` (green accent, `TrendingUp` icon).
+  - `YTD/period Expenses` (red accent, `TrendingDown` icon).
+  - `YTD/period Profit/Loss` (color depends on sign).
+- Each card shows: - Main value: `formatCurrency(total, settings.baseCurrency, settings.decimalSeparator, settings.thousandsSeparator)`. - Subtext with active date range (e.g. `From 1 Jan 2025 to 17 Nov 2025`).
+
+  5.2 Trend arrows and color coding
+
+- For each metric, use `DashboardSummary` deltas to display:
+  - A small line indicating `+X.X% vs previous period` or `-X.X% vs previous period`.
+  - An icon from Lucide:
+    - `TrendingUp` for positive changes (good direction for the metric).
+    - `TrendingDown` for negative changes.
+    - `Minus` for no meaningful change or `prev = 0`.
+- Define “good direction” per metric:
+  - Profit/Loss: higher is better → green for positive delta, red for negative.
+  - Income: higher is typically good → green for positive delta, red for negative.
+  - Expenses: lower is typically good → green for negative delta, red for positive.
+
+### 6. Charts with Recharts (11.2)
+
+6.1 Library integration
+
+- Add Recharts as a dependency and configure it for client components only.
+- Create chart widgets under `components/features/dashboard/`: - `income-expense-chart-widget.tsx`. - `category-breakdown-chart-widget.tsx`.
+
+  6.2 Income vs Expense by month chart
+
+- Component: `IncomeExpenseChartWidget` (client).
+- Props:
+  - `data: DashboardMonthlyPoint[]`.
+  - `filters: DashboardFilters`.
+  - `orgSlug: string`.
+- Behavior: - Render a line or bar chart with: - X-axis: months (formatted labels like `Jan 2025`). - Y-axis: base currency amounts. - Two series: `Income` and `Expenses`. - Series toggling: - Either use Recharts legend interactivity (click to toggle), or explicit checkboxes bound to local state. - Tooltip: - Use a custom tooltip to show exact monthly amounts formatted via `formatCurrency` and `settings.baseCurrency`. - Drill-down: - On click of a bar/point, compute `from`/`to` for that month and push to: - `/o/${orgSlug}/transactions?from=YYYY-MM-01&to=YYYY-MM-lastDay&view=both&origin=${filters.originCurrency}&categoryIds=${filters.categoryIds.join(",")}`. - Ensure `TransactionsPage` reads these query params to set initial filters.
+
+  6.3 Category breakdown chart
+
+- Component: `CategoryBreakdownChartWidget` (client).
+- Props:
+  - `data: CategoryBreakdownItem[]`.
+  - `filters: DashboardFilters`.
+  - `orgSlug: string`.
+  - `defaultTopN: number` (e.g. 10).
+- UI:
+  - View toggle (reuse global `filters.view`, but allow local override if needed):
+    - `Income`, `Expense`, `Both` (choice 7/c).
+  - Top N selector:
+    - Dropdown or small control to choose 5/10/15.
+- Rendering:
+  - For `view="income"` or `"expense"`:
+    - Show a single series bar chart with categories along the X-axis.
+  - For `view="both"`:
+    - Either stacked bars or side-by-side grouped bars differentiating income vs expense per category.
+  - Include an `"Other"` bar when applicable, representing aggregated smaller categories.
+- Drill-down: - On bar click: - If not `"other"`, navigate to `TransactionsPage` with `categoryIds` set to the clicked category (and `from/to`, `originCurrency`, `view` preserved).
+
+  6.4 Recent activity panel
+
+- Keep the existing “Recent Activity” card in `DashboardPage`, but ensure it matches requirements:
+  - Show last 10–20 transactions (limit at 20).
+  - Display for each item:
+    - Type badge (`INCOME`/`EXPENSE`).
+    - Status badge (`POSTED` vs `DRAFT` with different styles).
+    - Linked documents indicator (paperclip icon) if any docs are linked.
+    - Description, category, account, date.
+    - Amount formatted with base currency and color based on type.
+  - Quick actions:
+    - `Edit` button linking to `/o/${orgSlug}/transactions/[id]`.
+    - `View documents` link or button, wired to existing document view behavior.
+
+### 7. Widget registry and layout customization (hide/show + reset)
+
+7.1 Widget registry
+
+- Introduce `components/features/dashboard/dashboard-config.ts` with a registry: - Each widget definition: - `id: string` (e.g. `"ytd-summary"`, `"income-expense-chart"`, `"category-breakdown"`, `"accounts-overview"`, `"recent-activity"`). - `title`, `description`. - `defaultVisible: boolean`. - `defaultOrder: number`. - `render: (props) => JSX.Element` that wraps the concrete widget component in a `Card`.
+
+  7.2 Layout model
+
+- Define `DashboardLayoutItem` and `DashboardLayout` types:
+  - `DashboardLayoutItem = { widgetId: string; visible: boolean; order: number }`.
+  - `DashboardLayout = DashboardLayoutItem[]`.
+- Default layout: - Derived from registry by order and `defaultVisible` values.
+
+  7.3 Persistence per membership (choice 10/a)
+
+- Add `dashboardLayout Json?` to the membership model in `prisma/schema.prisma`.
+- Create helper functions in `lib/org-helpers.ts` or a new `lib/dashboard-helpers.ts`:
+  - `getDashboardLayoutForMembership(userId, orgId): Promise<DashboardLayout | null>`.
+  - `saveDashboardLayoutForMembership(userId, orgId, layout: DashboardLayout): Promise<void>`.
+- Implement `POST /api/orgs/[orgSlug]/dashboard/layout`: - Node runtime. - Authenticates the user, resolves membership by `orgSlug`. - Validates body as `DashboardLayout` (widget IDs must exist in registry). - Persists to the membership’s `dashboardLayout` field.
+
+  7.4 Client customization UI (choice 3/b)
+
+- In `dashboard-shell.tsx` or a dedicated `DashboardLayoutManager` client component:
+  - Render widgets in a fixed but responsive grid based on `DashboardLayout` order.
+  - Add a “Customize layout” button:
+    - Toggles `customizeMode` state.
+  - In `customizeMode`:
+    - Each widget card header shows a visibility `Switch` or checkbox.
+    - Changing visibility updates local layout state.
+  - Provide a “Save layout” action:
+    - Calls the `dashboard/layout` API to persist changes.
+  - Provide a “Reset layout” action:
+    - Clears the saved layout on server (e.g. sends empty payload or a special flag).
+    - Resets local layout to registry-derived defaults.
+- Drag-and-drop is explicitly out of scope for this iteration (can be layered later using `@dnd-kit` or similar).
+
+### 8. Navigation & drill-down consistency
+
+8.1 Query parameter conventions
+
+- Standardize dashboard → transactions links to use: - `from`: start date (YYYY-MM-DD). - `to`: end date (YYYY-MM-DD). - `type`: `"INCOME" | "EXPENSE" | "all"` (align with existing `typeFilter`). - `categoryIds`: comma-separated list of category IDs. - `originCurrency`: `"all" | "base" | ISO code`.
+
+  8.2 Transactions page integration
+
+- Update `app/o/[orgSlug]/transactions/page.tsx` to:
+  - On mount, read these query params via `useSearchParams` and set initial state for:
+    - `dateFromFilter`, `dateToFilter`.
+    - `typeFilter`.
+    - `selectedCategoryIds`.
+    - `currencyFilter` (mapped from `originCurrency`).
+  - Ensure “Apply Filters” uses both state and query params coherently.
+- This guarantees that clicks from charts or metrics land the user on a correctly filtered transaction list.
+
+### 9. Validation, testing, and performance
+
+9.1 Business rules validation
+
+- Verify that all dashboard metrics and charts: - Exclude `status !== "POSTED"` transactions. - Exclude `deletedAt != null` transactions. - Respect `includeInPnL` where applicable. - Use `amountBase` (and `currencyBase`) for all arithmetic.
+
+  9.2 Tests
+
+- Unit tests:
+  - `buildDashboardTransactionWhere` for various filter combinations.
+  - Monthly aggregation helper (ensuring it fills missing months correctly).
+  - Category top-N + "Other" grouping helper.
+- Integration tests (if infra exists): - Endpoints or page-level loaders for summary, monthly data, category breakdown with differing filters.
+
+  9.3 Performance considerations
+
+- Review and add indexes where necessary:
+  - `transaction(organizationId, date, status, deletedAt)`.
+  - `transaction(categoryId)` and `transaction(currencySecondary)` if used in filters.
+- Keep queries aggregated and avoid per-widget N+1 patterns:
+  - When possible, share base `where` conditions and reuse results or combine queries.
+
+With this plan in place, implementation can proceed incrementally: start with shared filters and summary cards, then add the income/expense chart, category breakdown, recent activity enhancements, and finally the widget customization layer.

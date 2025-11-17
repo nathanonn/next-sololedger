@@ -772,7 +772,7 @@ Per active business:
   - Clicking a month opens a filtered transaction list for that period.
 
 - **Category breakdown:**
-  - Pie or donut chart:
+  - Vertical Bar chart:
     - Total income by category.
     - Total expenses by category.
 
@@ -860,13 +860,6 @@ Per active business:
     - Total income per vendor (if applicable).
 
   - Drill-down to see transactions per vendor.
-
-- **Currency Reports:**
-  - For a selected date range:
-    - Summary of totals by original currency.
-    - For each currency:
-      - Total income (original & base).
-      - Total expenses (original & base).
 
 ### 12.3 Export Capabilities
 

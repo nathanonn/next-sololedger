@@ -199,7 +199,19 @@ export function VendorReport({
               Apply
             </Button>
             {isAdmin && data && (
-              <Button variant="outline" disabled>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const params = new URLSearchParams({
+                    view: viewFilter,
+                  });
+                  if (from && to) {
+                    params.append("from", from);
+                    params.append("to", to);
+                  }
+                  window.open(`/o/${orgSlug}/reports/vendors/print?${params.toString()}`, "_blank");
+                }}
+              >
                 Export to PDF
               </Button>
             )}

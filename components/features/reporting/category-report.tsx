@@ -182,7 +182,19 @@ export function CategoryReport({
               Apply
             </Button>
             {isAdmin && data && (
-              <Button variant="outline" disabled>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const params = new URLSearchParams({
+                    type: typeFilter,
+                  });
+                  if (from && to) {
+                    params.append("from", from);
+                    params.append("to", to);
+                  }
+                  window.open(`/o/${orgSlug}/reports/categories/print?${params.toString()}`, "_blank");
+                }}
+              >
                 Export to PDF
               </Button>
             )}

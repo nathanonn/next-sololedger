@@ -311,64 +311,72 @@ This plan introduces a dedicated `Reports` area under each organization that pro
 
 ### Phase 7 – Branding Data for Report Headers
 
-18. **Branding helper**
-		- In `lib/org-helpers.ts` (or a new `lib/reporting-branding.ts`), add a helper `getOrgBranding(orgId: string)` that returns:
-			- `displayName: string` (organization name).
-			- `logoUrl?: string | null` (if you have a logo field; otherwise keep optional and fallback to text only).
-			- `address?: string | null`, `email?: string | null`, `taxId?: string | null` (from existing organization settings where available).
-		- Reuse existing settings endpoints or models rather than introducing new fields unless needed later.
+18. **Schema update for logo support**
+		- Add `logoUrl` field to `Organization` model (nullable, Text type).
+		- Generate and apply Prisma migration: `npx prisma migrate dev --name add_logo_url_to_organization`.
 
-19. **Using branding in UIs**
-		- In the main `Reports` page or each report tab, include a small header block showing:
-			- Logo (if present) next to the business name.
-			- Optional second line with address/email/tax ID for PDF exports.
-		- Ensure that the same structure is used by the print‑optimized HTML routes for PDF generation (Phase 8) to keep layout consistent.
+19. **Branding helper**
+		- Create `lib/reporting-branding.ts` with a helper `getOrgBranding(orgId: string)` that returns:
+			- `displayName: string` (organization name).
+			- `logoUrl: string | null` (from Organization.logoUrl field).
+			- `address: string | null`, `email: string | null`, `phone: string | null`, `taxId: string | null` (from OrganizationSettings).
+		- Returns an `OrgBranding` interface with all fields.
+
+20. **Reusable report header component**
+		- Create `components/features/reporting/report-header.tsx` as a server component.
+		- Props: `branding: OrgBranding`, `reportTitle: string`, `periodDescription: string`, `baseCurrency: string`.
+		- Renders:
+			- Logo (if available) + business name.
+			- Business contact info (address, email, phone, tax ID).
+			- Report title, period, and currency.
+		- Reused across all print routes for consistency.
 
 ---
 
-### Phase 8 – PDF Export for P&L, Category, Vendor Reports
-
-20. **Choose and configure PDF stack**
-		- Add a server‑side PDF generator based on a headless browser:
-			- Prefer `playwright` for stability and modern API.
-			- Install it as a dependency and ensure it is only used from Node runtime routes (never Edge).
-		- Optionally add a small wrapper utility in `lib/pdf.ts` that exposes a function `renderUrlToPdf(url: string, options)` using Playwright to:
-			- Launch a browser.
-			- Open the given URL.
-			- Wait for the content to be fully rendered.
-			- Return a `Buffer` of PDF bytes.
+### Phase 8 – Browser-Based PDF Export (Simplified Approach)
 
 21. **Print‑optimized HTML routes for each report**
-		- Add the following server components (Node runtime) that render static, print‑friendly versions of the reports:
+		- Add the following server component pages that render clean, print‑friendly HTML:
 			- `app/o/[orgSlug]/reports/pnl/print/page.tsx`.
 			- `app/o/[orgSlug]/reports/categories/print/page.tsx`.
 			- `app/o/[orgSlug]/reports/vendors/print/page.tsx`.
 		- Each page:
-			- Authenticates and requires membership (and optionally admin for access if you want stricter control for print views).
-			- Parses query params mirroring the interactive filters (`dateMode`, `from`, `to`, `detailLevel`, etc.).
-			- Calls the same helpers (`getProfitAndLoss`, `getCategoryReport`, `getVendorReport`) to get data.
-			- Uses a minimal layout without navigation: header with branding and report title, period string, and the tables.
-			- Uses Tailwind utility classes that remain print‑friendly (white background, dark text, subtle borders, no full‑width dark backgrounds).
+			- Authenticates and requires membership using `getCurrentUser`, `getOrgBySlug`, and `requireMembership`.
+			- Parses searchParams mirroring the interactive filters (`dateMode`, `from`, `to`, `detailLevel`, `type`, `view`, etc.).
+			- Fetches data using the same helpers (`getProfitAndLoss`, `getCategoryReport`, `getVendorReport`).
+			- Fetches branding using `getOrgBranding(org.id)`.
+			- Renders:
+				- `ReportHeader` component with branding and report metadata.
+				- Tables displaying report data (income/expenses, categories, or vendors).
+				- Footer with business name and generation date.
+			- Uses print-optimized CSS:
+				- `@media print` styles for clean PDF output (white background, dark text, proper page breaks).
+				- No interactive elements (no buttons, filters, or tabs).
+				- Clean table layouts optimized for A4/Letter paper sizes.
 
-22. **PDF API endpoints**
-		- Add three API routes:
-			- `app/api/orgs/[orgSlug]/reports/pnl/pdf/route.ts`.
-			- `app/api/orgs/[orgSlug]/reports/categories/pdf/route.ts`.
-			- `app/api/orgs/[orgSlug]/reports/vendors/pdf/route.ts`.
-		- For each handler:
-			- Set `export const runtime = "nodejs"`.
-			- Authenticate user and require membership; additionally require admin/superadmin (per export access rules).
-			- Construct the internal print URL (e.g. `${APP_URL}/o/${orgSlug}/reports/pnl/print?...`), passing current filters as query params.
-			- Call `renderUrlToPdf` with that URL.
-			- Return the PDF buffer with headers:
-				- `Content-Type: application/pdf`.
-				- `Content-Disposition: attachment; filename="<report>-<YYYY-MM-DD>.pdf"`.
+22. **Wire export buttons in UI**
+		- In each report tab component (`pnl-report.tsx`, `category-report.tsx`, `vendor-report.tsx`):
+			- If `isAdmin` is true, enable the `Export to PDF` button (currently disabled placeholder).
+			- On click:
+				- Construct the print route URL with current filter params as search params.
+				- Open URL in new tab using `window.open(url, "_blank")`.
+				- User sees clean print view and can press Cmd/Ctrl+P to save as PDF.
+			- Example:
+				```typescript
+				window.open(`/o/${orgSlug}/reports/pnl/print?dateMode=${dateMode}&detailLevel=${detailLevel}`, "_blank");
+				```
 
-23. **Wire export buttons in UI**
-		- In each report tab component (`pnl-report`, `category-report`, `vendor-report`):
-			- If `isAdmin` is true, render an `Export to PDF` button.
-			- On click, construct the corresponding API endpoint URL with the current filter params encoded, and set `window.location.href` to start download.
-			- Optionally show a toast indicating that export has started.
+23. **Remove server-side PDF generation dependencies**
+		- Remove `playwright` from `package.json` (no longer needed).
+		- No need for `lib/pdf.ts` wrapper or API endpoints for PDF generation.
+		- Simpler implementation: browser handles PDF rendering with full user control over print settings (margins, orientation, paper size, etc.).
+
+**Benefits of browser-print approach:**
+- Simpler codebase (no headless browser complexity).
+- Faster implementation (no server-side rendering overhead).
+- Better user experience (users control PDF settings via browser print dialog).
+- Reduced server load (no PDF generation compute).
+- Works offline once page is loaded.
 
 ---
 

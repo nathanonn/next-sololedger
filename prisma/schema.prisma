@@ -96,6 +96,7 @@ model Organization {
   slug               String   @unique @db.VarChar(50)
   createdById        String
   onboardingComplete Boolean  @default(false)
+  logoUrl            String?  @db.Text
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

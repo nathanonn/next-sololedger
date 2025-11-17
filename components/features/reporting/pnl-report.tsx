@@ -275,7 +275,20 @@ export function PnLReport({
               Refresh
             </Button>
             {isAdmin && data && (
-              <Button variant="outline" disabled>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const params = new URLSearchParams({
+                    dateMode,
+                    detailLevel,
+                  });
+                  if (dateMode === "custom" && customFrom && customTo) {
+                    params.append("customFrom", customFrom);
+                    params.append("customTo", customTo);
+                  }
+                  window.open(`/o/${orgSlug}/reports/pnl/print?${params.toString()}`, "_blank");
+                }}
+              >
                 Export to PDF
               </Button>
             )}

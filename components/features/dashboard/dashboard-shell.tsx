@@ -165,7 +165,7 @@ export function DashboardShell({
           defaultSize={effectiveCollapsed ? COLLAPSED_WIDTH : width}
           minSize={effectiveCollapsed ? COLLAPSED_WIDTH : MIN_WIDTH}
           maxSize={effectiveCollapsed ? COLLAPSED_WIDTH : MAX_WIDTH}
-          className="relative max-md:hidden"
+          className="dashboard-shell-sidebar relative max-md:hidden"
         >
           <Sidebar
             userId={userId}
@@ -184,14 +184,14 @@ export function DashboardShell({
 
         {/* Resize Handle */}
         {!effectiveCollapsed && (
-          <PanelResizeHandle className="w-1 bg-border hover:bg-accent transition-colors max-md:hidden" />
+          <PanelResizeHandle className="dashboard-shell-resize-handle w-1 bg-border hover:bg-accent transition-colors max-md:hidden" />
         )}
 
         {/* Main Content Panel */}
-        <Panel defaultSize={effectiveCollapsed ? 96 : 80 - width}>
+        <Panel defaultSize={effectiveCollapsed ? 96 : 80 - width} className="dashboard-shell-content">
           <div className="h-full flex flex-col">
             {/* Top Bar */}
-            <div className="border-b p-4 flex items-center justify-between gap-2">
+            <div className="dashboard-shell-topbar border-b p-4 flex items-center justify-between gap-2">
               <Button
                 variant="ghost"
                 size="icon"

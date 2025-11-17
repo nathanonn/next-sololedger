@@ -143,4 +143,17 @@
   .landscape-print {
     page: landscape;
   }
+
+  /* Hide sidebar and navigation elements when printing */
+  .dashboard-shell-sidebar,
+  .dashboard-shell-resize-handle,
+  .dashboard-shell-topbar {
+    display: none !important;
+  }
+
+  /* Make main content full width when printing */
+  .dashboard-shell-content {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
 }

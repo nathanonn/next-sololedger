@@ -72,11 +72,13 @@ Entry: Org Dashboard Shell
 		 - type, status=POSTED, dateFrom/dateTo, categoryIds, vendorId
 	 - User can further refine in Transactions page or navigate back to Reports.
 
-8. PDF Generation Flow
+8. Browser-Based Print Flow (Simplified PDF Export)
 	 - From report tab, admin clicks "Export to PDF"
-	 - Browser hits `/api/orgs/[orgSlug]/reports/<report>/pdf?...`
-	 - Server renders print route in headless browser and returns PDF
-	 - Browser downloads PDF; user can print or share.
+	 - Opens `/o/[orgSlug]/reports/<report>/print?...` in new tab
+	 - User sees clean, print-optimized HTML view
+	 - User presses Cmd/Ctrl+P to open browser print dialog
+	 - Browser allows saving as PDF with full control over settings
+	 - No server-side PDF generation needed (simpler, faster)
 ```
 
 ---
@@ -380,15 +382,18 @@ Path example from P&L: /o/[orgSlug]/transactions?type=EXPENSE&status=POSTED&cate
 
 ---
 
-### 9. Print Layout for PDF (Generic Pattern)
+### 9. Browser Print Layout (Print-Optimized HTML Routes)
 
 ```text
 Used by /o/[orgSlug]/reports/*/print routes.
+Opens in new tab when admin clicks "Export to PDF" button.
+User controls PDF settings via browser print dialog (Cmd/Ctrl+P).
 
 +---------------------------------------------------------------------------------+
-| Top Header (minimal, print-friendly)                                         |
+| Top Header (minimal, print-friendly with @media print CSS)                  |
 |-------------------------------------------------------------------------------|
 | [Logo]  Business Name                                                        |
+| Address, Email, Phone, Tax ID (if available)                                |
 |                                                                               |
 | Report Title (e.g. "Profit & Loss Statement")                               |
 | Period: 01 Jan 2025 – 31 Dec 2025                                            |
@@ -401,8 +406,15 @@ Used by /o/[orgSlug]/reports/*/print routes.
 | Totals summary                                                               |
 | (For Category/Vendor reports, the relevant tables)                           |
 +---------------------------------------------------------------------------------+
-| Footer (printed on each page via PDF header/footer templates)                |
+| Footer (positioned at bottom via @media print CSS)                           |
 |-------------------------------------------------------------------------------|
-| Business Name • Generated on 2025-11-17 • Page X of Y                        |
+| Business Name • Generated on 2025-11-17                                      |
 +---------------------------------------------------------------------------------+
+
+Notes:
+- Clean HTML with print-optimized CSS (@media print)
+- No interactive elements (buttons, filters, tabs)
+- Browser handles page breaks, margins, headers/footers via print dialog
+- User can choose orientation (portrait/landscape), paper size, etc.
+- Saves as PDF directly from browser print dialog
 ```

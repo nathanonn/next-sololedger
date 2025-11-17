@@ -13,28 +13,28 @@ datasource db {
 
 // User model: core authentication identity
 model User {
-  id                     String    @id @default(cuid())
-  email                  String    @unique @db.VarChar(255)
-  name                   String?   @db.VarChar(255)
-  passwordHash           String?   @db.VarChar(255)
-  emailVerifiedAt        DateTime?
-  role                   String    @default("user") @db.VarChar(50)
-  sessionVersion         Int       @default(1)
-  defaultOrganizationId  String?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  id                    String    @id @default(cuid())
+  email                 String    @unique @db.VarChar(255)
+  name                  String?   @db.VarChar(255)
+  passwordHash          String?   @db.VarChar(255)
+  emailVerifiedAt       DateTime?
+  role                  String    @default("user") @db.VarChar(50)
+  sessionVersion        Int       @default(1)
+  defaultOrganizationId String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  auditLogs              AuditLog[]
-  memberships            Membership[]
-  createdOrganizations   Organization[] @relation("OrganizationCreator")
-  sentInvitations        Invitation[]   @relation("InvitationSender")
-  defaultOrganization    Organization?  @relation("UserDefaultOrganization", fields: [defaultOrganizationId], references: [id], onDelete: SetNull)
-  createdAiKeys          OrganizationAiApiKey[] @relation("AiKeyCreatedBy")
-  updatedAiKeys          OrganizationAiApiKey[] @relation("AiKeyUpdatedBy")
-  aiGenerationLogs       AiGenerationLog[] @relation("AiGenerationLogs")
-  createdIntegrations    OrganizationIntegration[] @relation("IntegrationCreatedBy")
-  updatedIntegrations    OrganizationIntegration[] @relation("IntegrationUpdatedBy")
-  transactions           Transaction[] @relation("TransactionCreator")
+  auditLogs            AuditLog[]
+  memberships          Membership[]
+  createdOrganizations Organization[]            @relation("OrganizationCreator")
+  sentInvitations      Invitation[]              @relation("InvitationSender")
+  defaultOrganization  Organization?             @relation("UserDefaultOrganization", fields: [defaultOrganizationId], references: [id], onDelete: SetNull)
+  createdAiKeys        OrganizationAiApiKey[]    @relation("AiKeyCreatedBy")
+  updatedAiKeys        OrganizationAiApiKey[]    @relation("AiKeyUpdatedBy")
+  aiGenerationLogs     AiGenerationLog[]         @relation("AiGenerationLogs")
+  createdIntegrations  OrganizationIntegration[] @relation("IntegrationCreatedBy")
+  updatedIntegrations  OrganizationIntegration[] @relation("IntegrationUpdatedBy")
+  transactions         Transaction[]             @relation("TransactionCreator")
 
   @@index([email])
   @@index([defaultOrganizationId])
@@ -91,30 +91,31 @@ model AuditLog {
 
 // Organization: tenant isolation boundary
 model Organization {
-  id                   String   @id @default(cuid())
-  name                 String   @db.VarChar(255)
-  slug                 String   @unique @db.VarChar(50)
-  createdById          String
-  onboardingComplete   Boolean  @default(false)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  name               String   @db.VarChar(255)
+  slug               String   @unique @db.VarChar(50)
+  createdById        String
+  onboardingComplete Boolean  @default(false)
+  logoUrl            String?  @db.Text
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  createdBy             User                        @relation("OrganizationCreator", fields: [createdById], references: [id], onDelete: Restrict)
-  memberships           Membership[]
-  invitations           Invitation[]
-  auditLogs             AuditLog[]
-  defaultForUsers       User[]                      @relation("UserDefaultOrganization")
-  aiApiKeys             OrganizationAiApiKey[]
-  aiModels              OrganizationAiModel[]
-  aiGenerationLogs      AiGenerationLog[]
-  aiSettings            OrganizationAiSettings?
-  integrations          OrganizationIntegration[]
-  settings              OrganizationSettings?
-  accounts              Account[]
-  categories            Category[]
-  vendors               Vendor[]
-  clients               Client[]
-  transactions          Transaction[]
+  createdBy        User                      @relation("OrganizationCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  memberships      Membership[]
+  invitations      Invitation[]
+  auditLogs        AuditLog[]
+  defaultForUsers  User[]                    @relation("UserDefaultOrganization")
+  aiApiKeys        OrganizationAiApiKey[]
+  aiModels         OrganizationAiModel[]
+  aiGenerationLogs AiGenerationLog[]
+  aiSettings       OrganizationAiSettings?
+  integrations     OrganizationIntegration[]
+  settings         OrganizationSettings?
+  accounts         Account[]
+  categories       Category[]
+  vendors          Vendor[]
+  clients          Client[]
+  transactions     Transaction[]
 
   @@index([slug])
   @@index([createdById])
@@ -123,12 +124,12 @@ model Organization {
 
 // Membership: user-organization relationship with role
 model Membership {
-  id               String   @id @default(cuid())
-  userId           String
-  organizationId   String
-  role             String   @db.VarChar(20) // "admin" | "member"
-  dashboardLayout  Json?    // User's dashboard widget layout preferences
-  createdAt        DateTime @default(now())
+  id              String   @id @default(cuid())
+  userId          String
+  organizationId  String
+  role            String   @db.VarChar(20) // "admin" | "member"
+  dashboardLayout Json? // User's dashboard widget layout preferences
+  createdAt       DateTime @default(now())
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -164,21 +165,21 @@ model Invitation {
 
 // OrganizationAiApiKey: encrypted API keys per provider
 model OrganizationAiApiKey {
-  id               String   @id @default(cuid())
-  organizationId   String
-  provider         String   @db.VarChar(20) // "openai" | "gemini" | "anthropic"
-  encryptedKey     String   @db.Text // AES-256-GCM envelope, base64-encoded
-  lastFour         String   @db.VarChar(4) // Last 4 chars for display
-  lastVerifiedAt   DateTime
-  createdByUserId  String
-  updatedByUserId  String
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id              String   @id @default(cuid())
+  organizationId  String
+  provider        String   @db.VarChar(20) // "openai" | "gemini" | "anthropic"
+  encryptedKey    String   @db.Text // AES-256-GCM envelope, base64-encoded
+  lastFour        String   @db.VarChar(4) // Last 4 chars for display
+  lastVerifiedAt  DateTime
+  createdByUserId String
+  updatedByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  organization  Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy     User                  @relation("AiKeyCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  updatedBy     User                  @relation("AiKeyUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
-  models        OrganizationAiModel[]
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User                  @relation("AiKeyCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  updatedBy    User                  @relation("AiKeyUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
+  models       OrganizationAiModel[]
 
   @@unique([organizationId, provider])
   @@index([organizationId, provider])
@@ -188,16 +189,16 @@ model OrganizationAiApiKey {
 
 // OrganizationAiModel: curated models per organization/provider
 model OrganizationAiModel {
-  id               String   @id @default(cuid())
-  organizationId   String
-  provider         String   @db.VarChar(20) // "openai" | "gemini" | "anthropic"
-  name             String   @db.VarChar(100) // e.g., "gpt-4o-mini"
-  label            String   @db.VarChar(100) // Display label
-  maxOutputTokens  Int
-  isDefault        Boolean  @default(false)
-  apiKeyId         String
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id              String   @id @default(cuid())
+  organizationId  String
+  provider        String   @db.VarChar(20) // "openai" | "gemini" | "anthropic"
+  name            String   @db.VarChar(100) // e.g., "gpt-4o-mini"
+  label           String   @db.VarChar(100) // Display label
+  maxOutputTokens Int
+  isDefault       Boolean  @default(false)
+  apiKeyId        String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   apiKey       OrganizationAiApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
@@ -210,24 +211,24 @@ model OrganizationAiModel {
 
 // AiGenerationLog: usage logs with tokens, latency, correlation IDs
 model AiGenerationLog {
-  id                   String    @id @default(cuid())
-  organizationId       String
-  userId               String
-  provider             String    @db.VarChar(20)
-  model                String    @db.VarChar(100)
-  feature              String    @db.VarChar(50) // e.g., "generic-text"
-  status               String    @db.VarChar(20) // "ok" | "error" | "canceled"
-  tokensIn             Int?
-  tokensOut            Int?
-  latencyMs            Int
-  correlationId        String    @db.VarChar(100)
-  rawInputTruncated    String    @db.Text // Sanitized + truncated
-  rawOutputTruncated   String    @db.Text // Sanitized + truncated
-  rawRequest           Json?     @db.Json // Sanitized Vercel AI SDK request params
-  rawResponse          Json?     @db.Json // Sanitized Vercel AI SDK result object
-  errorCode            String?   @db.VarChar(100)
-  errorMessage         String?   @db.Text
-  createdAt            DateTime  @default(now())
+  id                 String   @id @default(cuid())
+  organizationId     String
+  userId             String
+  provider           String   @db.VarChar(20)
+  model              String   @db.VarChar(100)
+  feature            String   @db.VarChar(50) // e.g., "generic-text"
+  status             String   @db.VarChar(20) // "ok" | "error" | "canceled"
+  tokensIn           Int?
+  tokensOut          Int?
+  latencyMs          Int
+  correlationId      String   @db.VarChar(100)
+  rawInputTruncated  String   @db.Text // Sanitized + truncated
+  rawOutputTruncated String   @db.Text // Sanitized + truncated
+  rawRequest         Json?    @db.Json // Sanitized Vercel AI SDK request params
+  rawResponse        Json?    @db.Json // Sanitized Vercel AI SDK result object
+  errorCode          String?  @db.VarChar(100)
+  errorMessage       String?  @db.Text
+  createdAt          DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User         @relation("AiGenerationLogs", fields: [userId], references: [id], onDelete: Cascade)
@@ -240,12 +241,12 @@ model AiGenerationLog {
 
 // OrganizationAiSettings: retention and rate limit overrides
 model OrganizationAiSettings {
-  id               String   @id @default(cuid())
-  organizationId   String   @unique
-  retentionDays    Int      @default(30)
-  perMinuteLimit   Int? // Nullable; override env
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  retentionDays  Int      @default(30)
+  perMinuteLimit Int? // Nullable; override env
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -257,8 +258,8 @@ model OrganizationIntegration {
   id                    String    @id @default(cuid())
   organizationId        String
   provider              String    @db.VarChar(20) // "reddit" | "notion"
-  connectionType        String    @db.VarChar(20) @default("public") // "public" | "internal"
-  status                String    @db.VarChar(20) @default("connected") // "connected" | "disconnected" | "error"
+  connectionType        String    @default("public") @db.VarChar(20) // "public" | "internal"
+  status                String    @default("connected") @db.VarChar(20) // "connected" | "disconnected" | "error"
   accountId             String?   @db.VarChar(255) // Reddit user id; Notion workspace/bot id
   accountName           String?   @db.VarChar(255) // Reddit username; Notion workspace name
   workspaceId           String?   @db.VarChar(255) // Notion workspace ID (optional)
@@ -299,21 +300,21 @@ model IntegrationAuthState {
 
 // IntegrationCallLog: API call usage logs
 model IntegrationCallLog {
-  id                 String   @id @default(cuid())
-  organizationId     String   @db.VarChar(255)
-  userId             String   @db.VarChar(255)
-  provider           String   @db.VarChar(20)
-  endpoint           String   @db.VarChar(500)
-  method             String   @db.VarChar(10)
-  status             String   @db.VarChar(20) // "ok" | "error"
-  httpStatus         Int?
-  latencyMs          Int
-  correlationId      String   @db.VarChar(100)
-  requestTruncated   String   @db.Text
-  responseTruncated  String   @db.Text
-  errorCode          String?  @db.VarChar(100)
-  errorMessage       String?  @db.Text
-  createdAt          DateTime @default(now())
+  id                String   @id @default(cuid())
+  organizationId    String   @db.VarChar(255)
+  userId            String   @db.VarChar(255)
+  provider          String   @db.VarChar(20)
+  endpoint          String   @db.VarChar(500)
+  method            String   @db.VarChar(10)
+  status            String   @db.VarChar(20) // "ok" | "error"
+  httpStatus        Int?
+  latencyMs         Int
+  correlationId     String   @db.VarChar(100)
+  requestTruncated  String   @db.Text
+  responseTruncated String   @db.Text
+  errorCode         String?  @db.VarChar(100)
+  errorMessage      String?  @db.Text
+  createdAt         DateTime @default(now())
 
   @@index([organizationId, createdAt])
   @@index([organizationId, provider, createdAt])
@@ -361,26 +362,26 @@ enum ThousandsSeparator {
 
 // OrganizationSettings: business details and financial configuration
 model OrganizationSettings {
-  id                     String             @id @default(cuid())
-  organizationId         String             @unique
-  businessType           String             @db.VarChar(100) // "Freelance", "Consulting", "Agency", "SaaS", "Other"
-  businessTypeOther      String?            @db.VarChar(255)
-  address                String?            @db.Text
-  phone                  String?            @db.VarChar(50)
-  email                  String?            @db.VarChar(255)
-  taxId                  String?            @db.VarChar(100)
-  baseCurrency           String             @db.VarChar(3) // ISO 4217
-  fiscalYearStartMonth   Int                @default(1) // 1-12
-  dateFormat             DateFormat         @default(YYYY_MM_DD)
-  decimalSeparator       DecimalSeparator   @default(DOT)
-  thousandsSeparator     ThousandsSeparator @default(COMMA)
-  isOnboardingComplete   Boolean            @default(false)
-  softDeletedAt          DateTime?
-  softClosedBefore       DateTime?          // Transactions before this date are in soft-closed period
-  isTaxRegistered        Boolean?
-  defaultTaxRate         Decimal?           @db.Decimal(5, 2)
-  createdAt              DateTime           @default(now())
-  updatedAt              DateTime           @updatedAt
+  id                   String             @id @default(cuid())
+  organizationId       String             @unique
+  businessType         String             @db.VarChar(100) // "Freelance", "Consulting", "Agency", "SaaS", "Other"
+  businessTypeOther    String?            @db.VarChar(255)
+  address              String?            @db.Text
+  phone                String?            @db.VarChar(50)
+  email                String?            @db.VarChar(255)
+  taxId                String?            @db.VarChar(100)
+  baseCurrency         String             @db.VarChar(3) // ISO 4217
+  fiscalYearStartMonth Int                @default(1) // 1-12
+  dateFormat           DateFormat         @default(YYYY_MM_DD)
+  decimalSeparator     DecimalSeparator   @default(DOT)
+  thousandsSeparator   ThousandsSeparator @default(COMMA)
+  isOnboardingComplete Boolean            @default(false)
+  softDeletedAt        DateTime?
+  softClosedBefore     DateTime? // Transactions before this date are in soft-closed period
+  isTaxRegistered      Boolean?
+  defaultTaxRate       Decimal?           @db.Decimal(5, 2)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -409,18 +410,18 @@ model Account {
 
 // Category: income/expense classification with hierarchy
 model Category {
-  id            String       @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String
-  parentId      String?
-  name          String       @db.VarChar(255)
-  type          CategoryType
-  color         String?      @db.VarChar(50)
-  icon          String?      @db.VarChar(50)
-  sortOrder     Int          @default(0)
-  includeInPnL  Boolean      @default(true)
-  active        Boolean      @default(true)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  parentId       String?
+  name           String       @db.VarChar(255)
+  type           CategoryType
+  color          String?      @db.VarChar(50)
+  icon           String?      @db.VarChar(50)
+  sortOrder      Int          @default(0)
+  includeInPnL   Boolean      @default(true)
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   parent       Category?     @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
@@ -436,22 +437,22 @@ model Category {
 
 // Vendor: business contacts for expense transactions
 model Vendor {
-  id             String        @id @default(cuid())
+  id             String   @id @default(cuid())
   organizationId String
-  name           String        @db.VarChar(255)
-  nameLower      String        @db.VarChar(255) // Lowercase version for case-insensitive uniqueness
-  email          String?       @db.VarChar(255)
-  phone          String?       @db.VarChar(50)
-  notes          String?       @db.Text
-  active         Boolean       @default(true)
+  name           String   @db.VarChar(255)
+  nameLower      String   @db.VarChar(255) // Lowercase version for case-insensitive uniqueness
+  email          String?  @db.VarChar(255)
+  phone          String?  @db.VarChar(50)
+  notes          String?  @db.Text
+  active         Boolean  @default(true)
   mergedIntoId   String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  mergedInto     Vendor?       @relation("VendorMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
-  mergedVendors  Vendor[]      @relation("VendorMerge")
-  transactions   Transaction[]
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mergedInto    Vendor?       @relation("VendorMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  mergedVendors Vendor[]      @relation("VendorMerge")
+  transactions  Transaction[]
 
   @@unique([organizationId, nameLower]) // Enforce case-insensitive unique vendor names per org
   @@index([organizationId, active])
@@ -460,22 +461,22 @@ model Vendor {
 
 // Client: business contacts for income transactions
 model Client {
-  id             String        @id @default(cuid())
+  id             String   @id @default(cuid())
   organizationId String
-  name           String        @db.VarChar(255)
-  nameLower      String        @db.VarChar(255) // Lowercase version for case-insensitive uniqueness
-  email          String?       @db.VarChar(255)
-  phone          String?       @db.VarChar(50)
-  notes          String?       @db.Text
-  active         Boolean       @default(true)
+  name           String   @db.VarChar(255)
+  nameLower      String   @db.VarChar(255) // Lowercase version for case-insensitive uniqueness
+  email          String?  @db.VarChar(255)
+  phone          String?  @db.VarChar(50)
+  notes          String?  @db.Text
+  active         Boolean  @default(true)
   mergedIntoId   String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  mergedInto     Client?       @relation("ClientMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
-  mergedClients  Client[]      @relation("ClientMerge")
-  transactions   Transaction[]
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mergedInto    Client?       @relation("ClientMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  mergedClients Client[]      @relation("ClientMerge")
+  transactions  Transaction[]
 
   @@unique([organizationId, nameLower]) // Enforce case-insensitive unique client names per org
   @@index([organizationId, active])
@@ -484,43 +485,43 @@ model Client {
 
 // Transaction: income or expense entry with dual-currency support
 model Transaction {
-  id                   String            @id @default(cuid())
-  organizationId       String
-  accountId            String
-  categoryId           String
-  userId               String
-  type                 TransactionType
-  status               TransactionStatus @default(POSTED)
+  id             String            @id @default(cuid())
+  organizationId String
+  accountId      String
+  categoryId     String
+  userId         String
+  type           TransactionType
+  status         TransactionStatus @default(POSTED)
 
   // Dual-currency model (current)
-  amountBase           Decimal           @db.Decimal(18, 2) // Canonical base amount
-  currencyBase         String?           @db.VarChar(3)     // Base currency (ISO 4217)
-  amountSecondary      Decimal?          @db.Decimal(18, 2) // Optional secondary/original amount
-  currencySecondary    String?           @db.VarChar(3)     // Optional secondary/original currency
+  amountBase        Decimal  @db.Decimal(18, 2) // Canonical base amount
+  currencyBase      String?  @db.VarChar(3) // Base currency (ISO 4217)
+  amountSecondary   Decimal? @db.Decimal(18, 2) // Optional secondary/original amount
+  currencySecondary String?  @db.VarChar(3) // Optional secondary/original currency
 
   // Legacy fields (deprecated; kept for migration and audit only)
-  amountOriginal       Decimal           @db.Decimal(18, 2)
-  currencyOriginal     String            @db.VarChar(3)
-  exchangeRateToBase   Decimal           @db.Decimal(18, 8)
+  amountOriginal     Decimal @db.Decimal(18, 2)
+  currencyOriginal   String  @db.VarChar(3)
+  exchangeRateToBase Decimal @db.Decimal(18, 8)
 
-  date                 DateTime
-  description          String            @db.Text
-  vendorId             String?
-  vendorName           String?           @db.VarChar(255)
-  clientId             String?
-  clientName           String?           @db.VarChar(255)
-  tags                 String?           @db.Text
-  notes                String?           @db.Text
-  deletedAt            DateTime?
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
+  date        DateTime
+  description String    @db.Text
+  vendorId    String?
+  vendorName  String?   @db.VarChar(255)
+  clientId    String?
+  clientName  String?   @db.VarChar(255)
+  tags        String?   @db.Text
+  notes       String?   @db.Text
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  account      Account       @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  category     Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  vendor       Vendor?       @relation(fields: [vendorId], references: [id], onDelete: SetNull)
-  client       Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  user         User          @relation("TransactionCreator", fields: [userId], references: [id], onDelete: Restrict)
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category     Category     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  vendor       Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  client       Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  user         User         @relation("TransactionCreator", fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([organizationId])
   @@index([organizationId, date])

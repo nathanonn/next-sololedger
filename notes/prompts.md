@@ -93,3 +93,7 @@ b. If the question need custom input that is not in the list of options, please 
 Always mark each question with a number, like 1/, 2/, 3/, etc. so that I can easily refer to the question number when I answer.
 
 For each question, add your recommendation (with reason why) below the options. This would help me in making a better decision.
+
+# Insights Logger
+
+Please use the "build-insights-logger" skill to automatically log meaningful insights, discoveries, and decisions during coding session.

@@ -123,11 +123,12 @@ model Organization {
 
 // Membership: user-organization relationship with role
 model Membership {
-  id             String   @id @default(cuid())
-  userId         String
-  organizationId String
-  role           String   @db.VarChar(20) // "admin" | "member"
-  createdAt      DateTime @default(now())
+  id               String   @id @default(cuid())
+  userId           String
+  organizationId   String
+  role             String   @db.VarChar(20) // "admin" | "member"
+  dashboardLayout  Json?    // User's dashboard widget layout preferences
+  createdAt        DateTime @default(now())
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)

@@ -182,6 +182,44 @@ export default function TransactionsPage(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgSlug, router]);
 
+  // Read URL params and apply filters on mount (for dashboard drill-down)
+  React.useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+
+    // Apply date filters from URL
+    const fromDate = urlParams.get("from");
+    const toDate = urlParams.get("to");
+    if (fromDate) setDateFromFilter(fromDate);
+    if (toDate) setDateToFilter(toDate);
+
+    // Apply type filter from URL
+    const typeParam = urlParams.get("type");
+    if (typeParam) setTypeFilter(typeParam);
+
+    // Apply status filter from URL
+    const statusParam = urlParams.get("status");
+    if (statusParam) setStatusFilter(statusParam);
+
+    // Apply category filter from URL
+    const categoryIdsParam = urlParams.get("categoryIds");
+    if (categoryIdsParam) {
+      const ids = categoryIdsParam.split(",").filter(Boolean);
+      setSelectedCategoryIds(ids);
+    }
+
+    // Apply currency filter from URL
+    const currencyParam = urlParams.get("currency");
+    if (currencyParam) setCurrencyFilter(currencyParam);
+
+    // Apply vendor filter from URL
+    const vendorParam = urlParams.get("vendorId");
+    if (vendorParam) setVendorFilter(vendorParam);
+
+    // Apply client filter from URL
+    const clientParam = urlParams.get("clientId");
+    if (clientParam) setClientFilter(clientParam);
+  }, []);
+
   async function loadTransactions() {
     try {
       setIsLoading(true);

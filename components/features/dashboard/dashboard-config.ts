@@ -9,40 +9,33 @@ import type { DashboardWidgetDefinition } from "@/lib/dashboard-types";
  * Registry of all available dashboard widgets
  */
 export const DASHBOARD_WIDGETS: Record<string, DashboardWidgetDefinition> = {
-  "ytd-summary": {
-    id: "ytd-summary",
-    title: "Financial Summary",
-    description: "Income, expenses, and profit/loss metrics with period comparison",
-    defaultVisible: true,
-    defaultOrder: 1,
-  },
   "income-expense-chart": {
     id: "income-expense-chart",
     title: "Income vs Expense Trends",
     description: "Monthly income and expense trends over time",
     defaultVisible: true,
-    defaultOrder: 2,
+    defaultOrder: 1,
   },
   "category-breakdown": {
     id: "category-breakdown",
     title: "Category Breakdown",
     description: "Top categories by income or expense",
     defaultVisible: true,
-    defaultOrder: 3,
+    defaultOrder: 2,
   },
   "accounts-overview": {
     id: "accounts-overview",
     title: "Accounts Overview",
     description: "Account balances and transaction counts",
     defaultVisible: true,
-    defaultOrder: 4,
+    defaultOrder: 3,
   },
   "recent-activity": {
     id: "recent-activity",
     title: "Recent Activity",
     description: "Latest transactions across all accounts",
     defaultVisible: true,
-    defaultOrder: 5,
+    defaultOrder: 4,
   },
 };
 

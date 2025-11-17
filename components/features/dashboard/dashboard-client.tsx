@@ -3,11 +3,24 @@
 import * as React from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { TrendingUp, TrendingDown, Minus, Wallet, Settings2, RotateCcw } from "lucide-react";
+import {
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Wallet,
+  Settings2,
+  RotateCcw,
+} from "lucide-react";
 import { toast } from "sonner";
 import type {
   DashboardSummary,
@@ -16,14 +29,24 @@ import type {
   DashboardFilters,
   RecentActivityTransaction,
 } from "@/lib/dashboard-types";
-import type { DateFormat, DecimalSeparator, ThousandsSeparator } from "@prisma/client";
+import type {
+  DateFormat,
+  DecimalSeparator,
+  ThousandsSeparator,
+} from "@prisma/client";
 import { DashboardFiltersBar } from "./dashboard-filters-bar";
 import { IncomeExpenseChartWidget } from "./income-expense-chart-widget";
 import { CategoryBreakdownChartWidget } from "./category-breakdown-chart-widget";
 import { AccountsOverviewWidget } from "./accounts-overview-widget";
 import { formatCurrency, formatDate } from "@/lib/sololedger-formatters";
-import { getDefaultDashboardLayout, mergeDashboardLayout } from "./dashboard-config";
-import type { DashboardLayout, DashboardLayoutItem } from "@/lib/dashboard-types";
+import {
+  getDefaultDashboardLayout,
+  mergeDashboardLayout,
+} from "./dashboard-config";
+import type {
+  DashboardLayout,
+  DashboardLayoutItem,
+} from "@/lib/dashboard-types";
 
 interface DashboardClientProps {
   orgSlug: string;
@@ -58,16 +81,22 @@ export function DashboardClient({
   initialFilters,
   userLayout,
 }: DashboardClientProps) {
-  const [filters, setFilters] = React.useState<DashboardFilters>(initialFilters);
+  const [filters, setFilters] =
+    React.useState<DashboardFilters>(initialFilters);
   const [customizeMode, setCustomizeMode] = React.useState(false);
-  const [layout, setLayout] = React.useState(() => mergeDashboardLayout(userLayout));
+  const [layout, setLayout] = React.useState(() =>
+    mergeDashboardLayout(userLayout)
+  );
   const [isSavingLayout, setIsSavingLayout] = React.useState(false);
 
   // Handle filter changes
-  const handleFiltersChange = React.useCallback((newFilters: DashboardFilters) => {
-    setFilters(newFilters);
-    // Page will reload via URL change in DashboardFiltersBar
-  }, []);
+  const handleFiltersChange = React.useCallback(
+    (newFilters: DashboardFilters) => {
+      setFilters(newFilters);
+      // Page will reload via URL change in DashboardFiltersBar
+    },
+    []
+  );
 
   // Save layout
   const handleSaveLayout = React.useCallback(async () => {
@@ -135,7 +164,9 @@ export function DashboardClient({
     const filtered = customizeMode
       ? layout // Show all widgets in customize mode
       : layout.filter((item: DashboardLayoutItem) => item.visible);
-    return filtered.sort((a: DashboardLayoutItem, b: DashboardLayoutItem) => a.order - b.order);
+    return filtered.sort(
+      (a: DashboardLayoutItem, b: DashboardLayoutItem) => a.order - b.order
+    );
   }, [layout, customizeMode]);
 
   // Render trend indicator
@@ -203,10 +234,15 @@ export function DashboardClient({
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <p className="text-sm">
-                Customize your dashboard by showing or hiding widgets. Changes are saved per user.
+                Customize your dashboard by showing or hiding widgets. Changes
+                are saved per user.
               </p>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={handleResetLayout} disabled={isSavingLayout}>
+                <Button
+                  variant="outline"
+                  onClick={handleResetLayout}
+                  disabled={isSavingLayout}
+                >
                   <RotateCcw className="h-4 w-4 mr-2" />
                   Reset to Default
                 </Button>
@@ -305,6 +341,8 @@ export function DashboardClient({
         {displayedWidgets.map((widgetItem: DashboardLayoutItem) => {
           const widgetId = widgetItem.widgetId;
 
+          console.log(widgetId);
+
           return (
             <div
               key={widgetId}
@@ -318,7 +356,10 @@ export function DashboardClient({
                     checked={widgetItem.visible}
                     onCheckedChange={() => toggleWidgetVisibility(widgetId)}
                   />
-                  <Label htmlFor={`visible-${widgetId}`} className="text-sm cursor-pointer">
+                  <Label
+                    htmlFor={`visible-${widgetId}`}
+                    className="text-sm cursor-pointer"
+                  >
                     {widgetItem.visible ? "Visible" : "Hidden"}
                   </Label>
                 </div>
@@ -373,7 +414,10 @@ export function DashboardClient({
                     {recentTransactions.length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center py-4">
                         No transactions yet.{" "}
-                        <Link href={`/o/${orgSlug}/transactions`} className="underline">
+                        <Link
+                          href={`/o/${orgSlug}/transactions`}
+                          className="underline"
+                        >
                           Create your first transaction
                         </Link>
                       </p>
@@ -386,29 +430,45 @@ export function DashboardClient({
                           >
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
-                                <span className="font-medium">{transaction.description}</span>
+                                <span className="font-medium">
+                                  {transaction.description}
+                                </span>
                                 <Badge
-                                  variant={transaction.type === "INCOME" ? "default" : "secondary"}
+                                  variant={
+                                    transaction.type === "INCOME"
+                                      ? "default"
+                                      : "secondary"
+                                  }
                                   className="text-xs"
                                 >
                                   {transaction.type}
                                 </Badge>
                                 <Badge
-                                  variant={transaction.status === "POSTED" ? "default" : "outline"}
+                                  variant={
+                                    transaction.status === "POSTED"
+                                      ? "default"
+                                      : "outline"
+                                  }
                                   className="text-xs"
                                 >
                                   {transaction.status}
                                 </Badge>
                               </div>
                               <div className="text-sm text-muted-foreground">
-                                {formatDate(new Date(transaction.date), settings.dateFormat)} •{" "}
-                                {transaction.category.name} • {transaction.account.name}
+                                {formatDate(
+                                  new Date(transaction.date),
+                                  settings.dateFormat
+                                )}{" "}
+                                • {transaction.category.name} •{" "}
+                                {transaction.account.name}
                               </div>
                             </div>
                             <div className="text-right">
                               <div
                                 className={`font-semibold ${
-                                  transaction.type === "INCOME" ? "text-green-600" : "text-red-600"
+                                  transaction.type === "INCOME"
+                                    ? "text-green-600"
+                                    : "text-red-600"
                                 }`}
                               >
                                 {transaction.type === "INCOME" ? "+" : "-"}
@@ -419,8 +479,15 @@ export function DashboardClient({
                                   settings.thousandsSeparator
                                 )}
                               </div>
-                              <Button asChild variant="ghost" size="sm" className="mt-1">
-                                <Link href={`/o/${orgSlug}/transactions/${transaction.id}`}>
+                              <Button
+                                asChild
+                                variant="ghost"
+                                size="sm"
+                                className="mt-1"
+                              >
+                                <Link
+                                  href={`/o/${orgSlug}/transactions/${transaction.id}`}
+                                >
                                   Edit
                                 </Link>
                               </Button>

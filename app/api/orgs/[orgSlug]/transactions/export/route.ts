@@ -77,7 +77,7 @@ export async function GET(
     // Generate CSV
     const csvRows: string[] = [];
 
-    // Header row
+    // Header row - dual-currency model
     csvRows.push(
       [
         "ID",
@@ -89,16 +89,23 @@ export async function GET(
         "Account",
         "Vendor",
         "Client",
-        "Amount (Original)",
-        "Currency (Original)",
-        "Exchange Rate",
         "Amount (Base)",
+        "Currency (Base)",
+        "Amount (Secondary)",
+        "Currency (Secondary)",
+        "Exchange Rate",
         "Notes",
       ].join(",")
     );
 
     // Data rows
     for (const transaction of transactions) {
+      // Calculate exchange rate if dual-currency
+      const exchangeRate =
+        transaction.amountSecondary && Number(transaction.amountSecondary) > 0
+          ? (Number(transaction.amountBase) / Number(transaction.amountSecondary)).toFixed(8)
+          : "";
+
       const row = [
         transaction.id,
         transaction.date.toISOString().split("T")[0],
@@ -113,10 +120,11 @@ export async function GET(
         transaction.clientName
           ? `"${transaction.clientName.replace(/"/g, '""')}"`
           : "",
-        transaction.amountOriginal.toString(),
-        transaction.currencyOriginal,
-        transaction.exchangeRateToBase.toString(),
         transaction.amountBase.toString(),
+        transaction.currencyBase || "",
+        transaction.amountSecondary?.toString() || "",
+        transaction.currencySecondary || "",
+        exchangeRate,
         transaction.notes ? `"${transaction.notes.replace(/"/g, '""')}"` : "",
       ];
 

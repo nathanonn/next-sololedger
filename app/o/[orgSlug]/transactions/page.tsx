@@ -43,7 +43,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { formatDate, formatCurrency } from "@/lib/sololedger-formatters";
+import { formatDate, formatTransactionAmount } from "@/lib/sololedger-formatters";
 import type { DateFormat, DecimalSeparator, ThousandsSeparator } from "@prisma/client";
 import { ChevronsUpDown, Trash2 } from "lucide-react";
 
@@ -54,6 +54,9 @@ interface Transaction {
   date: string;
   description: string;
   amountBase: string;
+  currencyBase?: string | null;
+  amountSecondary?: string | null;
+  currencySecondary?: string | null;
   category: { id: string; name: string };
   account: { id: string; name: string };
   client?: { id: string; name: string } | null;
@@ -806,8 +809,8 @@ export default function TransactionsPage(): React.JSX.Element {
                       }`}
                     >
                       {transaction.type === "INCOME" ? "+" : "-"}
-                      {formatCurrency(
-                        Number(transaction.amountBase),
+                      {formatTransactionAmount(
+                        transaction,
                         settings.baseCurrency,
                         settings.decimalSeparator,
                         settings.thousandsSeparator

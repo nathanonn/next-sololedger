@@ -481,7 +481,7 @@ model Client {
   @@map("clients")
 }
 
-// Transaction: income or expense entry with FX support
+// Transaction: income or expense entry with dual-currency support
 model Transaction {
   id                   String            @id @default(cuid())
   organizationId       String
@@ -490,10 +490,18 @@ model Transaction {
   userId               String
   type                 TransactionType
   status               TransactionStatus @default(POSTED)
+
+  // Dual-currency model (current)
+  amountBase           Decimal           @db.Decimal(18, 2) // Canonical base amount
+  currencyBase         String?           @db.VarChar(3)     // Base currency (ISO 4217)
+  amountSecondary      Decimal?          @db.Decimal(18, 2) // Optional secondary/original amount
+  currencySecondary    String?           @db.VarChar(3)     // Optional secondary/original currency
+
+  // Legacy fields (deprecated; kept for migration and audit only)
   amountOriginal       Decimal           @db.Decimal(18, 2)
   currencyOriginal     String            @db.VarChar(3)
   exchangeRateToBase   Decimal           @db.Decimal(18, 8)
-  amountBase           Decimal           @db.Decimal(18, 2)
+
   date                 DateTime
   description          String            @db.Text
   vendorId             String?
@@ -521,6 +529,7 @@ model Transaction {
   @@index([organizationId, clientId, status, date])
   @@index([organizationId, accountId, status, date])
   @@index([organizationId, deletedAt])
+  @@index([organizationId, currencySecondary]) // For currency filters
   @@index([accountId])
   @@index([categoryId])
   @@index([vendorId])

@@ -29,6 +29,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { Info, Loader2, AlertTriangle } from "lucide-react";
 import { useFinancialSettings } from "@/hooks/use-financial-settings";
+import { ISO_CURRENCIES, COMMON_CURRENCIES, getCurrencyName } from "@/lib/currencies";
 
 const financialSettingsSchema = z.object({
   baseCurrency: z.string().length(3),
@@ -39,20 +40,6 @@ const financialSettingsSchema = z.object({
 });
 
 type FinancialSettingsFormData = z.infer<typeof financialSettingsSchema>;
-
-// Common currencies
-const CURRENCIES = [
-  { code: "MYR", name: "Malaysian Ringgit" },
-  { code: "USD", name: "US Dollar" },
-  { code: "EUR", name: "Euro" },
-  { code: "GBP", name: "British Pound" },
-  { code: "SGD", name: "Singapore Dollar" },
-  { code: "AUD", name: "Australian Dollar" },
-  { code: "CAD", name: "Canadian Dollar" },
-  { code: "JPY", name: "Japanese Yen" },
-  { code: "CNY", name: "Chinese Yuan" },
-  { code: "INR", name: "Indian Rupee" },
-];
 
 const MONTHS = [
   { value: 1, label: "January" },
@@ -246,7 +233,7 @@ export default function FinancialSettingsPage(): React.JSX.Element {
   const isAdmin = userRole === "admin";
   const isMember = userRole === "member";
   const currentCurrency = form.watch("baseCurrency");
-  const currencyDisplay = CURRENCIES.find((c) => c.code === currentCurrency);
+  const currencyName = getCurrencyName(currentCurrency);
 
   return (
     <>
@@ -282,9 +269,9 @@ export default function FinancialSettingsPage(): React.JSX.Element {
                   <div className="font-medium">
                     Current Base Currency: {currentCurrency}
                   </div>
-                  {currencyDisplay && (
+                  {currencyName && (
                     <div className="text-sm text-muted-foreground">
-                      {currencyDisplay.name}
+                      {currencyName}
                     </div>
                   )}
                 </div>
@@ -468,14 +455,24 @@ export default function FinancialSettingsPage(): React.JSX.Element {
                 <SelectTrigger id="newCurrency">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
-                  {CURRENCIES.map((currency) => (
+                <SelectContent className="max-h-[300px]">
+                  {COMMON_CURRENCIES.map((currency) => (
                     <SelectItem key={currency.code} value={currency.code}>
-                      {currency.code} - {currency.name}
+                      {currency.code} – {currency.name}
+                    </SelectItem>
+                  ))}
+                  {ISO_CURRENCIES.filter(
+                    c => !COMMON_CURRENCIES.some(cc => cc.code === c.code)
+                  ).map((currency) => (
+                    <SelectItem key={currency.code} value={currency.code}>
+                      {currency.code} – {currency.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                Select from 180+ ISO 4217 currencies
+              </p>
             </div>
 
             <div className="flex items-start gap-2">

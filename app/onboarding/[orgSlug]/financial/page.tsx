@@ -24,10 +24,10 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
+import { ISO_CURRENCIES, COMMON_CURRENCIES, isValidCurrencyCode } from "@/lib/currencies";
 
 const financialConfigSchema = z.object({
   baseCurrency: z.string().length(3, "Currency code must be 3 characters"),
-  baseCurrencyCustom: z.string().optional(),
   fiscalYearStartMonth: z.number().int().min(1).max(12),
   dateFormat: z.enum(["DD_MM_YYYY", "MM_DD_YYYY", "YYYY_MM_DD"]),
   decimalSeparator: z.enum(["DOT", "COMMA"]),
@@ -35,15 +35,6 @@ const financialConfigSchema = z.object({
 });
 
 type FinancialConfigFormData = z.infer<typeof financialConfigSchema>;
-
-const CURRENCIES = [
-  { code: "MYR", label: "MYR – Malaysian Ringgit" },
-  { code: "USD", label: "USD – US Dollar" },
-  { code: "EUR", label: "EUR – Euro" },
-  { code: "GBP", label: "GBP – British Pound" },
-  { code: "SGD", label: "SGD – Singapore Dollar" },
-  { code: "OTHER", label: "Other..." },
-];
 
 const MONTHS = [
   { value: 1, label: "January" },
@@ -70,8 +61,7 @@ export default function FinancialConfigPage(): React.JSX.Element {
   const form = useForm<FinancialConfigFormData>({
     resolver: zodResolver(financialConfigSchema),
     defaultValues: {
-      baseCurrency: "MYR",
-      baseCurrencyCustom: "",
+      baseCurrency: "USD",
       fiscalYearStartMonth: 1,
       dateFormat: "YYYY_MM_DD",
       decimalSeparator: "DOT",
@@ -79,7 +69,6 @@ export default function FinancialConfigPage(): React.JSX.Element {
     },
   });
 
-  const watchBaseCurrency = form.watch("baseCurrency");
   const watchDateFormat = form.watch("dateFormat");
   const watchDecimalSeparator = form.watch("decimalSeparator");
   const watchThousandsSeparator = form.watch("thousandsSeparator");
@@ -97,17 +86,8 @@ export default function FinancialConfigPage(): React.JSX.Element {
           const data = await settingsResponse.json();
 
           if (data.settings) {
-            const currencyInList = CURRENCIES.some(
-              (c) => c.code === data.settings.baseCurrency
-            );
-
             form.reset({
-              baseCurrency: currencyInList
-                ? data.settings.baseCurrency
-                : "OTHER",
-              baseCurrencyCustom: currencyInList
-                ? ""
-                : data.settings.baseCurrency,
+              baseCurrency: data.settings.baseCurrency,
               fiscalYearStartMonth: data.settings.fiscalYearStartMonth,
               dateFormat: data.settings.dateFormat,
               decimalSeparator: data.settings.decimalSeparator,
@@ -179,19 +159,10 @@ export default function FinancialConfigPage(): React.JSX.Element {
     try {
       setIsLoading(true);
 
-      // Determine final currency code
-      let finalCurrency = data.baseCurrency;
-      if (data.baseCurrency === "OTHER") {
-        if (!data.baseCurrencyCustom?.trim()) {
-          toast.error("Please enter a currency code");
-          return;
-        }
-        finalCurrency = data.baseCurrencyCustom.trim().toUpperCase();
-
-        if (finalCurrency.length !== 3) {
-          toast.error("Currency code must be 3 characters (e.g., EUR, JPY)");
-          return;
-        }
+      // Validate currency code
+      if (!isValidCurrencyCode(data.baseCurrency)) {
+        toast.error("Invalid currency code");
+        return;
       }
 
       // Validate separator combination
@@ -215,7 +186,7 @@ export default function FinancialConfigPage(): React.JSX.Element {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          baseCurrency: finalCurrency,
+          baseCurrency: data.baseCurrency,
           fiscalYearStartMonth: data.fiscalYearStartMonth,
           dateFormat: data.dateFormat,
           decimalSeparator: data.decimalSeparator,
@@ -273,7 +244,7 @@ export default function FinancialConfigPage(): React.JSX.Element {
                 Base Currency <span className="text-destructive">*</span>
               </Label>
               <Select
-                value={watchBaseCurrency}
+                value={form.watch("baseCurrency")}
                 onValueChange={(value) =>
                   form.setValue("baseCurrency", value)
                 }
@@ -282,10 +253,17 @@ export default function FinancialConfigPage(): React.JSX.Element {
                 <SelectTrigger id="baseCurrency">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
-                  {CURRENCIES.map((currency) => (
+                <SelectContent className="max-h-[300px]">
+                  {COMMON_CURRENCIES.map((currency) => (
                     <SelectItem key={currency.code} value={currency.code}>
-                      {currency.label}
+                      {currency.code} – {currency.name}
+                    </SelectItem>
+                  ))}
+                  {ISO_CURRENCIES.filter(
+                    c => !COMMON_CURRENCIES.some(cc => cc.code === c.code)
+                  ).map((currency) => (
+                    <SelectItem key={currency.code} value={currency.code}>
+                      {currency.code} – {currency.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -294,26 +272,6 @@ export default function FinancialConfigPage(): React.JSX.Element {
                 Reports and dashboards use this currency
               </p>
             </div>
-
-            {watchBaseCurrency === "OTHER" && (
-              <div className="space-y-2">
-                <Label htmlFor="baseCurrencyCustom">
-                  Enter currency code (ISO 4217){" "}
-                  <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="baseCurrencyCustom"
-                  {...form.register("baseCurrencyCustom")}
-                  disabled={isLoading}
-                  placeholder="e.g., JPY, AUD, CAD"
-                  maxLength={3}
-                  className="uppercase"
-                />
-                <p className="text-xs text-muted-foreground">
-                  3-letter ISO currency code
-                </p>
-              </div>
-            )}
 
             {/* Fiscal Year Start */}
             <div className="space-y-2">

@@ -5,6 +5,7 @@ import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
 import { requireMembership, getOrgBySlug } from "@/lib/org-helpers";
 import { isInSoftClosedPeriod } from "@/lib/periods";
+import { isValidCurrencyCode } from "@/lib/currencies";
 
 export const runtime = "nodejs";
 
@@ -133,33 +134,67 @@ export async function PATCH(
       );
     }
 
-    // Validate request body
-    const updateTransactionSchema = z.object({
-      type: z.enum(["INCOME", "EXPENSE"]).optional(),
-      status: z.enum(["DRAFT", "POSTED"]).optional(),
-      amountOriginal: z.number().positive().optional(),
-      currencyOriginal: z
-        .string()
-        .length(3)
-        .transform((val) => val.toUpperCase())
-        .optional(),
-      exchangeRateToBase: z.number().positive().optional(),
-      date: z
-        .string()
-        .refine((val) => !isNaN(Date.parse(val)), {
-          message: "Invalid date",
-        })
-        .optional(),
-      description: z.string().min(1).optional(),
-      categoryId: z.string().optional(),
-      accountId: z.string().optional(),
-      vendorId: z.string().nullable().optional(),
-      vendorName: z.string().nullable().optional(),
-      clientId: z.string().nullable().optional(),
-      clientName: z.string().nullable().optional(),
-      notes: z.string().nullable().optional(),
-      allowSoftClosedOverride: z.boolean().optional(),
+    // Load organization settings to get base currency
+    const orgSettings = await db.organizationSettings.findUnique({
+      where: { organizationId: org.id },
+      select: { baseCurrency: true, softClosedBefore: true },
     });
+
+    if (!orgSettings?.baseCurrency) {
+      return NextResponse.json(
+        { error: "Organization base currency not configured" },
+        { status: 400 }
+      );
+    }
+
+    const baseCurrency = orgSettings.baseCurrency.toUpperCase();
+
+    // Validate request body - dual-currency model
+    // NOTE: currencyBase is NOT accepted from client - always forced to org's baseCurrency
+    const updateTransactionSchema = z
+      .object({
+        type: z.enum(["INCOME", "EXPENSE"]).optional(),
+        status: z.enum(["DRAFT", "POSTED"]).optional(),
+        amountBase: z.number().positive().optional(),
+        amountSecondary: z.number().positive().nullable().optional(),
+        currencySecondary: z
+          .string()
+          .length(3)
+          .transform((val) => val.toUpperCase())
+          .nullable()
+          .optional(),
+        date: z
+          .string()
+          .refine((val) => !isNaN(Date.parse(val)), {
+            message: "Invalid date",
+          })
+          .optional(),
+        description: z.string().min(1).optional(),
+        categoryId: z.string().optional(),
+        accountId: z.string().optional(),
+        vendorId: z.string().nullable().optional(),
+        vendorName: z.string().nullable().optional(),
+        clientId: z.string().nullable().optional(),
+        clientName: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
+        allowSoftClosedOverride: z.boolean().optional(),
+      })
+      .refine(
+        (data) => {
+          // If either secondary amount or currency is being updated, check consistency
+          if (data.amountSecondary !== undefined || data.currencySecondary !== undefined) {
+            // Both must be null/undefined, or both must be provided
+            const hasSecondaryAmount = data.amountSecondary !== null && data.amountSecondary !== undefined;
+            const hasSecondaryCurrency = data.currencySecondary !== null && data.currencySecondary !== undefined;
+            return hasSecondaryAmount === hasSecondaryCurrency;
+          }
+          return true;
+        },
+        {
+          message: "Both amountSecondary and currencySecondary must be provided together or both set to null",
+          path: ["amountSecondary"],
+        }
+      );
 
     const body = await request.json();
     const validation = updateTransactionSchema.safeParse(body);
@@ -173,12 +208,15 @@ export async function PATCH(
 
     const data = validation.data;
 
-    // Load org settings for soft-closed period checking
-    const orgSettings = await db.organizationSettings.findUnique({
-      where: { organizationId: org.id },
-    });
+    // Validate secondary currency code if provided
+    if (data.currencySecondary && !isValidCurrencyCode(data.currencySecondary)) {
+      return NextResponse.json(
+        { error: `Invalid currency code: ${data.currencySecondary}` },
+        { status: 400 }
+      );
+    }
 
-    const softClosedBefore = orgSettings?.softClosedBefore || null;
+    const softClosedBefore = orgSettings.softClosedBefore || null;
 
     // Check soft-closed period for POSTED transactions
     if (
@@ -422,16 +460,40 @@ export async function PATCH(
       }
     }
 
-    // Recalculate base amount if needed
-    const needsRecalculation =
-      data.amountOriginal !== undefined || data.exchangeRateToBase !== undefined;
+    // Determine final currency values for dual-currency model
+    // currencyBase is ALWAYS the org's baseCurrency - never accept from client
+    const finalAmountBase = data.amountBase ?? Number(existing.amountBase);
+    const finalAmountSecondary =
+      data.amountSecondary !== undefined ? data.amountSecondary : existing.amountSecondary ? Number(existing.amountSecondary) : null;
+    const finalCurrencySecondary =
+      data.currencySecondary !== undefined ? data.currencySecondary : existing.currencySecondary;
 
-    let amountBase: number | undefined = undefined;
+    // Recalculate legacy fields if any currency-related field changed
+    const needsLegacyRecalculation =
+      data.amountBase !== undefined ||
+      data.amountSecondary !== undefined ||
+      data.currencySecondary !== undefined;
 
-    if (needsRecalculation) {
-      const finalAmountOriginal = data.amountOriginal ?? Number(existing.amountOriginal);
-      const finalExchangeRate = data.exchangeRateToBase ?? Number(existing.exchangeRateToBase);
-      amountBase = finalAmountOriginal * finalExchangeRate;
+    let legacyData: {
+      amountOriginal?: number;
+      currencyOriginal?: string;
+      exchangeRateToBase?: number;
+    } = {};
+
+    if (needsLegacyRecalculation) {
+      const isDualCurrency = !!(finalAmountSecondary && finalCurrencySecondary);
+
+      if (isDualCurrency) {
+        // Dual-currency: secondary is "original"
+        legacyData.currencyOriginal = finalCurrencySecondary;
+        legacyData.amountOriginal = finalAmountSecondary;
+        legacyData.exchangeRateToBase = finalAmountBase / finalAmountSecondary;
+      } else {
+        // Base-only: base is "original"
+        legacyData.currencyOriginal = baseCurrency;
+        legacyData.amountOriginal = finalAmountBase;
+        legacyData.exchangeRateToBase = 1.0;
+      }
     }
 
     // Update transaction
@@ -440,15 +502,12 @@ export async function PATCH(
       data: {
         ...(data.type !== undefined && { type: data.type }),
         ...(data.status !== undefined && { status: data.status }),
-        ...(data.amountOriginal !== undefined && {
-          amountOriginal: data.amountOriginal,
-        }),
-        ...(data.currencyOriginal !== undefined && {
-          currencyOriginal: data.currencyOriginal,
-        }),
-        ...(data.exchangeRateToBase !== undefined && {
-          exchangeRateToBase: data.exchangeRateToBase,
-        }),
+        // Dual-currency model fields - currencyBase is ALWAYS org baseCurrency, never updated
+        ...(data.amountBase !== undefined && { amountBase: data.amountBase }),
+        ...(data.amountSecondary !== undefined && { amountSecondary: data.amountSecondary }),
+        ...(data.currencySecondary !== undefined && { currencySecondary: data.currencySecondary }),
+        // Legacy fields
+        ...legacyData,
         ...(data.date !== undefined && { date: new Date(data.date) }),
         ...(data.description !== undefined && {
           description: data.description,
@@ -462,7 +521,6 @@ export async function PATCH(
         ...(finalClientId !== undefined && { clientId: finalClientId }),
         ...(finalClientName !== undefined && { clientName: finalClientName }),
         ...(data.notes !== undefined && { notes: data.notes }),
-        ...(amountBase !== undefined && { amountBase }),
       },
       include: {
         category: true,

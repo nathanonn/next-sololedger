@@ -199,3 +199,100 @@ export function formatMonth(month: number): string {
   ];
   return months[month - 1] || "Unknown";
 }
+
+/**
+ * Format a dual-currency transaction amount
+ * Shows both base and secondary amounts if secondary exists
+ */
+export function formatDualCurrency(
+  amountBase: number | string,
+  currencyBase: string,
+  amountSecondary: number | string | null | undefined,
+  currencySecondary: string | null | undefined,
+  decimalSeparator: DecimalSeparator,
+  thousandsSeparator: ThousandsSeparator,
+  decimalPlaces: number = 2
+): string {
+  const baseFormatted = formatCurrency(
+    amountBase,
+    currencyBase,
+    decimalSeparator,
+    thousandsSeparator,
+    decimalPlaces
+  );
+
+  // If no secondary currency, just return base
+  if (!amountSecondary || !currencySecondary) {
+    return baseFormatted;
+  }
+
+  const secondaryFormatted = formatCurrency(
+    amountSecondary,
+    currencySecondary,
+    decimalSeparator,
+    thousandsSeparator,
+    decimalPlaces
+  );
+
+  // Return both with secondary in parentheses
+  return `${baseFormatted} (${secondaryFormatted})`;
+}
+
+/**
+ * Format transaction amount with smart display
+ * Primary display is always base currency, with optional secondary in parentheses
+ */
+export function formatTransactionAmount(
+  transaction: {
+    amountBase: number | string;
+    currencyBase?: string | null;
+    amountSecondary?: number | string | null;
+    currencySecondary?: string | null;
+  },
+  baseCurrency: string,
+  decimalSeparator: DecimalSeparator,
+  thousandsSeparator: ThousandsSeparator,
+  decimalPlaces: number = 2
+): string {
+  const effectiveCurrencyBase = transaction.currencyBase || baseCurrency;
+
+  return formatDualCurrency(
+    transaction.amountBase,
+    effectiveCurrencyBase,
+    transaction.amountSecondary,
+    transaction.currencySecondary,
+    decimalSeparator,
+    thousandsSeparator,
+    decimalPlaces
+  );
+}
+
+/**
+ * Get exchange rate from dual-currency transaction
+ * Returns null if not a dual-currency transaction
+ */
+export function getExchangeRate(
+  amountBase: number | string,
+  amountSecondary: number | string | null | undefined
+): number | null {
+  if (!amountSecondary) return null;
+
+  const base = typeof amountBase === "string" ? parseFloat(amountBase) : amountBase;
+  const secondary = typeof amountSecondary === "string" ? parseFloat(amountSecondary) : amountSecondary;
+
+  if (isNaN(base) || isNaN(secondary) || secondary === 0) return null;
+
+  return base / secondary;
+}
+
+/**
+ * Format exchange rate for display
+ */
+export function formatExchangeRate(
+  rate: number | null,
+  fromCurrency: string,
+  toCurrency: string
+): string | null {
+  if (!rate) return null;
+  return `1 ${fromCurrency} = ${rate.toFixed(8)} ${toCurrency}`;
+}

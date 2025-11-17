@@ -33,9 +33,10 @@ export default function EditTransactionPage(): React.JSX.Element {
   const [transaction, setTransaction] = React.useState<{
     type: "INCOME" | "EXPENSE";
     status: "DRAFT" | "POSTED";
-    amountOriginal: number;
-    currencyOriginal: string;
-    exchangeRateToBase: number;
+    amountBase: number;
+    currencyBase?: string | null;
+    amountSecondary?: number | null;
+    currencySecondary?: string | null;
     date: string;
     description: string;
     categoryId: string;
@@ -73,11 +74,12 @@ export default function EditTransactionPage(): React.JSX.Element {
           setTransaction({
             type: transactionData.transaction.type,
             status: transactionData.transaction.status,
-            amountOriginal: Number(transactionData.transaction.amountOriginal),
-            currencyOriginal: transactionData.transaction.currencyOriginal,
-            exchangeRateToBase: Number(
-              transactionData.transaction.exchangeRateToBase
-            ),
+            amountBase: Number(transactionData.transaction.amountBase),
+            currencyBase: transactionData.transaction.currencyBase || null,
+            amountSecondary: transactionData.transaction.amountSecondary
+              ? Number(transactionData.transaction.amountSecondary)
+              : null,
+            currencySecondary: transactionData.transaction.currencySecondary || null,
             date: transactionData.transaction.date,
             description: transactionData.transaction.description,
             categoryId: transactionData.transaction.categoryId,

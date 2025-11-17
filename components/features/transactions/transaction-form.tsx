@@ -39,6 +39,7 @@ import {
 import { toast } from "sonner";
 import { AlertCircle, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ISO_CURRENCIES, COMMON_CURRENCIES, isValidCurrencyCode } from "@/lib/currencies";
 
 interface Category {
   id: string;
@@ -80,9 +81,10 @@ interface OrgSettings {
 interface TransactionData {
   type: "INCOME" | "EXPENSE";
   status: "DRAFT" | "POSTED";
-  amountOriginal: number;
-  currencyOriginal: string;
-  exchangeRateToBase: number;
+  amountBase: number;
+  // Note: currencyBase is NOT a user input - always org's baseCurrency
+  amountSecondary?: number | null;
+  currencySecondary?: string | null;
   date: string;
   description: string;
   categoryId: string;
@@ -102,15 +104,6 @@ interface TransactionFormProps {
   softClosedBefore?: string | null;
 }
 
-const CURRENCIES = [
-  { code: "MYR", label: "MYR" },
-  { code: "USD", label: "USD" },
-  { code: "EUR", label: "EUR" },
-  { code: "GBP", label: "GBP" },
-  { code: "SGD", label: "SGD" },
-  { code: "OTHER", label: "Other..." },
-];
-
 export function TransactionForm({
   orgSlug,
   settings,
@@ -125,22 +118,22 @@ export function TransactionForm({
   const [showSoftClosedConfirm, setShowSoftClosedConfirm] = React.useState(false);
   const formRef = React.useRef<HTMLFormElement>(null);
 
-  // Form state
+  // Form state - dual-currency model
   const [type, setType] = React.useState<"INCOME" | "EXPENSE">(
     initialData?.type || "INCOME"
   );
   const [status, setStatus] = React.useState<"DRAFT" | "POSTED">(
     initialData?.status || "POSTED"
   );
-  const [amountOriginal, setAmountOriginal] = React.useState<string>(
-    initialData?.amountOriginal?.toString() || ""
+  const [amountBase, setAmountBase] = React.useState<string>(
+    initialData?.amountBase?.toString() || ""
   );
-  const [currency, setCurrency] = React.useState<string>(
-    initialData?.currencyOriginal || settings.baseCurrency
+  // Note: currencyBase is NOT a form field - always use org's baseCurrency
+  const [amountSecondary, setAmountSecondary] = React.useState<string>(
+    initialData?.amountSecondary?.toString() || ""
   );
-  const [customCurrency, setCustomCurrency] = React.useState<string>("");
-  const [exchangeRate, setExchangeRate] = React.useState<string>(
-    initialData?.exchangeRateToBase?.toString() || "1.0"
+  const [currencySecondary, setCurrencySecondary] = React.useState<string>(
+    initialData?.currencySecondary || ""
   );
   const [date, setDate] = React.useState<string>(
     initialData?.date
@@ -186,11 +179,12 @@ export function TransactionForm({
     undefined
   );
 
-  // Computed values
-  const finalCurrency =
-    currency === "OTHER" ? customCurrency.toUpperCase() : currency;
-  const isForeignCurrency = finalCurrency !== settings.baseCurrency;
-  const amountBase = parseFloat(amountOriginal) * parseFloat(exchangeRate) || 0;
+  // Computed values for dual-currency model
+  const isDualCurrency = !!(amountSecondary && currencySecondary);
+  const calculatedExchangeRate =
+    isDualCurrency && parseFloat(amountBase) > 0 && parseFloat(amountSecondary) > 0
+      ? (parseFloat(amountBase) / parseFloat(amountSecondary)).toFixed(8)
+      : null;
 
   // Filter and sort categories by type and sortOrder
   const filteredCategories = categories
@@ -309,24 +303,28 @@ export function TransactionForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    // Validation
-    if (!amountOriginal || parseFloat(amountOriginal) <= 0) {
-      toast.error("Please enter a valid amount");
+    // Validation - dual-currency model
+    if (!amountBase || parseFloat(amountBase) <= 0) {
+      toast.error("Please enter a valid base amount");
       return;
     }
 
-    if (currency === "OTHER" && !customCurrency.trim()) {
-      toast.error("Please enter a currency code");
+    // Validate secondary currency fields
+    const hasSecondaryAmount = amountSecondary && parseFloat(amountSecondary) > 0;
+    const hasSecondaryCurrency = currencySecondary && currencySecondary.trim();
+
+    if (hasSecondaryAmount !== !!hasSecondaryCurrency) {
+      toast.error("Please provide both secondary amount and currency, or neither");
       return;
     }
 
-    if (finalCurrency.length !== 3) {
-      toast.error("Currency code must be 3 characters");
+    if (currencySecondary && currencySecondary.length !== 3) {
+      toast.error("Secondary currency code must be 3 characters");
       return;
     }
 
-    if (!exchangeRate || parseFloat(exchangeRate) <= 0) {
-      toast.error("Please enter a valid exchange rate");
+    if (currencySecondary && !isValidCurrencyCode(currencySecondary)) {
+      toast.error("Invalid secondary currency code");
       return;
     }
 
@@ -374,9 +372,10 @@ export function TransactionForm({
           body: JSON.stringify({
             type,
             status,
-            amountOriginal: parseFloat(amountOriginal),
-            currencyOriginal: finalCurrency,
-            exchangeRateToBase: parseFloat(exchangeRate),
+            amountBase: parseFloat(amountBase),
+            // Note: currencyBase is NOT sent - server always uses org's baseCurrency
+            amountSecondary: hasSecondaryAmount ? parseFloat(amountSecondary) : null,
+            currencySecondary: hasSecondaryCurrency ? currencySecondary : null,
             date,
             description,
             categoryId,
@@ -476,86 +475,79 @@ export function TransactionForm({
         </Select>
       </div>
 
-      {/* Amount */}
+      {/* Base Amount */}
       <div className="space-y-2">
-        <Label htmlFor="amount">
-          Amount <span className="text-destructive">*</span>
+        <Label htmlFor="amountBase">
+          Base Amount ({settings.baseCurrency}) <span className="text-destructive">*</span>
         </Label>
         <Input
-          id="amount"
+          id="amountBase"
           type="number"
           step="0.01"
-          value={amountOriginal}
-          onChange={(e) => setAmountOriginal(e.target.value)}
+          value={amountBase}
+          onChange={(e) => setAmountBase(e.target.value)}
           placeholder="0.00"
           disabled={isLoading}
         />
+        <p className="text-xs text-muted-foreground">
+          Amount in your organization's base currency ({settings.baseCurrency})
+        </p>
       </div>
 
-      {/* Currency */}
+      {/* Secondary Amount (for dual-currency) */}
       <div className="space-y-2">
-        <Label htmlFor="currency">
-          Currency <span className="text-destructive">*</span>
+        <Label htmlFor="amountSecondary">
+          Original Amount (optional)
+        </Label>
+        <Input
+          id="amountSecondary"
+          type="number"
+          step="0.01"
+          value={amountSecondary}
+          onChange={(e) => setAmountSecondary(e.target.value)}
+          placeholder="0.00"
+          disabled={isLoading}
+        />
+        <p className="text-xs text-muted-foreground">
+          For foreign currency transactions, enter the original amount
+        </p>
+      </div>
+
+      {/* Secondary Currency */}
+      <div className="space-y-2">
+        <Label htmlFor="currencySecondary">
+          Original Currency (optional)
         </Label>
         <Select
-          value={currency}
-          onValueChange={setCurrency}
+          value={currencySecondary || "none"}
+          onValueChange={(value) => setCurrencySecondary(value === "none" ? "" : value)}
           disabled={isLoading}
         >
-          <SelectTrigger id="currency">
-            <SelectValue />
+          <SelectTrigger id="currencySecondary">
+            <SelectValue placeholder="Select currency" />
           </SelectTrigger>
-          <SelectContent>
-            {CURRENCIES.map((c) => (
+          <SelectContent className="max-h-[300px]">
+            <SelectItem value="none">None (base currency only)</SelectItem>
+            {COMMON_CURRENCIES.map((c) => (
               <SelectItem key={c.code} value={c.code}>
-                {c.label}
+                {c.code} – {c.name}
+              </SelectItem>
+            ))}
+            {ISO_CURRENCIES.filter(
+              c => !COMMON_CURRENCIES.some(cc => cc.code === c.code)
+            ).map((c) => (
+              <SelectItem key={c.code} value={c.code}>
+                {c.code} – {c.name}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">
-          Base currency: {settings.baseCurrency}
-        </p>
-      </div>
-
-      {currency === "OTHER" && (
-        <div className="space-y-2">
-          <Label htmlFor="customCurrency">
-            Currency Code <span className="text-destructive">*</span>
-          </Label>
-          <Input
-            id="customCurrency"
-            value={customCurrency}
-            onChange={(e) => setCustomCurrency(e.target.value.toUpperCase())}
-            placeholder="e.g., JPY, AUD"
-            maxLength={3}
-            className="uppercase"
-            disabled={isLoading}
-          />
-        </div>
-      )}
-
-      {/* Exchange Rate */}
-      {isForeignCurrency && (
-        <div className="space-y-2">
-          <Label htmlFor="exchangeRate">
-            Exchange Rate to {settings.baseCurrency}{" "}
-            <span className="text-destructive">*</span>
-          </Label>
-          <Input
-            id="exchangeRate"
-            type="number"
-            step="0.00000001"
-            value={exchangeRate}
-            onChange={(e) => setExchangeRate(e.target.value)}
-            placeholder="1.00000000"
-            disabled={isLoading}
-          />
+        {calculatedExchangeRate && (
           <p className="text-xs text-muted-foreground">
-            Base amount: {settings.baseCurrency} {amountBase.toFixed(2)}
+            Exchange rate: 1 {currencySecondary} = {calculatedExchangeRate} {settings.baseCurrency}
           </p>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Date */}
       <div className="space-y-2">

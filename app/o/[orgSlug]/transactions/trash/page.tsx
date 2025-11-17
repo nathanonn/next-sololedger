@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { formatDate, formatCurrency } from "@/lib/sololedger-formatters";
+import { formatDate, formatTransactionAmount } from "@/lib/sololedger-formatters";
 import type { DateFormat, DecimalSeparator, ThousandsSeparator } from "@prisma/client";
 import { ArrowLeft } from "lucide-react";
 
@@ -42,6 +42,9 @@ interface Transaction {
   deletedAt: string;
   description: string;
   amountBase: string;
+  currencyBase?: string | null;
+  amountSecondary?: string | null;
+  currencySecondary?: string | null;
   category: { id: string; name: string };
   account: { id: string; name: string };
   client?: { id: string; name: string } | null;
@@ -362,8 +365,8 @@ export default function TransactionsTrashPage(): React.JSX.Element {
                     </div>
                     <div className="text-sm font-semibold mt-2">
                       {transaction.type === "INCOME" ? "+" : "-"}
-                      {formatCurrency(
-                        Number(transaction.amountBase),
+                      {formatTransactionAmount(
+                        transaction,
                         settings.baseCurrency,
                         settings.decimalSeparator,
                         settings.thousandsSeparator

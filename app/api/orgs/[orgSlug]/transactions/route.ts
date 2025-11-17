@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
 import { requireMembership, getOrgBySlug } from "@/lib/org-helpers";
+import { isValidCurrencyCode } from "@/lib/currencies";
 
 export const runtime = "nodejs";
 
@@ -111,8 +112,15 @@ export async function GET(
     }
 
     // Currency filter
-    if (currency && currency.length === 3) {
-      where.currencyOriginal = currency.toUpperCase();
+    // - "BASE" or org's base currency = base-only transactions (currencySecondary = null)
+    // - Any other 3-letter code = dual-currency transactions with that secondary currency
+    if (currency) {
+      const upperCurrency = currency.toUpperCase();
+      if (upperCurrency === "BASE" || upperCurrency === orgSettings.baseCurrency.toUpperCase()) {
+        where.currencySecondary = null;
+      } else if (currency.length === 3) {
+        where.currencySecondary = upperCurrency;
+      }
     }
 
     // Get transactions
@@ -176,28 +184,59 @@ export async function POST(
       );
     }
 
-    // Validate request body
-    const transactionSchema = z.object({
-      type: z.enum(["INCOME", "EXPENSE"]),
-      status: z.enum(["DRAFT", "POSTED"]),
-      amountOriginal: z.number().positive("Amount must be greater than 0"),
-      currencyOriginal: z
-        .string()
-        .length(3)
-        .transform((val) => val.toUpperCase()),
-      exchangeRateToBase: z.number().positive(),
-      date: z.string().refine((val) => !isNaN(Date.parse(val)), {
-        message: "Invalid date",
-      }),
-      description: z.string().min(1, "Description is required"),
-      categoryId: z.string().min(1, "Category is required"),
-      accountId: z.string().min(1, "Account is required"),
-      vendorId: z.string().nullable().optional(),
-      vendorName: z.string().nullable().optional(),
-      clientId: z.string().nullable().optional(),
-      clientName: z.string().nullable().optional(),
-      notes: z.string().nullable().optional(),
+    // Load organization settings to get base currency
+    const orgSettings = await db.organizationSettings.findUnique({
+      where: { organizationId: org.id },
+      select: { baseCurrency: true },
     });
+
+    if (!orgSettings?.baseCurrency) {
+      return NextResponse.json(
+        { error: "Organization base currency not configured" },
+        { status: 400 }
+      );
+    }
+
+    const baseCurrency = orgSettings.baseCurrency.toUpperCase();
+
+    // Validate request body - dual-currency model
+    // NOTE: currencyBase is NOT accepted from client - always forced to org's baseCurrency
+    const transactionSchema = z
+      .object({
+        type: z.enum(["INCOME", "EXPENSE"]),
+        status: z.enum(["DRAFT", "POSTED"]),
+        amountBase: z.number().positive("Base amount must be greater than 0"),
+        amountSecondary: z.number().positive().nullable().optional(),
+        currencySecondary: z
+          .string()
+          .length(3)
+          .transform((val) => val.toUpperCase())
+          .nullable()
+          .optional(),
+        date: z.string().refine((val) => !isNaN(Date.parse(val)), {
+          message: "Invalid date",
+        }),
+        description: z.string().min(1, "Description is required"),
+        categoryId: z.string().min(1, "Category is required"),
+        accountId: z.string().min(1, "Account is required"),
+        vendorId: z.string().nullable().optional(),
+        vendorName: z.string().nullable().optional(),
+        clientId: z.string().nullable().optional(),
+        clientName: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
+      })
+      .refine(
+        (data) => {
+          // If either secondary amount or currency is provided, both must be provided
+          const hasSecondaryAmount = data.amountSecondary !== null && data.amountSecondary !== undefined;
+          const hasSecondaryCurrency = data.currencySecondary !== null && data.currencySecondary !== undefined;
+          return hasSecondaryAmount === hasSecondaryCurrency;
+        },
+        {
+          message: "Both amountSecondary and currencySecondary must be provided together",
+          path: ["amountSecondary"],
+        }
+      );
 
     const body = await request.json();
     const validation = transactionSchema.safeParse(body);
@@ -210,6 +249,14 @@ export async function POST(
     }
 
     const data = validation.data;
+
+    // Validate secondary currency code if provided
+    if (data.currencySecondary && !isValidCurrencyCode(data.currencySecondary)) {
+      return NextResponse.json(
+        { error: `Invalid currency code: ${data.currencySecondary}` },
+        { status: 400 }
+      );
+    }
 
     // Enforce strict per-type relationship rules (3/a)
     if (data.type === "INCOME") {
@@ -376,8 +423,25 @@ export async function POST(
       }
     }
 
-    // Calculate base amount
-    const amountBase = data.amountOriginal * data.exchangeRateToBase;
+    // Prepare dual-currency fields
+    const isDualCurrency = !!(data.amountSecondary && data.currencySecondary);
+
+    // Calculate legacy fields for backward compatibility
+    let legacyCurrencyOriginal: string;
+    let legacyAmountOriginal: number;
+    let legacyExchangeRateToBase: number;
+
+    if (isDualCurrency) {
+      // Dual-currency transaction: secondary is the "original" currency
+      legacyCurrencyOriginal = data.currencySecondary!;
+      legacyAmountOriginal = data.amountSecondary!;
+      legacyExchangeRateToBase = data.amountBase / data.amountSecondary!;
+    } else {
+      // Base-only transaction: base is the "original" currency
+      legacyCurrencyOriginal = baseCurrency;
+      legacyAmountOriginal = data.amountBase;
+      legacyExchangeRateToBase = 1.0;
+    }
 
     // Create transaction
     const transaction = await db.transaction.create({
@@ -386,10 +450,15 @@ export async function POST(
         userId: user.id,
         type: data.type,
         status: data.status,
-        amountOriginal: data.amountOriginal,
-        currencyOriginal: data.currencyOriginal,
-        exchangeRateToBase: data.exchangeRateToBase,
-        amountBase,
+        // Dual-currency model fields - currencyBase is ALWAYS org's baseCurrency
+        amountBase: data.amountBase,
+        currencyBase: baseCurrency,
+        amountSecondary: data.amountSecondary || null,
+        currencySecondary: data.currencySecondary || null,
+        // Legacy fields (for migration period)
+        amountOriginal: legacyAmountOriginal,
+        currencyOriginal: legacyCurrencyOriginal,
+        exchangeRateToBase: legacyExchangeRateToBase,
         date: transactionDate,
         description: data.description,
         categoryId: data.categoryId,

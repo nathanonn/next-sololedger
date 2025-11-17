@@ -106,19 +106,51 @@ export function DashboardFiltersBar({
   const [selectedCategoryIds, setSelectedCategoryIds] = React.useState<string[]>([]);
   const [categoryPopoverOpen, setCategoryPopoverOpen] = React.useState(false);
 
-  // Load filters from URL on mount
+  // Load filters from URL or localStorage on mount
   React.useEffect(() => {
+    // First, try to load from URL
     const urlFilters = parseFiltersFromURL(searchParams);
-    setDateKind(urlFilters.dateRange.kind);
-    setCustomFrom(urlFilters.dateRange.from || "");
-    setCustomTo(urlFilters.dateRange.to || "");
-    setView(urlFilters.view);
-    setOriginCurrency(urlFilters.originCurrency);
-    setSelectedCategoryIds(urlFilters.categoryIds);
+
+    // Check if URL has any filters (not just defaults)
+    const hasUrlFilters =
+      searchParams.get("dateKind") ||
+      searchParams.get("from") ||
+      searchParams.get("to") ||
+      searchParams.get("view") ||
+      searchParams.get("origin") ||
+      searchParams.get("categoryIds");
+
+    let filters: DashboardFilters;
+
+    if (!hasUrlFilters && typeof window !== "undefined") {
+      // No URL filters, try localStorage
+      const key = `dashboardFilters:${orgSlug}`;
+      const savedFilters = localStorage.getItem(key);
+
+      if (savedFilters) {
+        try {
+          filters = JSON.parse(savedFilters);
+        } catch {
+          filters = urlFilters; // Fallback to defaults if parse fails
+        }
+      } else {
+        filters = urlFilters; // No saved filters, use defaults
+      }
+    } else {
+      filters = urlFilters; // Use URL filters
+    }
+
+    // Apply filters to state
+    setDateKind(filters.dateRange.kind);
+    setCustomFrom(filters.dateRange.from || "");
+    setCustomTo(filters.dateRange.to || "");
+    setView(filters.view);
+    setOriginCurrency(filters.originCurrency);
+    setSelectedCategoryIds(filters.categoryIds);
 
     // Notify parent
-    onFiltersChange(urlFilters);
-  }, [searchParams, onFiltersChange]);
+    onFiltersChange(filters);
+  }, [searchParams, onFiltersChange, orgSlug]);
 
   // Apply filters
   const handleApplyFilters = React.useCallback(() => {

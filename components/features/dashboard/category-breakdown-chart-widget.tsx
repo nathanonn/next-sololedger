@@ -33,6 +33,7 @@ interface CategoryBreakdownChartWidgetProps {
   decimalSeparator: DecimalSeparator;
   thousandsSeparator: ThousandsSeparator;
   defaultTopN?: number;
+  currentPeriod: { from: string; to: string }; // Actual date bounds for drill-down
 }
 
 /**
@@ -58,6 +59,7 @@ export function CategoryBreakdownChartWidget({
   decimalSeparator,
   thousandsSeparator,
   defaultTopN = 10,
+  currentPeriod,
 }: CategoryBreakdownChartWidgetProps) {
   const router = useRouter();
   const [topN, setTopN] = React.useState(defaultTopN);
@@ -85,19 +87,21 @@ export function CategoryBreakdownChartWidget({
 
   // Handle click on bar (drill-down to transactions)
   const handleBarClick = (data: { categoryId: string }) => {
-    if (!data || data.categoryId === "other") return;
+    // Don't allow drill-down on "Other" buckets
+    if (
+      !data ||
+      data.categoryId === "other" ||
+      data.categoryId === "other-income" ||
+      data.categoryId === "other-expense"
+    )
+      return;
 
     // Build query params preserving current filters and adding category
     const params = new URLSearchParams();
 
-    // Add date range from filters
-    if (filters.dateRange.kind === "custom") {
-      if (filters.dateRange.from) params.set("from", filters.dateRange.from);
-      if (filters.dateRange.to) params.set("to", filters.dateRange.to);
-    } else {
-      // For non-custom ranges, we'll let the transactions page use the same default
-      params.set("dateKind", filters.dateRange.kind);
-    }
+    // Always add date range as from/to (using actual computed period)
+    params.set("from", currentPeriod.from);
+    params.set("to", currentPeriod.to);
 
     // Add category
     params.set("categoryIds", data.categoryId);
@@ -142,9 +146,11 @@ export function CategoryBreakdownChartWidget({
         <p className="text-sm text-muted-foreground">
           {data.count} transaction{data.count !== 1 ? "s" : ""}
         </p>
-        {data.categoryId !== "other" && (
-          <p className="text-xs text-muted-foreground mt-2">Click to view transactions</p>
-        )}
+        {data.categoryId !== "other" &&
+          data.categoryId !== "other-income" &&
+          data.categoryId !== "other-expense" && (
+            <p className="text-xs text-muted-foreground mt-2">Click to view transactions</p>
+          )}
       </div>
     );
   };
@@ -210,7 +216,13 @@ export function CategoryBreakdownChartWidget({
                   <Cell
                     key={`cell-${index}`}
                     fill={entry.color}
-                    cursor={entry.categoryId !== "other" ? "pointer" : "default"}
+                    cursor={
+                      entry.categoryId !== "other" &&
+                      entry.categoryId !== "other-income" &&
+                      entry.categoryId !== "other-expense"
+                        ? "pointer"
+                        : "default"
+                    }
                   />
                 ))}
               </Bar>

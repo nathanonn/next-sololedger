@@ -130,12 +130,13 @@ export function DashboardClient({
     );
   };
 
-  // Get visible widgets sorted by order
-  const visibleWidgets = React.useMemo(() => {
-    return layout
-      .filter((item: DashboardLayoutItem) => item.visible)
-      .sort((a: DashboardLayoutItem, b: DashboardLayoutItem) => a.order - b.order);
-  }, [layout]);
+  // Get visible widgets sorted by order (or all widgets in customize mode)
+  const displayedWidgets = React.useMemo(() => {
+    const filtered = customizeMode
+      ? layout // Show all widgets in customize mode
+      : layout.filter((item: DashboardLayoutItem) => item.visible);
+    return filtered.sort((a: DashboardLayoutItem, b: DashboardLayoutItem) => a.order - b.order);
+  }, [layout, customizeMode]);
 
   // Render trend indicator
   const renderTrend = (deltaPct: number | null, isExpense: boolean = false) => {
@@ -301,21 +302,24 @@ export function DashboardClient({
 
       {/* Widgets Grid */}
       <div className="grid gap-6 md:grid-cols-2">
-        {visibleWidgets.map((widgetItem: DashboardLayoutItem) => {
+        {displayedWidgets.map((widgetItem: DashboardLayoutItem) => {
           const widgetId = widgetItem.widgetId;
 
           return (
-            <div key={widgetId} className="relative">
+            <div
+              key={widgetId}
+              className={`relative ${!widgetItem.visible && customizeMode ? "opacity-50" : ""}`}
+            >
               {/* Widget Visibility Toggle (in customize mode) */}
               {customizeMode && (
-                <div className="absolute top-4 right-4 z-10 flex items-center gap-2 bg-background border rounded-lg px-3 py-2">
+                <div className="absolute top-4 right-4 z-10 flex items-center gap-2 bg-background border rounded-lg px-3 py-2 shadow-md">
                   <Switch
                     id={`visible-${widgetId}`}
                     checked={widgetItem.visible}
                     onCheckedChange={() => toggleWidgetVisibility(widgetId)}
                   />
                   <Label htmlFor={`visible-${widgetId}`} className="text-sm cursor-pointer">
-                    Visible
+                    {widgetItem.visible ? "Visible" : "Hidden"}
                   </Label>
                 </div>
               )}
@@ -340,6 +344,7 @@ export function DashboardClient({
                   baseCurrency={settings.baseCurrency}
                   decimalSeparator={settings.decimalSeparator}
                   thousandsSeparator={settings.thousandsSeparator}
+                  currentPeriod={summary.currentPeriod}
                 />
               )}
 

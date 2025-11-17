@@ -288,11 +288,16 @@ export async function getDashboardMonthlyTrends(
 
   // Generate all months in range (fill gaps with zeros)
   const result: DashboardMonthlyPoint[] = [];
-  const currentDate = new Date(from);
-  const endDate = new Date(to);
 
-  while (currentDate <= endDate) {
-    const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}`;
+  // Normalize to first day of month to prevent skipping months when from date is 29-31
+  const startDate = new Date(from);
+  startDate.setDate(1); // Normalize to first of month
+
+  const endDateBound = new Date(to);
+  endDateBound.setDate(1); // Normalize to first of month
+
+  while (startDate <= endDateBound) {
+    const monthKey = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}`;
     const data = monthlyMap.get(monthKey) || { income: 0, expenses: 0 };
 
     result.push({
@@ -302,8 +307,8 @@ export async function getDashboardMonthlyTrends(
       profitLoss: data.income - data.expenses,
     });
 
-    // Move to next month
-    currentDate.setMonth(currentDate.getMonth() + 1);
+    // Move to next month (safe now that we're always on day 1)
+    startDate.setMonth(startDate.getMonth() + 1);
   }
 
   return result;
@@ -393,20 +398,43 @@ export async function getDashboardCategoryBreakdown(
     icon: item.icon,
   }));
 
-  // Add "Other" bucket if there are remaining items
+  // Add "Other" buckets if there are remaining items, split by type
   if (restItems.length > 0) {
-    const otherAmount = restItems.reduce((sum, item) => sum + item.amount, 0);
-    const otherCount = restItems.reduce((sum, item) => sum + item.count, 0);
+    // Separate by type
+    const incomeItems = restItems.filter((item) => item.type === "INCOME");
+    const expenseItems = restItems.filter((item) => item.type === "EXPENSE");
 
-    result.push({
-      categoryId: "other",
-      name: "Other",
-      type: restItems[0].type, // Use type from first item (or could be mixed)
-      amountBase: otherAmount,
-      transactionCount: otherCount,
-      color: null,
-      icon: null,
-    });
+    // Add "Other (Income)" if there are income items
+    if (incomeItems.length > 0) {
+      const otherIncomeAmount = incomeItems.reduce((sum, item) => sum + item.amount, 0);
+      const otherIncomeCount = incomeItems.reduce((sum, item) => sum + item.count, 0);
+
+      result.push({
+        categoryId: "other-income",
+        name: "Other (Income)",
+        type: "INCOME",
+        amountBase: otherIncomeAmount,
+        transactionCount: otherIncomeCount,
+        color: null,
+        icon: null,
+      });
+    }
+
+    // Add "Other (Expense)" if there are expense items
+    if (expenseItems.length > 0) {
+      const otherExpenseAmount = expenseItems.reduce((sum, item) => sum + item.amount, 0);
+      const otherExpenseCount = expenseItems.reduce((sum, item) => sum + item.count, 0);
+
+      result.push({
+        categoryId: "other-expense",
+        name: "Other (Expense)",
+        type: "EXPENSE",
+        amountBase: otherExpenseAmount,
+        transactionCount: otherExpenseCount,
+        color: null,
+        icon: null,
+      });
+    }
   }
 
   return result;

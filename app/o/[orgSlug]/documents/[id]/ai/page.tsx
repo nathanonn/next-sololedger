@@ -32,7 +32,10 @@ import {
   ZoomIn,
   ZoomOut,
   AlertCircle,
+  Plus,
+  Trash2,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ConfidenceBadge } from "@/components/features/documents/extraction/confidence-badge";
 import type { DocumentExtractionV1 } from "@/lib/ai/document-schemas";
 
@@ -81,8 +84,28 @@ export default function DocumentAIReviewPage(): React.JSX.Element {
   const [tipAmount, setTipAmount] = React.useState("");
   const [tipAmountConfidence, setTipAmountConfidence] = React.useState<number | null>(null);
 
+  // Line items state
+  type LineItem = {
+    description: string | null;
+    quantity: number | null;
+    unitPrice: number | null;
+    lineTotal: number | null;
+    taxAmount: number | null;
+    categoryName: string | null;
+    confidence: number;
+  };
+  const [lineItems, setLineItems] = React.useState<LineItem[]>([]);
+  const [splitIntoMultiple, setSplitIntoMultiple] = React.useState(false);
+
   // Save option
   const [saveOption, setSaveOption] = React.useState<"create" | "update" | "draft">("draft");
+
+  // Update transaction state
+  const [selectedTransactionId, setSelectedTransactionId] = React.useState<string>("");
+  const [selectedTransaction, setSelectedTransaction] = React.useState<any>(null);
+  const [transactions, setTransactions] = React.useState<any[]>([]);
+  const [fieldUpdates, setFieldUpdates] = React.useState<Record<string, boolean>>({});
+  const [isLoadingTransactions, setIsLoadingTransactions] = React.useState(false);
 
   // Document preview zoom
   const [zoom, setZoom] = React.useState(100);
@@ -147,6 +170,9 @@ export default function DocumentAIReviewPage(): React.JSX.Element {
         setTaxAmountConfidence(payload.totals.taxAmount?.confidence || null);
         setTipAmount(payload.totals.tipAmount?.value?.toString() || "");
         setTipAmountConfidence(payload.totals.tipAmount?.confidence || null);
+
+        // Initialize line items
+        setLineItems(payload.lineItems || []);
       } catch (error) {
         console.error("Error loading extraction:", error);
         toast.error("Failed to load extraction");
@@ -158,6 +184,81 @@ export default function DocumentAIReviewPage(): React.JSX.Element {
 
     loadExtraction();
   }, [orgSlug, documentId, router]);
+
+  // Load transactions for update option
+  React.useEffect(() => {
+    if (saveOption === "update") {
+      const loadTransactions = async () => {
+        setIsLoadingTransactions(true);
+        try {
+          const response = await fetch(`/api/orgs/${orgSlug}/transactions?status=DRAFT`);
+          if (response.ok) {
+            const { transactions } = await response.json();
+            setTransactions(transactions || []);
+          }
+        } catch (error) {
+          console.error("Error loading transactions:", error);
+        } finally {
+          setIsLoadingTransactions(false);
+        }
+      };
+      loadTransactions();
+    }
+  }, [saveOption, orgSlug]);
+
+  // Load selected transaction details
+  React.useEffect(() => {
+    if (selectedTransactionId) {
+      const loadTransaction = async () => {
+        try {
+          const response = await fetch(`/api/orgs/${orgSlug}/transactions/${selectedTransactionId}`);
+          if (response.ok) {
+            const { transaction } = await response.json();
+            setSelectedTransaction(transaction);
+            // Initialize all fields as unchecked
+            setFieldUpdates({
+              date: false,
+              description: false,
+              amount: false,
+              vendor: false,
+            });
+          }
+        } catch (error) {
+          console.error("Error loading transaction:", error);
+        }
+      };
+      loadTransaction();
+    } else {
+      setSelectedTransaction(null);
+      setFieldUpdates({});
+    }
+  }, [selectedTransactionId, orgSlug]);
+
+  // Line item handlers
+  const handleAddLineItem = () => {
+    setLineItems([
+      ...lineItems,
+      {
+        description: "",
+        quantity: null,
+        unitPrice: null,
+        lineTotal: null,
+        taxAmount: null,
+        categoryName: null,
+        confidence: 0.5,
+      },
+    ]);
+  };
+
+  const handleRemoveLineItem = (index: number) => {
+    setLineItems(lineItems.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateLineItem = (index: number, field: keyof LineItem, value: any) => {
+    const updated = [...lineItems];
+    updated[index] = { ...updated[index], [field]: value };
+    setLineItems(updated);
+  };
 
   const handleSave = async () => {
     if (!extraction) return;
@@ -200,6 +301,7 @@ export default function DocumentAIReviewPage(): React.JSX.Element {
               rawText: tipAmount || null,
             },
           },
+          lineItems,
         };
 
         const response = await fetch(
@@ -219,156 +321,249 @@ export default function DocumentAIReviewPage(): React.JSX.Element {
 
         toast.success("Draft saved successfully");
       } else if (saveOption === "create") {
-        // Create transaction from extraction
+        // Create transaction(s) from extraction
         const amount = grandTotal ? parseFloat(grandTotal) : 0;
 
         if (!amount || amount <= 0) {
           toast.error("Please enter a valid amount");
+          setIsSaving(false);
           return;
         }
 
         if (!transactionDate) {
           toast.error("Please enter a transaction date");
+          setIsSaving(false);
           return;
         }
 
-        // Save draft first, then navigate to transaction creation with pre-filled data
-        // This allows user to select category and account
-        const updatedPayload = {
-          ...extraction.payload,
-          vendor: {
-            name: vendorName || null,
-            confidence: vendorConfidence,
-          },
-          client: {
-            name: clientName || null,
-            confidence: clientConfidence,
-          },
-          transactionDate: transactionDate || null,
-          currencyCode: currencyCode || null,
-          totals: {
-            grandTotal: {
-              value: amount,
-              confidence: grandTotalConfidence || 0,
-              rawText: grandTotal || null,
-            },
-            netAmount: {
-              value: netAmount ? parseFloat(netAmount) : null,
-              confidence: netAmountConfidence || 0,
-              rawText: netAmount || null,
-            },
-            taxAmount: {
-              value: taxAmount ? parseFloat(taxAmount) : null,
-              confidence: taxAmountConfidence || 0,
-              rawText: taxAmount || null,
-            },
-            tipAmount: {
-              value: tipAmount ? parseFloat(tipAmount) : null,
-              confidence: tipAmountConfidence || 0,
-              rawText: tipAmount || null,
-            },
-          },
-        };
+        // First, get default category and account
+        const categoriesRes = await fetch(`/api/orgs/${orgSlug}/categories?type=EXPENSE`);
+        const accountsRes = await fetch(`/api/orgs/${orgSlug}/accounts`);
 
-        // Save the reviewed extraction
-        await fetch(
-          `/api/orgs/${orgSlug}/documents/${documentId}/ai/extractions/${extraction.id}`,
-          {
+        if (!categoriesRes.ok || !accountsRes.ok) {
+          toast.error("Failed to load categories or accounts");
+          setIsSaving(false);
+          return;
+        }
+
+        const { categories } = await categoriesRes.json();
+        const { accounts } = await accountsRes.json();
+
+        if (!categories || categories.length === 0) {
+          toast.error("No expense categories found. Please create a category first.");
+          setIsSaving(false);
+          return;
+        }
+
+        if (!accounts || accounts.length === 0) {
+          toast.error("No accounts found. Please create an account first.");
+          setIsSaving(false);
+          return;
+        }
+
+        // Use first available category and account
+        const defaultCategory = categories[0];
+        const defaultAccount = accounts[0];
+
+        const createdTransactionIds: string[] = [];
+
+        try {
+          if (splitIntoMultiple && lineItems.length > 0) {
+            // Create one transaction per line item
+            for (const item of lineItems) {
+              if (!item.lineTotal || item.lineTotal <= 0) continue;
+
+              const txPayload = {
+                type: "EXPENSE" as const,
+                status: "DRAFT" as const,
+                amountBase: item.lineTotal,
+                date: transactionDate,
+                description: item.description || "AI Extracted Transaction",
+                categoryId: defaultCategory.id,
+                accountId: defaultAccount.id,
+                vendorName: vendorName || null,
+                notes: `AI extracted from document. Please review category and account.`,
+              };
+
+              const txRes = await fetch(`/api/orgs/${orgSlug}/transactions`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(txPayload),
+              });
+
+              if (txRes.ok) {
+                const { transaction } = await txRes.json();
+                createdTransactionIds.push(transaction.id);
+
+                // Link transaction to document
+                await fetch(`/api/orgs/${orgSlug}/documents/${documentId}/transactions`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ transactionId: transaction.id }),
+                });
+              }
+            }
+          } else {
+            // Create single transaction from grand total
+            const txPayload = {
+              type: "EXPENSE" as const,
+              status: "DRAFT" as const,
+              amountBase: amount,
+              date: transactionDate,
+              description: vendorName || "AI Extracted Transaction",
+              categoryId: defaultCategory.id,
+              accountId: defaultAccount.id,
+              vendorName: vendorName || null,
+              notes: `AI extracted from document. Please review category and account.`,
+            };
+
+            const txRes = await fetch(`/api/orgs/${orgSlug}/transactions`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(txPayload),
+            });
+
+            if (txRes.ok) {
+              const { transaction } = await txRes.json();
+              createdTransactionIds.push(transaction.id);
+
+              // Link transaction to document
+              await fetch(`/api/orgs/${orgSlug}/documents/${documentId}/transactions`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ transactionId: transaction.id }),
+              });
+            }
+          }
+
+          if (createdTransactionIds.length === 0) {
+            throw new Error("No transactions were created");
+          }
+
+          // Update extraction status to APPLIED
+          const updatedPayload = {
+            ...extraction.payload,
+            vendor: { name: vendorName || null, confidence: vendorConfidence },
+            client: { name: clientName || null, confidence: clientConfidence },
+            transactionDate: transactionDate || null,
+            currencyCode: currencyCode || null,
+            totals: {
+              grandTotal: { value: amount, confidence: grandTotalConfidence || 0, rawText: grandTotal || null },
+              netAmount: { value: netAmount ? parseFloat(netAmount) : null, confidence: netAmountConfidence || 0, rawText: netAmount || null },
+              taxAmount: { value: taxAmount ? parseFloat(taxAmount) : null, confidence: taxAmountConfidence || 0, rawText: taxAmount || null },
+              tipAmount: { value: tipAmount ? parseFloat(tipAmount) : null, confidence: tipAmountConfidence || 0, rawText: tipAmount || null },
+            },
+            lineItems,
+          };
+
+          await fetch(`/api/orgs/${orgSlug}/documents/${documentId}/ai/extractions/${extraction.id}`, {
             method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ payload: updatedPayload }),
-          }
-        );
-
-        // For v1: Show instructions to create transaction manually
-        // v2 will add category/account pickers inline
-        toast.success(
-          "Extraction saved! To create a transaction, use the 'Link to Transactions' feature in the document detail page.",
-          { duration: 5000 }
-        );
-
-        // Navigate back to document detail
-        router.push(`/o/${orgSlug}/documents/${documentId}`);
-
-        // TODO for v2: Add category and account pickers to this screen
-        // Then uncomment the transaction creation flow below:
-        /*
-        // Get default account
-        const accountsResponse = await fetch(`/api/orgs/${orgSlug}/accounts`);
-        const accountsData = await accountsResponse.json();
-        const defaultAccount = accountsData.accounts?.find((a: any) => a.isDefault);
-
-        if (!defaultAccount) {
-          toast.error("No default account found. Please configure an account first.");
-          return;
-        }
-
-        // Get a default category (or let user select)
-        const categoriesResponse = await fetch(`/api/orgs/${orgSlug}/categories`);
-        const categoriesData = await categoriesResponse.json();
-        const defaultCategory = categoriesData.categories?.find((c: any) =>
-          c.type === "EXPENSE" && c.active
-        );
-
-        if (!defaultCategory) {
-          toast.error("No expense category found. Please create a category first.");
-          return;
-        }
-
-        const transactionPayload = {
-          type: "EXPENSE",
-          status: "DRAFT",
-          date: transactionDate,
-          description: vendorName || clientName || "AI Extracted Transaction",
-          amountBase: amount,
-          categoryId: defaultCategory.id,
-          accountId: defaultAccount.id,
-          vendorName: vendorName || null,
-          clientName: clientName || null,
-        };
-
-        const response = await fetch(
-          `/api/orgs/${orgSlug}/transactions`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(transactionPayload),
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error("Failed to create transaction");
-        }
-
-        const transactionData = await response.json();
-        const transaction = transactionData.transaction;
-
-        // Link transaction to document
-        await fetch(
-          `/api/orgs/${orgSlug}/documents/${documentId}/transactions`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              transactionIds: [transaction.id],
+              payload: updatedPayload,
+              status: "APPLIED",
+              appliedTransactionIds: createdTransactionIds,
             }),
-          }
-        );
+          });
 
-        toast.success("Transaction created successfully");
-        router.push(`/o/${orgSlug}/transactions/${transaction.id}`);
-        */
+          toast.success(`Created ${createdTransactionIds.length} draft transaction(s). Please review category and account.`);
+          router.push(`/o/${orgSlug}/documents/${documentId}`);
+        } catch (error) {
+          console.error("Transaction creation error:", error);
+          toast.error("Failed to create transactions. Please try again.");
+          setIsSaving(false);
+          return;
+        }
       } else {
         // Update existing transaction
-        toast.info(
-          "Update existing transaction feature will be implemented in a future update."
-        );
+        if (!selectedTransactionId || !selectedTransaction) {
+          toast.error("Please select a transaction to update");
+          setIsSaving(false);
+          return;
+        }
+
+        // Check if any fields are selected for update
+        const hasUpdates = Object.values(fieldUpdates).some((v) => v);
+        if (!hasUpdates) {
+          toast.error("Please select at least one field to update");
+          setIsSaving(false);
+          return;
+        }
+
+        try {
+          // Build update payload with only selected fields
+          const updatePayload: any = {};
+
+          if (fieldUpdates.date && transactionDate) {
+            updatePayload.date = transactionDate;
+          }
+
+          if (fieldUpdates.description && vendorName) {
+            updatePayload.description = vendorName;
+          }
+
+          if (fieldUpdates.amount && grandTotal) {
+            updatePayload.amountBase = parseFloat(grandTotal);
+          }
+
+          if (fieldUpdates.vendor && vendorName) {
+            updatePayload.vendorName = vendorName;
+          }
+
+          // Update the transaction
+          const txResponse = await fetch(`/api/orgs/${orgSlug}/transactions/${selectedTransactionId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(updatePayload),
+          });
+
+          if (!txResponse.ok) {
+            throw new Error("Failed to update transaction");
+          }
+
+          // Link transaction to document if not already linked
+          await fetch(`/api/orgs/${orgSlug}/documents/${documentId}/transactions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ transactionId: selectedTransactionId }),
+          }).catch(() => {
+            // Ignore error if already linked
+          });
+
+          // Update extraction status to APPLIED
+          const updatedPayload = {
+            ...extraction.payload,
+            vendor: { name: vendorName || null, confidence: vendorConfidence },
+            client: { name: clientName || null, confidence: clientConfidence },
+            transactionDate: transactionDate || null,
+            currencyCode: currencyCode || null,
+            totals: {
+              grandTotal: { value: grandTotal ? parseFloat(grandTotal) : null, confidence: grandTotalConfidence || 0, rawText: grandTotal || null },
+              netAmount: { value: netAmount ? parseFloat(netAmount) : null, confidence: netAmountConfidence || 0, rawText: netAmount || null },
+              taxAmount: { value: taxAmount ? parseFloat(taxAmount) : null, confidence: taxAmountConfidence || 0, rawText: taxAmount || null },
+              tipAmount: { value: tipAmount ? parseFloat(tipAmount) : null, confidence: tipAmountConfidence || 0, rawText: tipAmount || null },
+            },
+            lineItems,
+          };
+
+          await fetch(`/api/orgs/${orgSlug}/documents/${documentId}/ai/extractions/${extraction.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              payload: updatedPayload,
+              status: "APPLIED",
+              appliedTransactionIds: [selectedTransactionId],
+            }),
+          });
+
+          toast.success("Transaction updated successfully");
+          router.push(`/o/${orgSlug}/documents/${documentId}`);
+        } catch (error) {
+          console.error("Update error:", error);
+          toast.error("Failed to update transaction");
+          setIsSaving(false);
+          return;
+        }
       }
     } catch (error) {
       console.error("Error saving:", error);
@@ -624,35 +819,134 @@ export default function DocumentAIReviewPage(): React.JSX.Element {
           </Card>
 
           {/* Line Items Section */}
-          {extraction.payload.lineItems && extraction.payload.lineItems.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Line Items</CardTitle>
-                <CardDescription>
-                  {extraction.payload.lineItems.length} item(s) extracted
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {extraction.payload.lineItems.map((item, index) => (
-                    <div key={index} className="p-3 border rounded-lg space-y-2">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">Line Items</CardTitle>
+                  <CardDescription>
+                    {lineItems.length} item(s)
+                  </CardDescription>
+                </div>
+                <Button variant="outline" size="sm" onClick={handleAddLineItem}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Item
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {lineItems.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No line items. Click "Add Item" to create one.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {lineItems.map((item, index) => (
+                    <div key={index} className="p-4 border rounded-lg space-y-3">
                       <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1">
-                          <p className="font-medium">{item.description || "Untitled"}</p>
-                          <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
-                            {item.quantity && <span>Qty: {item.quantity}</span>}
-                            {item.unitPrice && <span>@ {item.unitPrice}</span>}
-                            {item.lineTotal && <span className="font-medium">Total: {item.lineTotal}</span>}
+                        <div className="flex-1 space-y-3">
+                          {/* Description */}
+                          <div>
+                            <Label className="text-xs">Description</Label>
+                            <Input
+                              value={item.description || ""}
+                              onChange={(e) => handleUpdateLineItem(index, "description", e.target.value)}
+                              placeholder="Item description"
+                            />
+                          </div>
+
+                          {/* Quantity, Unit Price, Line Total */}
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <Label className="text-xs">Quantity</Label>
+                              <Input
+                                type="number"
+                                value={item.quantity ?? ""}
+                                onChange={(e) => handleUpdateLineItem(index, "quantity", e.target.value ? parseFloat(e.target.value) : null)}
+                                placeholder="0"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Unit Price</Label>
+                              <Input
+                                type="number"
+                                value={item.unitPrice ?? ""}
+                                onChange={(e) => handleUpdateLineItem(index, "unitPrice", e.target.value ? parseFloat(e.target.value) : null)}
+                                placeholder="0.00"
+                                step="0.01"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Line Total</Label>
+                              <Input
+                                type="number"
+                                value={item.lineTotal ?? ""}
+                                onChange={(e) => handleUpdateLineItem(index, "lineTotal", e.target.value ? parseFloat(e.target.value) : null)}
+                                placeholder="0.00"
+                                step="0.01"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Tax Amount & Category */}
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <Label className="text-xs">Tax Amount</Label>
+                              <Input
+                                type="number"
+                                value={item.taxAmount ?? ""}
+                                onChange={(e) => handleUpdateLineItem(index, "taxAmount", e.target.value ? parseFloat(e.target.value) : null)}
+                                placeholder="0.00"
+                                step="0.01"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Category</Label>
+                              <Input
+                                value={item.categoryName || ""}
+                                onChange={(e) => handleUpdateLineItem(index, "categoryName", e.target.value)}
+                                placeholder="Category name"
+                              />
+                            </div>
                           </div>
                         </div>
-                        <ConfidenceBadge confidence={item.confidence} />
+
+                        {/* Confidence & Remove */}
+                        <div className="flex flex-col items-end gap-2">
+                          <ConfidenceBadge confidence={item.confidence} />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveLineItem(index)}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              )}
+
+              {/* Split Toggle */}
+              <div className="flex items-center space-x-2 pt-2 border-t">
+                <Checkbox
+                  id="split-toggle"
+                  checked={splitIntoMultiple}
+                  onCheckedChange={(checked) => setSplitIntoMultiple(checked as boolean)}
+                />
+                <Label htmlFor="split-toggle" className="text-sm cursor-pointer">
+                  Split into multiple transactions
+                </Label>
+              </div>
+              {splitIntoMultiple && (
+                <p className="text-xs text-muted-foreground">
+                  When enabled, each line item will create a separate transaction.
+                </p>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Save Options */}
           <Card>
@@ -687,9 +981,127 @@ export default function DocumentAIReviewPage(): React.JSX.Element {
               )}
 
               {saveOption === "update" && (
-                <p className="text-sm text-muted-foreground">
-                  Select an existing transaction to update with the extracted data.
-                </p>
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    Select an existing transaction to update with the extracted data.
+                  </p>
+
+                  {/* Transaction Picker */}
+                  <div>
+                    <Label>Select Transaction</Label>
+                    <Select value={selectedTransactionId} onValueChange={setSelectedTransactionId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={isLoadingTransactions ? "Loading..." : "Choose a transaction"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {transactions.map((tx) => (
+                          <SelectItem key={tx.id} value={tx.id}>
+                            {tx.description} - {tx.amountBase} ({new Date(tx.date).toLocaleDateString()})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Diff Panel */}
+                  {selectedTransaction && (
+                    <div className="border rounded-lg p-4 space-y-3 bg-muted/50">
+                      <h4 className="font-medium text-sm">Select Fields to Update</h4>
+
+                      {/* Date Field */}
+                      <div className="flex items-start gap-3 p-3 border rounded bg-background">
+                        <Checkbox
+                          id="update-date"
+                          checked={fieldUpdates.date || false}
+                          onCheckedChange={(checked) => setFieldUpdates({ ...fieldUpdates, date: checked as boolean })}
+                        />
+                        <div className="flex-1">
+                          <Label htmlFor="update-date" className="text-sm font-medium cursor-pointer">Date</Label>
+                          <div className="grid grid-cols-2 gap-2 mt-1 text-xs">
+                            <div>
+                              <p className="text-muted-foreground">Current:</p>
+                              <p>{new Date(selectedTransaction.date).toLocaleDateString()}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Extracted:</p>
+                              <p>{transactionDate ? new Date(transactionDate).toLocaleDateString() : "—"}</p>
+                              {transactionDate && <ConfidenceBadge confidence={0.8} className="mt-1" />}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Description Field */}
+                      <div className="flex items-start gap-3 p-3 border rounded bg-background">
+                        <Checkbox
+                          id="update-description"
+                          checked={fieldUpdates.description || false}
+                          onCheckedChange={(checked) => setFieldUpdates({ ...fieldUpdates, description: checked as boolean })}
+                        />
+                        <div className="flex-1">
+                          <Label htmlFor="update-description" className="text-sm font-medium cursor-pointer">Description</Label>
+                          <div className="grid grid-cols-2 gap-2 mt-1 text-xs">
+                            <div>
+                              <p className="text-muted-foreground">Current:</p>
+                              <p>{selectedTransaction.description || "—"}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Extracted:</p>
+                              <p>{vendorName || "—"}</p>
+                              {vendorName && <ConfidenceBadge confidence={vendorConfidence || 0} className="mt-1" />}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Amount Field */}
+                      <div className="flex items-start gap-3 p-3 border rounded bg-background">
+                        <Checkbox
+                          id="update-amount"
+                          checked={fieldUpdates.amount || false}
+                          onCheckedChange={(checked) => setFieldUpdates({ ...fieldUpdates, amount: checked as boolean })}
+                        />
+                        <div className="flex-1">
+                          <Label htmlFor="update-amount" className="text-sm font-medium cursor-pointer">Amount</Label>
+                          <div className="grid grid-cols-2 gap-2 mt-1 text-xs">
+                            <div>
+                              <p className="text-muted-foreground">Current:</p>
+                              <p>{selectedTransaction.amountBase}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Extracted:</p>
+                              <p>{grandTotal || "—"}</p>
+                              {grandTotal && <ConfidenceBadge confidence={grandTotalConfidence || 0} className="mt-1" />}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Vendor Field */}
+                      <div className="flex items-start gap-3 p-3 border rounded bg-background">
+                        <Checkbox
+                          id="update-vendor"
+                          checked={fieldUpdates.vendor || false}
+                          onCheckedChange={(checked) => setFieldUpdates({ ...fieldUpdates, vendor: checked as boolean })}
+                        />
+                        <div className="flex-1">
+                          <Label htmlFor="update-vendor" className="text-sm font-medium cursor-pointer">Vendor</Label>
+                          <div className="grid grid-cols-2 gap-2 mt-1 text-xs">
+                            <div>
+                              <p className="text-muted-foreground">Current:</p>
+                              <p>{selectedTransaction.vendorName || selectedTransaction.vendor?.name || "—"}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Extracted:</p>
+                              <p>{vendorName || "—"}</p>
+                              {vendorName && <ConfidenceBadge confidence={vendorConfidence || 0} className="mt-1" />}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
 
               <Separator />

@@ -83,6 +83,28 @@ export function ExtractionSummaryCard({
     }
   }, [orgSlug, documentId]);
 
+  const handleSetActive = async (extractionId: string) => {
+    try {
+      const response = await fetch(
+        `/api/orgs/${orgSlug}/documents/${documentId}/ai/extractions/${extractionId}/set-active`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to set active extraction");
+      }
+
+      toast.success("Active extraction updated");
+      loadExtractions();
+    } catch (error) {
+      console.error("Error setting active:", error);
+      toast.error("Failed to set active extraction");
+    }
+  };
+
   React.useEffect(() => {
     loadExtractions();
   }, [loadExtractions]);
@@ -268,12 +290,24 @@ export function ExtractionSummaryCard({
                               {formatDate(extraction.createdAt)}
                             </p>
                           </div>
-                          {extraction.overallConfidence !== null && (
-                            <ConfidenceBadge
-                              confidence={extraction.overallConfidence}
-                              className="text-xs"
-                            />
-                          )}
+                          <div className="flex items-center gap-2">
+                            {extraction.overallConfidence !== null && (
+                              <ConfidenceBadge
+                                confidence={extraction.overallConfidence}
+                                className="text-xs"
+                              />
+                            )}
+                            {!extraction.isActive && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSetActive(extraction.id)}
+                                className="text-xs h-7"
+                              >
+                                Set Active
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}

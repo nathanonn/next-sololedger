@@ -75,16 +75,31 @@ export function RunExtractionDialog({
   const [customPrompt, setCustomPrompt] = React.useState("");
   const [provider, setProvider] = React.useState<string>("default");
   const [modelName, setModelName] = React.useState<string>("default");
+  const [promptHistory, setPromptHistory] = React.useState<Array<{ templateKey: string | null; customPrompt: string | null }>>([]);
 
-  // Reset form when dialog opens
+  // Load prompt history when dialog opens
   React.useEffect(() => {
     if (open) {
       setTemplate("standard_receipt");
       setCustomPrompt("");
       setProvider("default");
       setModelName("default");
+
+      // Fetch prompt history
+      const loadHistory = async () => {
+        try {
+          const response = await fetch(`/api/orgs/${orgSlug}/documents/ai/prompt-history`);
+          if (response.ok) {
+            const { history } = await response.json();
+            setPromptHistory(history || []);
+          }
+        } catch (error) {
+          console.error("Error loading prompt history:", error);
+        }
+      };
+      loadHistory();
     }
-  }, [open]);
+  }, [open, orgSlug]);
 
   const handleRunExtraction = async () => {
     setIsRunning(true);
@@ -164,6 +179,37 @@ export function RunExtractionDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          {/* Prompt History */}
+          {promptHistory.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="history">Prompt History</Label>
+              <Select
+                value=""
+                onValueChange={(value) => {
+                  const historyItem = promptHistory[parseInt(value)];
+                  if (historyItem) {
+                    setTemplate((historyItem.templateKey as TemplateKey) || "standard_receipt");
+                    setCustomPrompt(historyItem.customPrompt || "");
+                  }
+                }}
+              >
+                <SelectTrigger id="history">
+                  <SelectValue placeholder="Select from previous prompts..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {promptHistory.map((item, index) => (
+                    <SelectItem key={index} value={String(index)}>
+                      {item.templateKey || "Custom"}{item.customPrompt && ` - ${item.customPrompt.substring(0, 50)}...`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Reuse a previous template and prompt combination
+              </p>
+            </div>
+          )}
+
           {/* Template Selection */}
           <div className="space-y-2">
             <Label htmlFor="template">Template</Label>

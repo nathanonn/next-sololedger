@@ -163,7 +163,7 @@ export async function PATCH(
 
     // Parse request body
     const body = await request.json();
-    const { payload } = body;
+    const { payload, status, appliedTransactionIds } = body;
 
     if (!payload) {
       return NextResponse.json(
@@ -200,34 +200,45 @@ export async function PATCH(
       );
     }
 
+    // Prepare update data
+    const updateData: any = {
+      payload: parsed.data as any,
+      status: status || 'REVIEWED_DRAFT',
+      // Update summary fields from payload
+      summaryTotalAmount: parsed.data.totals.grandTotal?.value ?? null,
+      summaryCurrency: parsed.data.currencyCode,
+      summaryTransactionDate: parsed.data.transactionDate
+        ? new Date(parsed.data.transactionDate)
+        : null,
+      overallConfidence: parsed.data.overallConfidence,
+    };
+
+    // Add appliedTransactionIds if provided
+    if (appliedTransactionIds) {
+      updateData.appliedTransactionIds = appliedTransactionIds;
+    }
+
     // Update extraction with new payload and status
     const updatedExtraction = await db.documentExtraction.update({
       where: {
         id: extractionId,
       },
-      data: {
-        payload: parsed.data as any,
-        status: 'REVIEWED_DRAFT',
-        // Update summary fields from payload
-        summaryTotalAmount: parsed.data.totals.grandTotal?.value ?? null,
-        summaryCurrency: parsed.data.currencyCode,
-        summaryTransactionDate: parsed.data.transactionDate
-          ? new Date(parsed.data.transactionDate)
-          : null,
-        overallConfidence: parsed.data.overallConfidence,
-      },
+      data: updateData,
     });
 
     // Log audit event
     await db.auditLog.create({
       data: {
-        action: 'document.extraction.review.save',
+        action: updatedExtraction.status === 'APPLIED'
+          ? 'document.extraction.apply.createTransaction'
+          : 'document.extraction.review.save',
         userId: user.id,
         organizationId: org.id,
         metadata: {
           documentId,
           extractionId: updatedExtraction.id,
-          status: 'REVIEWED_DRAFT',
+          status: updatedExtraction.status,
+          appliedTransactionIds: updatedExtraction.appliedTransactionIds,
         },
       },
     });

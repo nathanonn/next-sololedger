@@ -10,6 +10,13 @@ import { db } from '@/lib/db';
 import { extractDocument } from '@/lib/ai/document-extraction';
 import { ExtractDocumentRequestSchema } from '@/lib/ai/document-schemas';
 import { AiConfigError } from '@/lib/ai/config';
+import {
+  checkAiRateLimit,
+  isRateLimitError,
+  formatRateLimitError,
+  addRateLimitHeaders,
+  recordIpRequest,
+} from '@/lib/ai/rate-limit';
 import type { AiProvider } from '@/lib/ai/providers';
 import type { DocumentExtractionStatus } from '@prisma/client';
 
@@ -99,8 +106,11 @@ export async function POST(
       );
     }
 
-    // TODO: Implement rate limiting here
-    // await checkExtractionRateLimit(org.id, user.id);
+    // Rate limiting: Check org and IP limits
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0] ||
+               request.headers.get('x-real-ip') ||
+               undefined;
+    const rateLimitResult = await checkAiRateLimit(org.id, ip);
 
     // Run extraction
     const result = await extractDocument({
@@ -181,8 +191,13 @@ export async function POST(
       },
     });
 
-    // Return extraction response
-    return NextResponse.json(
+    // Record IP request for rate limiting
+    if (ip) {
+      recordIpRequest(ip);
+    }
+
+    // Return extraction response with rate limit headers
+    const response = NextResponse.json(
       {
         id: extraction.id,
         documentId: extraction.documentId,
@@ -206,8 +221,26 @@ export async function POST(
       },
       { status: 201 }
     );
+
+    // Add rate limit headers
+    const rateLimitHeaders = addRateLimitHeaders(rateLimitResult);
+    Object.entries(rateLimitHeaders).forEach(([key, value]) => {
+      response.headers.set(key, value);
+    });
+
+    return response;
   } catch (error) {
     console.error('Error running extraction:', error);
+
+    // Handle rate limit errors
+    if (isRateLimitError(error)) {
+      const { status, headers, body } = formatRateLimitError(error);
+      const response = NextResponse.json(body, { status });
+      Object.entries(headers).forEach(([key, value]) => {
+        response.headers.set(key, value);
+      });
+      return response;
+    }
 
     // Handle AI configuration errors with helpful messages
     if (error instanceof AiConfigError) {

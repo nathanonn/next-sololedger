@@ -1,367 +1,371 @@
-# AI Document Processing – UX Flow & Wireframes
+MCP Personal API Keys – UX Flow & Wireframes
 
-This document describes the UX flow and screen-by-screen ASCII wireframes for AI-powered document upload, extraction, review, and saving into transactions. It builds on the existing documents and transactions UI patterns and assumes AI is configured for the organization.
+This document outlines the UX flow and screen-by-screen ASCII wireframes for the personal API key feature and the API key exchange flow, optimized for MCP integration.
 
 ---
 
-## 1. High-Level UX Flow
+## 1. UX Flow Map (High-Level)
 
 ```text
-[Documents List]
-	↓ (Upload receipts/invoices/statements)
-	↓ (Run AI Extraction on a document)
+[User Dashboard / Shell]
+	|
+	v
+[User Menu / Settings]
+	|
+	v
+[API Access Page]
+  |            |             |
+  |            |             +--> [Edit API Key Modal]
+  |            |
+  |            +--> [Create API Key Modal]
+  |
+  +--> [Copy API Key Overlay]
 
-[Run Extraction Dialog]
-	- Choose template (Receipt / Invoice / Bank Statement Page / Custom)
-	- Optional custom prompt
-	- Optional provider/model override (advanced)
-	↓
-	↓
-[Extraction In Progress]
-	- Progress: Reading document → Extracting fields → Preparing summary
-	- Message: "Usually takes a few seconds"
-	↓
-	↓
-[AI Review Screen]
-	- Split-view: Document preview (left), Extracted fields (right)
-	- Confidence indicators per field
-	- Ability to correct fields and line items
-	- Choose Save Option:
-		• Create new transaction(s)
-		• Update existing transaction
-		• Save as draft (document only)
-	↓
-	↓
-[Post-Save]
-	- Confirmation
-	- Links to created/updated transactions
-	- Option to stay in review or navigate
-
-Reprocessing:
-	- From Document detail/AI section → View history → Re-run extraction with different template/prompt → Choose active extraction and (optionally) re-save.
+[MCP Server Setup]
+	|
+	v
+[User pastes API Key into MCP config]
+	|
+	v
+[MCP → Exchange Flow]
+	|
+	v
+[POST /api/auth/api-key/exchange]
+	|
+	v
+[JWT Access Token Returned]
+	|
+	v
+[MCP calls existing APIs with Bearer token]
 ```
 
 ---
 
-## 2. Screen: Documents List (with AI Entry Points)
+## 2. API Access Entry Point in Shell
 
-Route: `/o/[orgSlug]/documents`
+### 2.1 User Menu / Settings
 
 ```text
-┌───────────────────────────────────────────────────────────────────────┐
-│  Documents                                                            │
-│  Manage your receipts and financial documents                         │
-├───────────────────────────────────────────────────────────────────────┤
-│  [ Drag & drop files here to upload ]  [ Browse files ]  [ Trash ]    │
-│   (JPEG, PNG, PDF, TXT · Max 10 MB per file)                          │
-├───────────────────────────────────────────────────────────────────────┤
-│  Filters                                                              │
-│  ┌─────────────┬─────────────┬─────────────┬─────────────┬─────────┐ │
-│  │ Date range  │ Linked      │ File type   │ Vendor      │ Search  │ │
-│  └─────────────┴─────────────┴─────────────┴─────────────┴─────────┘ │
-├───────────────────────────────────────────────────────────────────────┤
-│  Documents                                                            │
-│  ┌─────────────────────────────────────────────────────────────────┐ │
-│  │ Thumbnail │ Name                    │ Type  │ Date   │ Actions │ │
-│  ├───────────┼─────────────────────────┼───────┼────────┼────────┤ │
-│  │ [img]     │ receipt-2025-11-01.jpg │ RECEIP│ 01 Nov │ [View ]│ │
-│  │           │                         │ T     │ 2025   │ [AI ▶]│ │
-│  ├───────────┼─────────────────────────┼───────┼────────┼────────┤ │
-│  │ [pdf]     │ invoice-ACME-1001.pdf  │ INVOICE│ 05 Nov│ [View ]│ │
-│  │           │                         │       │ 2025  │ [AI ▶]│ │
-│  ├───────────┼─────────────────────────┼───────┼────────┼────────┤ │
-│  │ [txt]     │ bank-statement.txt     │ BANK_S│ 10 Nov │ [View ]│ │
-│  │           │                         │ TMT   │ 2025  │ [AI ▶]│ │
-│  └─────────────────────────────────────────────────────────────────┘ │
-│                                                                      │
-│  Legend: [AI ▶] = "Run AI Extraction" action                         │
-└───────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│ User Menu                                    │
+├───────────────────────────────────────────────┤
+│ Profile                                      │
+│ Security                                     │
+│ Notifications                                │
+│--------------------------------------------- │
+│ API Access                                   │◄── New entry
+│--------------------------------------------- │
+│ Sign out                                     │
+└───────────────────────────────────────────────┘
 ```
 
-Interaction notes:
-
-- Drag-and-drop or `Browse files` triggers the existing upload flow; after upload, new rows appear.
-- `AI ▶` opens the Run Extraction dialog for the selected document.
-- `View` navigates to Document Detail.
+Action: Clicking "API Access" opens the API Access page within the existing account/settings area.
 
 ---
 
-## 3. Screen: Run Extraction Dialog
+## 3. API Access Page – Overview
 
-Triggered from: Documents List row action or Document Detail AI section.
+### 3.1 Layout
 
 ```text
-┌───────────────────────────────────── Run AI Extraction ───────────────┐
-│ Document: invoice-ACME-1001.pdf                                      │
-├───────────────────────────────────────────────────────────────────────┤
-│ Template                                                              │
-│  ( ) Standard Receipt                                                 │
-│  (•) Invoice                                                          │
-│  ( ) Bank Statement Page                                              │
-│  ( ) Custom                                                           │
-│                                                                       │
-│ Custom prompt (optional)                                              │
-│  ┌───────────────────────────────────────────────────────────────┐    │
-│  │ e.g. "This invoice includes discounts and multiple tax rates…"│    │
-│  └───────────────────────────────────────────────────────────────┘    │
-│                                                                       │
-│ Prompt history                                                        │
-│  [▼ Last used prompts]                                                │
-│  - Invoice: Standard B2B template                                     │
-│  - Bank statement (US checking)                                       │
-│                                                                       │
-│ Advanced (optional)                                                   │
-│  Provider: [ OpenAI ▼ ]   Model: [ gpt-5-mini ▼ ]                   │
-│                                                                       │
-│ [ Cancel ]                                        [ Run Extraction ]  │
-└───────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────┐
+│ Header                                                                    │
+│───────────────────────────────────────────────────────────────────────────│
+│ Title: API Access                                                         │
+│ Subtitle: Manage your personal API keys for MCP and integrations.        │
+│                                                                           │
+│ [Org Selector:  v ]   (if user has multiple orgs)                         │
+│                                                                           │
+│ [ + Create API Key ]                                                      │
+│                                                                           │
+│───────────────────────────────────────────────────────────────────────────│
+│ API Keys Table                                                            │
+│                                                                           │
+│ ┌───────────────────────────────────────────────────────────────────────┐ │
+│ │ Name        | Prefix   | Org        | Status   | Last Used  | Actions │ │
+│ │------------ |--------- |----------- |----------|----------- |---------│ │
+│ │ MCP Server  | slk_abc1 | My Org A   | Active   | 2h ago     |  •••    │ │
+│ │ Zapier Sync | slk_xyz9 | My Org B   | Revoked  | 1d ago     |  •••    │ │
+│ │ ...         | ...      | ...        | ...      | ...        |  •••    │ │
+│ └───────────────────────────────────────────────────────────────────────┘ │
+│                                                                           │
+│ Legend:                                                                   │
+│  - Status: Active / Expired / Revoked                                     │
+│  - Prefix: Short identifier shown instead of full key                     │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
-Interaction notes:
-
-- Choosing a template pre-fills internal prompt instructions; custom prompt text is appended.
-- Prompt history opens a dropdown/list of previous prompt+template combinations for quick reuse.
-
----
-
-## 4. Screen: Extraction In Progress
-
-Shown after submitting Run Extraction; can be a full-screen overlay or inline in the AI Review route while waiting.
+### 3.2 Row Actions Menu
 
 ```text
-┌──────────────────────────────── AI Extraction in Progress ────────────┐
-│ Document: invoice-ACME-1001.pdf                                      │
-├───────────────────────────────────────────────────────────────────────┤
-│  [●] Reading document                                                │
-│  [○] Extracting fields                                               │
-│  [○] Preparing summary                                               │
-│                                                                       │
-│  Usually takes a few seconds. You can keep this tab open.            │
-│                                                                       │
-│  If this takes unusually long, you can cancel and retry.             │
-│                                                                       │
-│  [ Cancel ]                                                           │
-└───────────────────────────────────────────────────────────────────────┘
-```
+Row "Actions" (•••) menu:
 
-Interaction notes:
-
-- Frontend stages progress locally (no strict server phases), updating as the API call completes.
-- On error, content is replaced with an error panel (see below).
-
----
-
-## 5. Screen: Extraction Failed (Retry & Prompt Adjust)
-
-```text
-┌───────────────────────────── AI Extraction Failed ────────────────────┐
-│ Document: invoice-ACME-1001.pdf                                      │
-├───────────────────────────────────────────────────────────────────────┤
-│  We couldn't extract data from this document.                         │
-│                                                                       │
-│  Error: [Human-readable error message from API]                       │
-│                                                                       │
-│  Suggestions:                                                         │
-│  - Try a different template (e.g. Bank Statement vs Invoice).         │
-│  - Adjust your custom prompt to clarify the document type.            │
-│                                                                       │
-│  [ Edit template/prompt ]   [ Retry with same settings ]   [ Close ]  │
-└───────────────────────────────────────────────────────────────────────┘
+┌───────────────────────┐
+│ View details          │
+│ Edit                  │
+│ Revoke                │
+└───────────────────────┘
 ```
 
 ---
 
-## 6. Screen: Document Detail with AI Section
+## 4. Create API Key Flow
 
-Route: `/o/[orgSlug]/documents/[id]`
+### 4.1 Create API Key Modal
+
+Triggered by clicking `[ + Create API Key ]`.
 
 ```text
-┌──────────────────────────────── Document Detail ──────────────────────┐
-│  ← Back to Documents                                                  │
-├───────────────────────────────────────────────────────────────────────┤
-│  Document header                                                      │
-│  Name: invoice-ACME-1001.pdf                                         │
-│  Type: INVOICE  ·  Uploaded: 05 Nov 2025  ·  Size: 325 KB             │
-├───────────────────────────────────────────────────────────────────────┤
-│  Tabs: [ Details ]  [ Linked Transactions ]  [ AI Extraction ]        │
-├───────────────────────────────────────────────────────────────────────┤
-│  [ AI Extraction ]                                                    │
-│                                                                       │
-│  Latest extraction                                                    │
-│  ┌───────────────────────────────────────────────────────────────┐    │
-│  │ Template: Invoice  ·  Run at: 05 Nov 2025, 10:32              │    │
-│  │ Overall confidence: HIGH                                      │    │
-│  │ Summary: 1 transaction · Total 1,250.00 USD                   │    │
-│  └───────────────────────────────────────────────────────────────┘    │
-│                                                                       │
-│  [ Review & Save ]  [ Run new extraction ]  [ View history ▾ ]       │
-│                                                                       │
-│  History (dropdown / side panel)                                     │
-│  - 05 Nov 10:32 · Invoice · High confidence                          │
-│  - 05 Nov 10:20 · Invoice · Medium confidence (older)                │
-│  - 04 Nov 18:05 · Custom prompt                                      │
-└───────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│ Create API Key                               │
+├───────────────────────────────────────────────┤
+│ Name                                         │
+│ [ MCP Server for My Org A              ]     │
+│                                               │
+│ Organization                                  │
+│ [ My Org A           v ]                      │
+│   (dropdown if multiple orgs; hidden if one)  │
+│                                               │
+│ Expiry                                        │
+│ ( ) Never                                     │
+│ (•) 90 days (recommended)                     │
+│ ( ) 30 days                                   │
+│ ( ) Custom: [        ] days                   │
+│                                               │
+│ (Advanced scopes - optional, v1 may omit)     │
+│  [ ] Custom scopes                            │
+│                                               │
+│───────────────────────────────────────────────│
+│ [ Cancel ]                      [ Create Key ]│
+└───────────────────────────────────────────────┘
 ```
 
-Interaction notes:
+Validation: name required; organization required; expiry valid.
 
-- `Review & Save` navigates to the AI Review screen.
-- `Run new extraction` opens the Run Extraction dialog pre-filled with last settings.
-- `View history` allows choosing a previous extraction as active.
+On success: Close this modal and open the "Copy API Key" overlay.
 
 ---
 
-## 7. Screen: AI Review (Split Screen)
-
-Route: `/o/[orgSlug]/documents/[id]/ai` (or equivalent subview).
+### 4.2 Copy API Key Overlay (Shown Once)
 
 ```text
-┌────────────────────────────── AI Review – invoice-ACME-1001.pdf ─────┐
-│  ← Back to Document                                                   │
-├───────────────────────────────────────────────────────────────────────┤
-│  Layout:                                                              │
-│  ┌───────────────────────────────┬─────────────────────────────────┐ │
-│  │  Left: Document viewer        │ Right: Extracted data           │ │
-│  ├───────────────────────────────┼─────────────────────────────────┤ │
-│  │  ┌─────────────────────────┐  │ Summary                        │ │
-│  │  │ [Zoom -] [100%] [Zoom+]│  │ ┌───────────────────────────┐  │ │
-│  │  │ ┌───────────────────┐  │  │ │ Vendor: [ ACME Corp    ]  │  │ │
-│  │  │ │  PDF/Image view   │  │  │ │    [HIGH]                │  │ │
-│  │  │ │  (scrollable)     │  │  │ ├───────────────────────────┤  │ │
-│  │  │ └───────────────────┘  │  │ │ Client: [ Sololedger Ltd ]│  │ │
-│  │  └─────────────────────────┘  │ │    [MEDIUM]              │  │ │
-│  │                               │ ├───────────────────────────┤  │ │
-│  │                               │ │ Date:   [ 2025-11-05   ] │  │ │
-│  │                               │ │    [HIGH]                │  │ │
-│  │                               │ ├───────────────────────────┤  │ │
-│  │                               │ │ Currency: [ USD ▼      ] │  │ │
-│  │                               │ │    [HIGH]                │  │ │
-│  │                               │ └───────────────────────────┘  │ │
-│  │                               │                                 │ │
-│  │                               │ Amounts & Taxes                 │ │
-│  │                               │ ┌───────────────────────────┐  │ │
-│  │                               │ │ Total:  [ 1,250.00 ] [H] │  │ │
-│  │                               │ │ Net:    [ 1,000.00 ] [M] │  │ │
-│  │                               │ │ Tax:    [   250.00 ] [M] │  │ │
-│  │                               │ │ Tip:    [     0.00 ] [L] │  │ │
-│  │                               │ └───────────────────────────┘  │ │
-│  │                               │                                 │ │
-│  │                               │ Line items                     │ │
-│  │                               │ ┌───────────────────────────┐  │ │
-│  │                               │ │ Desc     Qty   Unit  Total│  │ │
-│  │                               │ │ [Text]  [1]  [500] [500] │  │ │
-│  │                               │ │ [Text]  [1]  [750] [750] │  │ │
-│  │                               │ │ Category: [ Services ▼ ] │  │ │
-│  │                               │ └───────────────────────────┘  │ │
-│  │                               │                                 │ │
-│  │                               │ Split options                  │ │
-│  │                               │ [ ] Split into multiple transactions    │ │
-│  │                               │    (tooltip explaining behavior)        │ │
-│  └───────────────────────────────┴─────────────────────────────────┘ │
-├───────────────────────────────────────────────────────────────────────┤
-│ Save options                                                          │
-│  ( ) Create new transaction(s)                                        │
-│  ( ) Update existing transaction                                      │
-│  (•) Save as draft (document only)                                    │
-│                                                                       │
-│  When "Create new transaction(s)" is selected:                        │
-│   - [ ] Use single transaction (sum all items)                        │
-│   - [ ] Use multiple transactions (per line item/category)            │
-│                                                                       │
-│  When "Update existing transaction" is selected:                      │
-│   - [ Select transaction ▾ ]                                          │
-│   - Show diff panel (current vs extracted) with checkboxes per field. │
-│                                                                       │
-│ [ Cancel ]                                             [ Save ]       │
-└───────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│ Your New API Key                             │
+├───────────────────────────────────────────────┤
+│ This key is shown only once.                 │
+│ Copy and store it securely.                  │
+│ If you lose it, you must create a new key.   │
+│                                               │
+│ API Key                                      │
+│ [ slk_abcd1234efgh5678ijkl9012mnop3456      ]│
+│                      [ Copy ]                │
+│                                               │
+│ Organization: My Org A                        │
+│ Prefix: slk_abcd1                             │
+│ Status: Active                                │
+│ Expires: in 90 days                           │
+│                                               │
+│───────────────────────────────────────────────│
+│ [ Close ]                                     │
+└───────────────────────────────────────────────┘
 ```
 
-Interaction notes:
-
-- Confidence indicators `[H]`, `[M]`, `[L]` map to high/medium/low; visually rendered as colored badges.
-- Every field is editable; low-confidence fields may start highlighted for attention.
-- Save button triggers appropriate backend flow based on selected option.
+Note: The list on the main API Access page shows only the prefix and metadata, never the full key.
 
 ---
 
-## 8. Screen: Update Existing Transaction (Diff Panel)
+## 5. Edit API Key Modal
 
-Shown when user selects "Update existing transaction" in the AI Review screen.
-
-```text
-┌───────────────────── Update Existing Transaction from Extraction ─────┐
-│ Transaction: EXP-2025-1105-001 (Draft)                                │
-├───────────────────────────────────────────────────────────────────────┤
-│ Choose fields to overwrite with AI-extracted values:                  │
-│                                                                       │
-│ [ ] Date                                                              │
-│     Current: 2025-11-05                                               │
-│     Extracted: 2025-11-06 (M)                                         │
-│                                                                       │
-│ [x] Description                                                       │
-│     Current: "Office supplies"                                       │
-│     Extracted: "Office supplies – ACME Corp invoice 1001" (H)        │
-│                                                                       │
-│ [x] Amount                                                             │
-│     Current: 1,000.00 USD                                             │
-│     Extracted: 1,250.00 USD (H)                                       │
-│                                                                       │
-│ [ ] Vendor                                                             │
-│     Current: None                                                     │
-│     Extracted: ACME Corp (M)                                         │
-│                                                                       │
-│ [ ] Category                                                           │
-│     Current: "General Expenses"                                      │
-│     Extracted suggestion: "Office Supplies" (M)                      │
-│                                                                       │
-│ [ Cancel ]                                          [ Apply changes ] │
-└───────────────────────────────────────────────────────────────────────┘
-```
-
-Interaction notes:
-
-- Users explicitly select which fields to update to avoid overwriting intentional manual edits.
-
----
-
-## 9. Screen: Save Confirmation
+Triggered from row action menu → "Edit".
 
 ```text
-┌────────────────────────────── Extraction Saved ───────────────────────┐
-│ AI extraction saved successfully.                                     │
-├───────────────────────────────────────────────────────────────────────┤
-│ Summary                                                               │
-│  - Created 2 draft transactions:                                      │
-│      • EXP-2025-1105-001 (Office supplies)                            │
-│      • EXP-2025-1105-002 (Software subscription)                      │
-│  - Linked to document: invoice-ACME-1001.pdf                          │
-│                                                                       │
-│ [ View transactions ]   [ Stay on review ]   [ Back to document ]     │
-└───────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│ Edit API Key                                 │
+├───────────────────────────────────────────────┤
+│ Name                                         │
+│ [ MCP Server for My Org A              ]     │
+│                                               │
+│ Organization                                  │
+│ [ My Org A           ] (read-only)           │
+│                                               │
+│ Expiry                                        │
+│ ( ) Never                                     │
+│ (•) 90 days                                   │
+│ ( ) 30 days                                   │
+│ ( ) Custom: [        ] days                   │
+│                                               │
+│ Scopes (for future use; v1 can default)       │
+│ [x] Full access to org APIs                   │
+│ [ ] Custom scopes (coming soon)               │
+│                                               │
+│ Status: Active / Expired / Revoked (read-only)│
+│                                               │
+│───────────────────────────────────────────────│
+│ [ Cancel ]                      [ Save ]      │
+└───────────────────────────────────────────────┘
 ```
 
 ---
 
-## 10. Reprocessing & History
+## 6. Revoke API Key Confirmation
 
-Reprocessing is surfaced via the AI section on the Document Detail page and from the AI Review screen.
+Triggered from row action menu → "Revoke".
 
 ```text
-┌──────────────────────────── AI Extraction History ────────────────────┐
-│ Document: invoice-ACME-1001.pdf                                      │
-├───────────────────────────────────────────────────────────────────────┤
-│ Active extraction                                                     │
-│  • 05 Nov 10:32 · Invoice · High confidence  · [Active]              │
-│                                                                       │
-│ Previous extractions                                                 │
-│  • 05 Nov 10:20 · Invoice · Medium confidence  · [ Set active ]      │
-│  • 04 Nov 18:05 · Custom prompt                                      │
-│                                                                       │
-│ [ Run new extraction ]                                                │
-└───────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│ Revoke API Key                               │
+├───────────────────────────────────────────────┤
+│ Are you sure you want to revoke this API key?│
+│                                               │
+│ Name: MCP Server for My Org A                │
+│ Prefix: slk_abcd1                             │
+│ Organization: My Org A                        │
+│                                               │
+│ Once revoked, this key can no longer be used. │
+│                                               │
+│───────────────────────────────────────────────│
+│ [ Cancel ]                      [ Revoke ]    │
+└───────────────────────────────────────────────┘
 ```
 
-Interaction notes:
+After revocation: status in table updates to "Revoked"; exchanges fail.
 
-- Setting a previous extraction as active makes it the default in the AI Review screen and for subsequent save operations.
-- Per-field diff/merge can be added in a later iteration; v1 uses full extraction selection and manual review.
+---
+
+## 7. API Key Details View (Optional)
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ API Key Details                                             │
+├─────────────────────────────────────────────────────────────┤
+│ Name: MCP Server for My Org A                              │
+│ Prefix: slk_abcd1                                           │
+│ Organization: My Org A                                      │
+│ Status: Active                                              │
+│ Created: 2025-11-18                                         │
+│ Last Used: 2 hours ago                                      │
+│ Expires: 2026-02-16                                         │
+│ Auth Method (tokens): api_key                               │
+│                                                             │
+│ Recent usage (optional):                                    │
+│  - 2025-11-18 10:05: exchange from 192.0.2.10               │
+│  - 2025-11-18 09:55: exchange from 192.0.2.10               │
+│                                                             │
+│ [ Revoke ]                                  [ Close ]       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 8. MCP Exchange Flow (Conceptual UI)
+
+Although the exchange is API-only, we illustrate it conceptually for clarity.
+
+### 8.1 MCP Configuration (User Perspective)
+
+```text
+┌───────────────────────────────────────────────┐
+│ MCP Server Configuration                     │
+├───────────────────────────────────────────────┤
+│ App Base URL                                 │
+│ [ https://app.sololedger.local         ]     │
+│                                               │
+│ Personal API Key                             │
+│ [ slk_abcd1234efgh5678ijkl9012...      ]     │
+│                      [ Paste from clipboard ] │
+│                                               │
+│ Notes                                         │
+│ - Key is tied to: My Org A                    │
+│ - Has full CRUD access to org APIs            │
+│                                               │
+│───────────────────────────────────────────────│
+│ [ Cancel ]                      [ Save ]      │
+└───────────────────────────────────────────────┘
+```
+
+---
+
+### 8.2 Exchange Request (API Perspective)
+
+```text
+Request:
+
+POST /api/auth/api-key/exchange
+Authorization: ApiKey slk_abcd1234efgh5678ijkl9012mnop3456
+
+Response:
+
+200 OK
+{
+  "accessToken": "<JWT>",
+  "tokenType": "Bearer",
+  "expiresIn": 3600
+}
+```
+
+This is API-only; no UI in the app itself.
+
+---
+
+## 9. Using the Access Token (API Perspective)
+
+```text
+Example: List transactions for org.
+
+GET /api/orgs/my-org-a/transactions
+Authorization: Bearer <JWT_FROM_EXCHANGE>
+
+Response: 200 OK with JSON payload as defined by existing API.
+```
+
+The UI for transactions/documents remains unchanged; MCP simply mimics browser clients using Bearer tokens.
+
+---
+
+## 10. Error States & Empty States
+
+### 10.1 Empty State (No API Keys Yet)
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ API Access                                                  │
+├─────────────────────────────────────────────────────────────┤
+│ You have no API keys yet.                                   │
+│                                                             │
+│ [ + Create your first API key ]                             │
+│                                                             │
+│ Use personal API keys to connect MCP or other tools to      │
+│ your SoloLedger workspace.                                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 10.2 Exchange Error (Invalid/Revoked/Expired Key)
+
+```text
+HTTP 401 / 403 (API-only)
+
+{
+  "error": "invalid_api_key",
+  "message": "The API key is invalid, revoked, or expired."
+}
+```
+
+### 10.3 Rate Limit Reached for Exchange Endpoint
+
+```text
+HTTP 429 (API-only)
+
+{
+  "error": "rate_limited",
+  "message": "Too many API key exchange attempts. Please try again later."
+}
+```
+
+---
+
+## 11. Summary
+
+- The API Access page provides a clear, minimal UI for creating, listing, editing, and revoking org-scoped personal API keys.
+- The Copy API Key overlay ensures users understand the key is shown only once and must be stored securely.
+- MCP and other tools use the key via the `/api/auth/api-key/exchange` endpoint to obtain short-lived JWT access tokens, then call existing APIs with `Authorization: Bearer <token>`.
+- Error and empty states are explicit to reduce confusion and make debugging easier.

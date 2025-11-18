@@ -246,7 +246,7 @@ export default function DocumentDetailPage(): React.JSX.Element {
       }
 
       const data = await response.json();
-      setTransactions(data);
+      setTransactions(data.transactions || []);
     } catch (error) {
       console.error("Error loading transactions:", error);
       toast.error("Failed to load transactions");

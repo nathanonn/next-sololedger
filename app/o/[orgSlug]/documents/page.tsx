@@ -162,12 +162,12 @@ export default function DocumentsPage(): React.JSX.Element {
 
         if (vendorsRes.ok) {
           const vendorsData = await vendorsRes.json();
-          setVendors(vendorsData);
+          setVendors(vendorsData.vendors || []);
         }
 
         if (clientsRes.ok) {
           const clientsData = await clientsRes.json();
-          setClients(clientsData);
+          setClients(clientsData.clients || []);
         }
 
         if (membersRes.ok) {

@@ -4,7 +4,7 @@
 
 ```
 ./worktrees.sh setup \
-  --branches feat/document_management \
+  --branches feat/ai_processing \
   --db-url postgresql://pi:password@localhost:5432/nextsololedger
 ```
 
@@ -17,7 +17,7 @@
 ## merge
 
 ```
-./worktrees.sh merge --branches feat/document_management --into main
+./worktrees.sh merge --branches feat/ai_processing --into main
 ```
 
 # create wireframes based on plan

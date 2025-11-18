@@ -1,360 +1,367 @@
-## Document Management – UX Flow & Wireframes
+# AI Document Processing – UX Flow & Wireframes
 
-This document describes the UX flow and screen-by-screen wireframes for Sololedger’s document management features (section 10), aligned with the implementation plan in `notes/plan.md`. It covers document upload, library browsing, search and grouping, linking documents with transactions, Trash behavior, and secure download/preview.
+This document describes the UX flow and screen-by-screen ASCII wireframes for AI-powered document upload, extraction, review, and saving into transactions. It builds on the existing documents and transactions UI patterns and assumes AI is configured for the organization.
 
 ---
 
-### 1. Flow Map
+## 1. High-Level UX Flow
 
 ```text
-User (signed in, org selected)
-	|
-	|---> Documents section
-	|       Route: /o/[orgSlug]/documents
-	|       - View all documents for org
-	|       - Filter/search/group
-	|       - Upload new documents
-	|       - Open document detail
-	|       - Move documents to Trash
-	|
-	|---> Upload documents (from Documents page or Transaction page)
-	|       - Select files (drag/drop or file picker)
-	|       - POST /api/orgs/[orgSlug]/documents
-	|       - See success or per-file errors
-	|       - Newly uploaded docs appear in list
-	|
-	|---> Document detail
-	|       Route: /o/[orgSlug]/documents/[id] (or sheet/dialog)
-	|       - Preview document (image/PDF/text)
-	|       - Edit display name, type, document date
-	|       - See linked transactions
-	|       - Link/unlink transactions
-	|       - Download or move to Trash
-	|
-	|---> Transactions section
-	|       Route: /o/[orgSlug]/transactions
-	|       - For each transaction, see doc indicator
-	|       - Open transaction detail
-	|
-	|---> Transaction detail
-	|       Route: /o/[orgSlug]/transactions/[id]
-	|       - View/Edit transaction fields
-	|       - Documents panel
-	|            - See linked docs
-	|            - View / Download / Unlink
-	|            - Add existing doc(s) via picker
-	|            - Optional Upload & link shortcut
-	|
-	|---> Document picker (from Transaction detail)
-	|       - Lightweight list/search of documents
-	|       - Default filter: unlinked docs
-	|       - Select one or more docs and attach
-	|
-	|---> Documents Trash
-	|       Route: /o/[orgSlug]/documents/trash
-	|       - List soft-deleted documents
-	|       - Restore
-	|       - Permanently delete
-	|
-	|---> Download / Preview
-					Route: GET /api/orgs/[orgSlug]/documents/[id]/download?mode=attachment|inline
-					- Used by UI for thumbnails, previews, and downloads
+[Documents List]
+	↓ (Upload receipts/invoices/statements)
+	↓ (Run AI Extraction on a document)
+
+[Run Extraction Dialog]
+	- Choose template (Receipt / Invoice / Bank Statement Page / Custom)
+	- Optional custom prompt
+	- Optional provider/model override (advanced)
+	↓
+	↓
+[Extraction In Progress]
+	- Progress: Reading document → Extracting fields → Preparing summary
+	- Message: "Usually takes a few seconds"
+	↓
+	↓
+[AI Review Screen]
+	- Split-view: Document preview (left), Extracted fields (right)
+	- Confidence indicators per field
+	- Ability to correct fields and line items
+	- Choose Save Option:
+		• Create new transaction(s)
+		• Update existing transaction
+		• Save as draft (document only)
+	↓
+	↓
+[Post-Save]
+	- Confirmation
+	- Links to created/updated transactions
+	- Option to stay in review or navigate
+
+Reprocessing:
+	- From Document detail/AI section → View history → Re-run extraction with different template/prompt → Choose active extraction and (optionally) re-save.
 ```
 
 ---
 
-### 2. Screen: Documents List (`/o/[orgSlug]/documents`)
+## 2. Screen: Documents List (with AI Entry Points)
+
+Route: `/o/[orgSlug]/documents`
 
 ```text
-Route: /o/[orgSlug]/documents
-
-+----------------------------------------------------------------------------------+
-| [Logo] Sololedger                                             [User Avatar ▾]   |
-+----------------------------------------------------------------------------------+
-| Documents                                                                      |
-| Manage your receipts and financial documents                                   |
-|                                                                                |
-| [Upload documents] [Trash]                                                     |
-+----------------------------------------------------------------------------------+
-| Filters                                                                        |
-|                                                                                |
-| Date range: [ From: 2025-11-01 ] [ To: 2025-11-30 ]                            |
-|   (Document date, falling back to upload date)                                 |
-|                                                                                |
-| Linked: (• All) (  Linked only  ) (  Unlinked only  )                          |
-|                                                                                |
-| Vendor: [ Any vendor  ▾ ]   Client: [ Any client  ▾ ]                           |
-|                                                                                |
-| Amount: [ Min ______ ]  [ Max ______ ]  (base currency)                        |
-|                                                                                |
-| File type: [ All types ▾ ]  (All / Images / PDFs / Text)                       |
-| Uploader: [ Anyone ▾ ]                                                         |
-|                                                                                |
-| Search: [ 🔍 Search by filename, vendor, text...                ]              |
-|                                                                                |
-| Group by: [ None ▾ ]   (None / Month / Category / Vendor)                      |
-|                                                                                |
-+----------------------------------------------------------------------------------+
-| Content                                                                        |
-|                                                                                |
-| (Loading state)                                                                |
-|   [Spinner] Loading documents...                                               |
-|                                                                                |
-| (Empty state)                                                                  |
-|   No documents yet.                                                            |
-|   [Upload documents] to get started.                                           |
-|                                                                                |
-| (Grouped by Month example)                                                     |
-|                                                                                |
-| ▶ November 2025 (12)                                                           |
-|   ├─ [🖼]  invoice-nov-acme.pdf                                                |
-|   |      Document date: 2025-11-10                                            |
-|   |      Type: INVOICE · PDF · 420 KB                                         |
-|   |      Linked: 2 transactions                                               |
-|   |      [View] [Download] [⋯]                                                |
-|   |                                                                            |
-|   ├─ [🖼]  taxi-receipt-2025-11-09.jpg                                         |
-|   |      Document date: 2025-11-09                                            |
-|   |      Type: RECEIPT · Image · 230 KB                                       |
-|   |      Linked: 1 transaction                                                |
-|   |      [View] [Download] [⋯]                                                |
-|   |                                                                            |
-|   └─ ...                                                                       |
-|                                                                                |
-| ▶ October 2025 (5)                                                             |
-|   ├─ ...                                                                       |
-|                                                                                |
-+----------------------------------------------------------------------------------+
-| Pagination                                                                     |
-|   [ Prev ]  Page 1 of 4  [ Next ]                                             |
-+----------------------------------------------------------------------------------+
+┌───────────────────────────────────────────────────────────────────────┐
+│  Documents                                                            │
+│  Manage your receipts and financial documents                         │
+├───────────────────────────────────────────────────────────────────────┤
+│  [ Drag & drop files here to upload ]  [ Browse files ]  [ Trash ]    │
+│   (JPEG, PNG, PDF, TXT · Max 10 MB per file)                          │
+├───────────────────────────────────────────────────────────────────────┤
+│  Filters                                                              │
+│  ┌─────────────┬─────────────┬─────────────┬─────────────┬─────────┐ │
+│  │ Date range  │ Linked      │ File type   │ Vendor      │ Search  │ │
+│  └─────────────┴─────────────┴─────────────┴─────────────┴─────────┘ │
+├───────────────────────────────────────────────────────────────────────┤
+│  Documents                                                            │
+│  ┌─────────────────────────────────────────────────────────────────┐ │
+│  │ Thumbnail │ Name                    │ Type  │ Date   │ Actions │ │
+│  ├───────────┼─────────────────────────┼───────┼────────┼────────┤ │
+│  │ [img]     │ receipt-2025-11-01.jpg │ RECEIP│ 01 Nov │ [View ]│ │
+│  │           │                         │ T     │ 2025   │ [AI ▶]│ │
+│  ├───────────┼─────────────────────────┼───────┼────────┼────────┤ │
+│  │ [pdf]     │ invoice-ACME-1001.pdf  │ INVOICE│ 05 Nov│ [View ]│ │
+│  │           │                         │       │ 2025  │ [AI ▶]│ │
+│  ├───────────┼─────────────────────────┼───────┼────────┼────────┤ │
+│  │ [txt]     │ bank-statement.txt     │ BANK_S│ 10 Nov │ [View ]│ │
+│  │           │                         │ TMT   │ 2025  │ [AI ▶]│ │
+│  └─────────────────────────────────────────────────────────────────┘ │
+│                                                                      │
+│  Legend: [AI ▶] = "Run AI Extraction" action                         │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
-Notes:
-- Thumbnails: use inline download URL for images; icon for PDF/TXT.
-- [⋯] opens a small menu with “View”, “Download”, “Move to Trash”.
+Interaction notes:
+
+- Drag-and-drop or `Browse files` triggers the existing upload flow; after upload, new rows appear.
+- `AI ▶` opens the Run Extraction dialog for the selected document.
+- `View` navigates to Document Detail.
 
 ---
 
-### 3. Screen: Document Detail (`/o/[orgSlug]/documents/[id]`)
+## 3. Screen: Run Extraction Dialog
+
+Triggered from: Documents List row action or Document Detail AI section.
 
 ```text
-Route: /o/[orgSlug]/documents/[id]
-
-+----------------------------------------------------------------------------------+
-| [← Back to Documents]                                   [Download ▼] [Trash]   |
-+----------------------------------------------------------------------------------+
-| Document: taxi-receipt-2025-11-09.jpg                                           |
-|                                                                                |
-+--------------------------+-----------------------------------------------------+
-| Preview                  | Details                                             |
-|                          |                                                     |
-| +----------------------+ | Display name: [ Taxi – Airport to Client Office ]   |
-| |                      | | Filename:     taxi-receipt-2025-11-09.jpg          |
-| |   [ Image preview ]  | | Type:         [ RECEIPT ▾ ]                        |
-| |                      | | MIME:         image/jpeg                            |
-| +----------------------+ | Size:         230 KB                                |
-|                          |                                                     |
-| (For PDFs: inline       | Document date: [ 2025-11-09 ]                        |
-|  viewer / iframe)       | Uploaded at:  2025-11-10 09:12                       |
-|                          | Uploaded by:  Nathan                                |
-|                          |                                                     |
-|                          | [Save changes]                                      |
-+--------------------------+-----------------------------------------------------+
-| Linked Transactions                                                            |
-|                                                                                |
-| [Link to transactions]                                                         |
-|                                                                                |
-| 1) 2025-11-09  Taxi – Airport to Client Office                                 |
-|    Amount: MYR 85.00   Type: EXPENSE                                           |
-|    [View transaction]  [Unlink]                                                |
-|                                                                                |
-| 2) 2025-11-09  Client meeting lunch (split)                                    |
-|    Amount: MYR 40.00   Type: EXPENSE                                           |
-|    [View transaction]  [Unlink]                                                |
-|                                                                                |
-+----------------------------------------------------------------------------------+
+┌───────────────────────────────────── Run AI Extraction ───────────────┐
+│ Document: invoice-ACME-1001.pdf                                      │
+├───────────────────────────────────────────────────────────────────────┤
+│ Template                                                              │
+│  ( ) Standard Receipt                                                 │
+│  (•) Invoice                                                          │
+│  ( ) Bank Statement Page                                              │
+│  ( ) Custom                                                           │
+│                                                                       │
+│ Custom prompt (optional)                                              │
+│  ┌───────────────────────────────────────────────────────────────┐    │
+│  │ e.g. "This invoice includes discounts and multiple tax rates…"│    │
+│  └───────────────────────────────────────────────────────────────┘    │
+│                                                                       │
+│ Prompt history                                                        │
+│  [▼ Last used prompts]                                                │
+│  - Invoice: Standard B2B template                                     │
+│  - Bank statement (US checking)                                       │
+│                                                                       │
+│ Advanced (optional)                                                   │
+│  Provider: [ OpenAI ▼ ]   Model: [ gpt-5-mini ▼ ]                   │
+│                                                                       │
+│ [ Cancel ]                                        [ Run Extraction ]  │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
-Notes:
-- “Download ▼” can open a small menu: “Download (attachment)”, “Open in new tab (inline)”.
-- “Trash” moves the document to Trash (soft delete + unlink all transactions).
+Interaction notes:
+
+- Choosing a template pre-fills internal prompt instructions; custom prompt text is appended.
+- Prompt history opens a dropdown/list of previous prompt+template combinations for quick reuse.
 
 ---
 
-### 4. Screen: Transactions List with Document Indicators
+## 4. Screen: Extraction In Progress
+
+Shown after submitting Run Extraction; can be a full-screen overlay or inline in the AI Review route while waiting.
 
 ```text
-Route: /o/[orgSlug]/transactions
-
-+----------------------------------------------------------------------------------+
-| Transactions                                             [New Transaction]     |
-+----------------------------------------------------------------------------------+
-| Filters (date, type, status, vendor, amount, etc.)                             |
-|                                                                                |
-| [Apply] [Reset]                                                                |
-+----------------------------------------------------------------------------------+
-| List                                                                           |
-|                                                                                |
-| [ ] 2025-11-10  Invoice #123 – ACME Corp                                      |
-|     INCOME · POSTED · MYR 1,000.00                                            |
-|     Category: Consulting                                                      |
-|     Vendor/Client: ACME Corp                                                  |
-|     [📎 2] [Edit] [⋯]                                                         |
-|                                                                                |
-| [ ] 2025-11-09  Taxi – Airport to Client Office                               |
-|     EXPENSE · POSTED · MYR 85.00                                              |
-|     Category: Travel                                                          |
-|     Vendor: Grab Taxi                                                         |
-|     [📎 1] [Edit] [⋯]                                                         |
-|                                                                                |
-| [ ] 2025-11-08  Coffee with client                                            |
-|     EXPENSE · DRAFT · MYR 15.00                                               |
-|     Category: Meals                                                           |
-|     Vendor: Starbucks                                                         |
-|     [   ] [Edit] [⋯]  (no documents)                                         |
-|                                                                                |
-+----------------------------------------------------------------------------------+
-| Bulk actions, pagination, etc.                                                |
-+----------------------------------------------------------------------------------+
+┌──────────────────────────────── AI Extraction in Progress ────────────┐
+│ Document: invoice-ACME-1001.pdf                                      │
+├───────────────────────────────────────────────────────────────────────┤
+│  [●] Reading document                                                │
+│  [○] Extracting fields                                               │
+│  [○] Preparing summary                                               │
+│                                                                       │
+│  Usually takes a few seconds. You can keep this tab open.            │
+│                                                                       │
+│  If this takes unusually long, you can cancel and retry.             │
+│                                                                       │
+│  [ Cancel ]                                                           │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
-Notes:
-- `[📎 N]` opens the transaction detail page or a quick overlay focused on documents.
+Interaction notes:
+
+- Frontend stages progress locally (no strict server phases), updating as the API call completes.
+- On error, content is replaced with an error panel (see below).
 
 ---
 
-### 5. Screen: Transaction Detail with Documents Panel
+## 5. Screen: Extraction Failed (Retry & Prompt Adjust)
 
 ```text
-Route: /o/[orgSlug]/transactions/[id]
-
-+----------------------------------------------------------------------------------+
-| [← Back to Transactions]                               [Save] [Delete]        |
-+----------------------------------------------------------------------------------+
-| Edit Transaction                                                              |
-|                                                                                |
-| Date:        [ 2025-11-09 ]                                                    |
-| Type:        (• EXPENSE) (  INCOME )                                          |
-| Status:      (• POSTED)  (  DRAFT )                                           |
-| Amount:      [ 85.00 ]  Currency: [ MYR ]                                     |
-| Category:    [ Travel ▾ ]                                                     |
-| Account:     [ Maybank Business 1234 ▾ ]                                      |
-| Vendor:      [ Grab Taxi ▾ ]                                                  |
-| Description: [ Taxi – Airport to Client Office              ]                 |
-| Notes:       [____________________________________________________]           |
-|                                                                                |
-+------------------------------+-------------------------------------------------+
-| Documents                    | (optional: other side panel content)            |
-|                              |                                                 |
-| [Add existing document] [Upload & link]                                       |
-|                                                                                |
-| (If none)                                                                     |
-|   No documents linked yet.                                                    |
-|                                                                                |
-| (If some linked)                                                              |
-|   1) [🖼] taxi-receipt-2025-11-09.jpg                                         |
-|      Date: 2025-11-09  Type: RECEIPT                                          |
-|      [View] [Download] [Unlink]                                               |
-|                                                                                |
-|   2) [📄] bank-statement-2025-11.pdf                                          |
-|      Date: 2025-11-30  Type: BANK_STATEMENT                                   |
-|      [View] [Download] [Unlink]                                               |
-|                                                                                |
-+------------------------------+-------------------------------------------------+
-```
-
-Notes:
-- “Upload & link” uses the same upload API, then auto-links returned document IDs to this transaction.
-
----
-
-### 6. Screen: Document Picker (from Transaction Detail)
-
-```text
-Component: Document Picker Modal / Dialog
-
-+--------------------------------------------------------------+
-| [x] Attach existing documents                                |
-+--------------------------------------------------------------+
-| Search: [ 🔍 invoice, vendor, text...              ]         |
-|                                                              |
-| Linked filter: (• All) (  Unlinked only  )                    |
-| Date range: [ From: ____ ] [ To: ____ ]                       |
-| File type:  [ All types ▾ ]                                  |
-|                                                              |
-| [ ] [🖼] taxi-receipt-2025-11-09.jpg                          |
-|     Date: 2025-11-09   Type: RECEIPT   Linked: 0             |
-|                                                              |
-| [ ] [📄] invoice-123-acme.pdf                                |
-|     Date: 2025-11-10   Type: INVOICE   Linked: 1             |
-|                                                              |
-| [ ] [🖼] parking-receipt.png                                 |
-|     Date: 2025-11-08   Type: RECEIPT   Linked: 0             |
-|                                                              |
-|  ...                                                         |
-|                                                              |
-+--------------------------------------------------------------+
-| [Cancel]                                [Attach selected (3)] |
-+--------------------------------------------------------------+
-```
-
-Notes:
-- On confirm, call transaction-side link API with selected `documentIds`.
-
----
-
-### 7. Screen: Documents Trash (`/o/[orgSlug]/documents/trash`)
-
-```text
-Route: /o/[orgSlug]/documents/trash
-
-+----------------------------------------------------------------------------------+
-| Documents Trash                                          [Back to Documents]    |
-+----------------------------------------------------------------------------------+
-| Deleted documents remain here until you restore or delete them permanently.     |
-| Your organization’s retention policy may permanently delete old items.         |
-|                                                                                |
-| [Search: _____________________________ ]                                       |
-|                                                                                |
-+----------------------------------------------------------------------------------+
-| List                                                                           |
-|                                                                                |
-| [ ] taxi-receipt-2025-11-09.jpg                                               |
-|     Display name: Taxi – Airport to Client Office                             |
-|     Deleted at: 2025-11-16 09:30                                              |
-|     Type: RECEIPT · Image · 230 KB                                            |
-|     [Restore] [Delete permanently]                                            |
-|                                                                                |
-| [ ] invoice-123-acme.pdf                                                      |
-|     Display name: Invoice #123 – ACME Corp                                    |
-|     Deleted at: 2025-11-15 14:02                                              |
-|     Type: INVOICE · PDF · 420 KB                                              |
-|     [Restore] [Delete permanently]                                            |
-|                                                                                |
-+----------------------------------------------------------------------------------+
-| Bulk actions: [Restore selected] [Delete selected permanently]                |
-|                                                                                |
-+----------------------------------------------------------------------------------+
+┌───────────────────────────── AI Extraction Failed ────────────────────┐
+│ Document: invoice-ACME-1001.pdf                                      │
+├───────────────────────────────────────────────────────────────────────┤
+│  We couldn't extract data from this document.                         │
+│                                                                       │
+│  Error: [Human-readable error message from API]                       │
+│                                                                       │
+│  Suggestions:                                                         │
+│  - Try a different template (e.g. Bank Statement vs Invoice).         │
+│  - Adjust your custom prompt to clarify the document type.            │
+│                                                                       │
+│  [ Edit template/prompt ]   [ Retry with same settings ]   [ Close ]  │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 8. Download & Preview Usage
+## 6. Screen: Document Detail with AI Section
+
+Route: `/o/[orgSlug]/documents/[id]`
 
 ```text
-Flow: Download / Preview
-
-Documents List / Detail / Transaction Detail
-	├─ User clicks [Download]
-	│     → Browser navigates to
-	│       /api/orgs/[orgSlug]/documents/[id]/download?mode=attachment
-	│     → Server streams file with Content-Disposition: attachment
-	│     → Browser shows save dialog
-	│
-	└─ User clicks [Open in new tab] or inline preview
-				→ New tab or <iframe> src:
-					/api/orgs/[orgSlug]/documents/[id]/download?mode=inline
-				→ Server streams file with Content-Disposition: inline
-				→ Browser renders PDF/image/text directly
+┌──────────────────────────────── Document Detail ──────────────────────┐
+│  ← Back to Documents                                                  │
+├───────────────────────────────────────────────────────────────────────┤
+│  Document header                                                      │
+│  Name: invoice-ACME-1001.pdf                                         │
+│  Type: INVOICE  ·  Uploaded: 05 Nov 2025  ·  Size: 325 KB             │
+├───────────────────────────────────────────────────────────────────────┤
+│  Tabs: [ Details ]  [ Linked Transactions ]  [ AI Extraction ]        │
+├───────────────────────────────────────────────────────────────────────┤
+│  [ AI Extraction ]                                                    │
+│                                                                       │
+│  Latest extraction                                                    │
+│  ┌───────────────────────────────────────────────────────────────┐    │
+│  │ Template: Invoice  ·  Run at: 05 Nov 2025, 10:32              │    │
+│  │ Overall confidence: HIGH                                      │    │
+│  │ Summary: 1 transaction · Total 1,250.00 USD                   │    │
+│  └───────────────────────────────────────────────────────────────┘    │
+│                                                                       │
+│  [ Review & Save ]  [ Run new extraction ]  [ View history ▾ ]       │
+│                                                                       │
+│  History (dropdown / side panel)                                     │
+│  - 05 Nov 10:32 · Invoice · High confidence                          │
+│  - 05 Nov 10:20 · Invoice · Medium confidence (older)                │
+│  - 04 Nov 18:05 · Custom prompt                                      │
+└───────────────────────────────────────────────────────────────────────┘
 ```
+
+Interaction notes:
+
+- `Review & Save` navigates to the AI Review screen.
+- `Run new extraction` opens the Run Extraction dialog pre-filled with last settings.
+- `View history` allows choosing a previous extraction as active.
+
+---
+
+## 7. Screen: AI Review (Split Screen)
+
+Route: `/o/[orgSlug]/documents/[id]/ai` (or equivalent subview).
+
+```text
+┌────────────────────────────── AI Review – invoice-ACME-1001.pdf ─────┐
+│  ← Back to Document                                                   │
+├───────────────────────────────────────────────────────────────────────┤
+│  Layout:                                                              │
+│  ┌───────────────────────────────┬─────────────────────────────────┐ │
+│  │  Left: Document viewer        │ Right: Extracted data           │ │
+│  ├───────────────────────────────┼─────────────────────────────────┤ │
+│  │  ┌─────────────────────────┐  │ Summary                        │ │
+│  │  │ [Zoom -] [100%] [Zoom+]│  │ ┌───────────────────────────┐  │ │
+│  │  │ ┌───────────────────┐  │  │ │ Vendor: [ ACME Corp    ]  │  │ │
+│  │  │ │  PDF/Image view   │  │  │ │    [HIGH]                │  │ │
+│  │  │ │  (scrollable)     │  │  │ ├───────────────────────────┤  │ │
+│  │  │ └───────────────────┘  │  │ │ Client: [ Sololedger Ltd ]│  │ │
+│  │  └─────────────────────────┘  │ │    [MEDIUM]              │  │ │
+│  │                               │ ├───────────────────────────┤  │ │
+│  │                               │ │ Date:   [ 2025-11-05   ] │  │ │
+│  │                               │ │    [HIGH]                │  │ │
+│  │                               │ ├───────────────────────────┤  │ │
+│  │                               │ │ Currency: [ USD ▼      ] │  │ │
+│  │                               │ │    [HIGH]                │  │ │
+│  │                               │ └───────────────────────────┘  │ │
+│  │                               │                                 │ │
+│  │                               │ Amounts & Taxes                 │ │
+│  │                               │ ┌───────────────────────────┐  │ │
+│  │                               │ │ Total:  [ 1,250.00 ] [H] │  │ │
+│  │                               │ │ Net:    [ 1,000.00 ] [M] │  │ │
+│  │                               │ │ Tax:    [   250.00 ] [M] │  │ │
+│  │                               │ │ Tip:    [     0.00 ] [L] │  │ │
+│  │                               │ └───────────────────────────┘  │ │
+│  │                               │                                 │ │
+│  │                               │ Line items                     │ │
+│  │                               │ ┌───────────────────────────┐  │ │
+│  │                               │ │ Desc     Qty   Unit  Total│  │ │
+│  │                               │ │ [Text]  [1]  [500] [500] │  │ │
+│  │                               │ │ [Text]  [1]  [750] [750] │  │ │
+│  │                               │ │ Category: [ Services ▼ ] │  │ │
+│  │                               │ └───────────────────────────┘  │ │
+│  │                               │                                 │ │
+│  │                               │ Split options                  │ │
+│  │                               │ [ ] Split into multiple transactions    │ │
+│  │                               │    (tooltip explaining behavior)        │ │
+│  └───────────────────────────────┴─────────────────────────────────┘ │
+├───────────────────────────────────────────────────────────────────────┤
+│ Save options                                                          │
+│  ( ) Create new transaction(s)                                        │
+│  ( ) Update existing transaction                                      │
+│  (•) Save as draft (document only)                                    │
+│                                                                       │
+│  When "Create new transaction(s)" is selected:                        │
+│   - [ ] Use single transaction (sum all items)                        │
+│   - [ ] Use multiple transactions (per line item/category)            │
+│                                                                       │
+│  When "Update existing transaction" is selected:                      │
+│   - [ Select transaction ▾ ]                                          │
+│   - Show diff panel (current vs extracted) with checkboxes per field. │
+│                                                                       │
+│ [ Cancel ]                                             [ Save ]       │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+Interaction notes:
+
+- Confidence indicators `[H]`, `[M]`, `[L]` map to high/medium/low; visually rendered as colored badges.
+- Every field is editable; low-confidence fields may start highlighted for attention.
+- Save button triggers appropriate backend flow based on selected option.
+
+---
+
+## 8. Screen: Update Existing Transaction (Diff Panel)
+
+Shown when user selects "Update existing transaction" in the AI Review screen.
+
+```text
+┌───────────────────── Update Existing Transaction from Extraction ─────┐
+│ Transaction: EXP-2025-1105-001 (Draft)                                │
+├───────────────────────────────────────────────────────────────────────┤
+│ Choose fields to overwrite with AI-extracted values:                  │
+│                                                                       │
+│ [ ] Date                                                              │
+│     Current: 2025-11-05                                               │
+│     Extracted: 2025-11-06 (M)                                         │
+│                                                                       │
+│ [x] Description                                                       │
+│     Current: "Office supplies"                                       │
+│     Extracted: "Office supplies – ACME Corp invoice 1001" (H)        │
+│                                                                       │
+│ [x] Amount                                                             │
+│     Current: 1,000.00 USD                                             │
+│     Extracted: 1,250.00 USD (H)                                       │
+│                                                                       │
+│ [ ] Vendor                                                             │
+│     Current: None                                                     │
+│     Extracted: ACME Corp (M)                                         │
+│                                                                       │
+│ [ ] Category                                                           │
+│     Current: "General Expenses"                                      │
+│     Extracted suggestion: "Office Supplies" (M)                      │
+│                                                                       │
+│ [ Cancel ]                                          [ Apply changes ] │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+Interaction notes:
+
+- Users explicitly select which fields to update to avoid overwriting intentional manual edits.
+
+---
+
+## 9. Screen: Save Confirmation
+
+```text
+┌────────────────────────────── Extraction Saved ───────────────────────┐
+│ AI extraction saved successfully.                                     │
+├───────────────────────────────────────────────────────────────────────┤
+│ Summary                                                               │
+│  - Created 2 draft transactions:                                      │
+│      • EXP-2025-1105-001 (Office supplies)                            │
+│      • EXP-2025-1105-002 (Software subscription)                      │
+│  - Linked to document: invoice-ACME-1001.pdf                          │
+│                                                                       │
+│ [ View transactions ]   [ Stay on review ]   [ Back to document ]     │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 10. Reprocessing & History
+
+Reprocessing is surfaced via the AI section on the Document Detail page and from the AI Review screen.
+
+```text
+┌──────────────────────────── AI Extraction History ────────────────────┐
+│ Document: invoice-ACME-1001.pdf                                      │
+├───────────────────────────────────────────────────────────────────────┤
+│ Active extraction                                                     │
+│  • 05 Nov 10:32 · Invoice · High confidence  · [Active]              │
+│                                                                       │
+│ Previous extractions                                                 │
+│  • 05 Nov 10:20 · Invoice · Medium confidence  · [ Set active ]      │
+│  • 04 Nov 18:05 · Custom prompt                                      │
+│                                                                       │
+│ [ Run new extraction ]                                                │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+Interaction notes:
+
+- Setting a previous extraction as active makes it the default in the AI Review screen and for subsequent save operations.
+- Per-field diff/merge can be added in a later iteration; v1 uses full extraction selection and manual review.

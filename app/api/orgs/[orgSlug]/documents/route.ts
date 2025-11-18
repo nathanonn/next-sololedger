@@ -9,6 +9,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { getOrgBySlug, requireMembership } from "@/lib/org-helpers";
 import { getDocumentStorage } from "@/lib/document-storage";
 import { db } from "@/lib/db";
+import { Prisma } from "@prisma/client";
 import path from "path";
 
 export const runtime = "nodejs";
@@ -281,14 +282,14 @@ export async function GET(
     const q = searchParams.get("q"); // Search query
 
     // Build where clause
-    const where: any = {
+    const where: Prisma.DocumentWhereInput = {
       organizationId: org.id,
       deletedAt: null,
     };
 
     // Date range filter (documentDate with fallback to uploadedAt)
     if (dateFrom || dateTo) {
-      const dateConditions: any[] = [];
+      const dateConditions: Prisma.DocumentWhereInput[] = [];
 
       if (dateFrom && dateTo) {
         dateConditions.push({
@@ -330,7 +331,10 @@ export async function GET(
         ...where.transactions,
         some: {
           ...where.transactions?.some,
-          vendorId,
+          transaction: {
+            ...where.transactions?.some?.transaction,
+            vendorId,
+          },
         },
       };
     }
@@ -341,14 +345,17 @@ export async function GET(
         ...where.transactions,
         some: {
           ...where.transactions?.some,
-          clientId,
+          transaction: {
+            ...where.transactions?.some?.transaction,
+            clientId,
+          },
         },
       };
     }
 
     // Amount filter
     if (amountMin || amountMax) {
-      const amountCondition: any = {};
+      const amountCondition: Prisma.DecimalFilter = {};
       if (amountMin) amountCondition.gte = parseFloat(amountMin);
       if (amountMax) amountCondition.lte = parseFloat(amountMax);
 
@@ -358,7 +365,10 @@ export async function GET(
         ...where.transactions,
         some: {
           ...where.transactions?.some,
-          amountBase: amountCondition,
+          transaction: {
+            ...where.transactions?.some?.transaction,
+            amountBase: amountCondition,
+          },
         },
       };
     }
@@ -380,7 +390,7 @@ export async function GET(
     // Search query (filename, display name, text content, vendor/client names)
     if (q && q.trim()) {
       const searchTerm = q.trim();
-      const searchConditions: any[] = [
+      const searchConditions: Prisma.DocumentWhereInput[] = [
         { filenameOriginal: { contains: searchTerm, mode: "insensitive" } },
         { displayName: { contains: searchTerm, mode: "insensitive" } },
         { textContent: { contains: searchTerm, mode: "insensitive" } },
@@ -390,10 +400,12 @@ export async function GET(
       searchConditions.push({
         transactions: {
           some: {
-            OR: [
-              { vendor: { name: { contains: searchTerm, mode: "insensitive" } } },
-              { client: { name: { contains: searchTerm, mode: "insensitive" } } },
-            ],
+            transaction: {
+              OR: [
+                { vendor: { name: { contains: searchTerm, mode: "insensitive" } } },
+                { client: { name: { contains: searchTerm, mode: "insensitive" } } },
+              ],
+            },
           },
         },
       });

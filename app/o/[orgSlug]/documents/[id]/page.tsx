@@ -23,12 +23,22 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
   ArrowLeft,
   Download,
   Trash2,
   Save,
   ExternalLink,
   X,
+  Link as LinkIcon,
 } from "lucide-react";
 
 interface LinkedTransaction {
@@ -87,6 +97,20 @@ export default function DocumentDetailPage(): React.JSX.Element {
   const [displayName, setDisplayName] = React.useState("");
   const [type, setType] = React.useState<"RECEIPT" | "INVOICE" | "BANK_STATEMENT" | "OTHER">("OTHER");
   const [documentDate, setDocumentDate] = React.useState("");
+
+  // Transaction picker dialog
+  const [isLinkDialogOpen, setIsLinkDialogOpen] = React.useState(false);
+  const [isLoadingTransactions, setIsLoadingTransactions] = React.useState(false);
+  const [transactions, setTransactions] = React.useState<Array<{
+    id: string;
+    date: string;
+    description: string;
+    amountBase: string;
+    currencyBase: string | null;
+    type: string;
+  }>>([]);
+  const [selectedTransactionIds, setSelectedTransactionIds] = React.useState<Set<string>>(new Set());
+  const [isLinking, setIsLinking] = React.useState(false);
 
   // Load document
   const loadDocument = React.useCallback(async () => {
@@ -209,6 +233,83 @@ export default function DocumentDetailPage(): React.JSX.Element {
     }
   };
 
+  // Load transactions for linking
+  const loadTransactions = async () => {
+    setIsLoadingTransactions(true);
+    try {
+      const response = await fetch(
+        `/api/orgs/${orgSlug}/transactions?status=POSTED`
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch transactions");
+      }
+
+      const data = await response.json();
+      setTransactions(data);
+    } catch (error) {
+      console.error("Error loading transactions:", error);
+      toast.error("Failed to load transactions");
+    } finally {
+      setIsLoadingTransactions(false);
+    }
+  };
+
+  // Handle opening link dialog
+  const handleOpenLinkDialog = () => {
+    setIsLinkDialogOpen(true);
+    setSelectedTransactionIds(new Set());
+    loadTransactions();
+  };
+
+  // Handle transaction selection
+  const handleToggleTransaction = (transactionId: string) => {
+    const newSelected = new Set(selectedTransactionIds);
+    if (newSelected.has(transactionId)) {
+      newSelected.delete(transactionId);
+    } else {
+      newSelected.add(transactionId);
+    }
+    setSelectedTransactionIds(newSelected);
+  };
+
+  // Handle linking selected transactions
+  const handleLinkTransactions = async () => {
+    if (selectedTransactionIds.size === 0) {
+      toast.error("Please select at least one transaction");
+      return;
+    }
+
+    setIsLinking(true);
+    try {
+      const response = await fetch(
+        `/api/orgs/${orgSlug}/documents/${documentId}/transactions`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            transactionIds: Array.from(selectedTransactionIds),
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to link transactions");
+      }
+
+      toast.success(`Linked ${selectedTransactionIds.size} transaction(s)`);
+      setIsLinkDialogOpen(false);
+      await loadDocument();
+    } catch (error) {
+      console.error("Error linking transactions:", error);
+      toast.error("Failed to link transactions");
+    } finally {
+      setIsLinking(false);
+    }
+  };
+
   // Format file size
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -322,7 +423,12 @@ export default function DocumentDetailPage(): React.JSX.Element {
 
               <div className="space-y-2">
                 <Label htmlFor="type">Type</Label>
-                <Select value={type} onValueChange={(value: any) => setType(value)}>
+                <Select
+                  value={type}
+                  onValueChange={(value) =>
+                    setType(value as "RECEIPT" | "INVOICE" | "BANK_STATEMENT" | "OTHER")
+                  }
+                >
                   <SelectTrigger id="type">
                     <SelectValue />
                   </SelectTrigger>
@@ -435,10 +541,84 @@ export default function DocumentDetailPage(): React.JSX.Element {
                   </div>
                 ))
               )}
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleOpenLinkDialog}
+              >
+                <LinkIcon className="mr-2 h-4 w-4" />
+                Link to Transactions
+              </Button>
             </CardContent>
           </Card>
         </div>
       </div>
+
+      {/* Link Transactions Dialog */}
+      <Dialog open={isLinkDialogOpen} onOpenChange={setIsLinkDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Link to Transactions</DialogTitle>
+            <DialogDescription>
+              Select transactions to link to this document
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {isLoadingTransactions ? (
+              <div className="text-center py-8 text-muted-foreground">
+                Loading transactions...
+              </div>
+            ) : transactions.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No transactions found
+              </div>
+            ) : (
+              transactions.map((txn) => (
+                <div
+                  key={txn.id}
+                  className="flex items-start gap-3 p-3 border rounded-lg hover:bg-muted/50 cursor-pointer"
+                  onClick={() => handleToggleTransaction(txn.id)}
+                >
+                  <Checkbox
+                    checked={selectedTransactionIds.has(txn.id)}
+                    onCheckedChange={() => handleToggleTransaction(txn.id)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{txn.description}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {new Date(txn.date).toLocaleDateString()} •{" "}
+                      {txn.currencyBase} {Number(txn.amountBase).toFixed(2)} •{" "}
+                      <Badge variant="outline" className="text-xs">
+                        {txn.type}
+                      </Badge>
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsLinkDialogOpen(false)}
+              disabled={isLinking}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleLinkTransactions}
+              disabled={isLinking || selectedTransactionIds.size === 0}
+            >
+              {isLinking
+                ? "Linking..."
+                : `Link ${selectedTransactionIds.size} Transaction${selectedTransactionIds.size !== 1 ? "s" : ""}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

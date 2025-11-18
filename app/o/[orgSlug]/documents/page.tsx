@@ -85,6 +85,16 @@ export default function DocumentsPage(): React.JSX.Element {
   const [linkedFilter, setLinkedFilter] = React.useState<string>("all");
   const [fileTypeFilter, setFileTypeFilter] = React.useState<string>("all");
   const [searchFilter, setSearchFilter] = React.useState<string>("");
+  const [vendorFilter, setVendorFilter] = React.useState<string>("all");
+  const [clientFilter, setClientFilter] = React.useState<string>("all");
+  const [amountMinFilter, setAmountMinFilter] = React.useState<string>("");
+  const [amountMaxFilter, setAmountMaxFilter] = React.useState<string>("");
+  const [uploaderFilter, setUploaderFilter] = React.useState<string>("all");
+
+  // Lookup data for filters
+  const [vendors, setVendors] = React.useState<Array<{ id: string; name: string }>>([]);
+  const [clients, setClients] = React.useState<Array<{ id: string; name: string }>>([]);
+  const [uploaders, setUploaders] = React.useState<Array<{ id: string; name: string | null; email: string }>>([]);
 
   // Upload state
   const [isUploading, setIsUploading] = React.useState(false);
@@ -104,6 +114,11 @@ export default function DocumentsPage(): React.JSX.Element {
       if (linkedFilter !== "all") queryParams.set("linked", linkedFilter);
       if (fileTypeFilter !== "all") queryParams.set("fileType", fileTypeFilter);
       if (searchFilter) queryParams.set("q", searchFilter);
+      if (vendorFilter !== "all") queryParams.set("vendorId", vendorFilter);
+      if (clientFilter !== "all") queryParams.set("clientId", clientFilter);
+      if (amountMinFilter) queryParams.set("amountMin", amountMinFilter);
+      if (amountMaxFilter) queryParams.set("amountMax", amountMaxFilter);
+      if (uploaderFilter !== "all") queryParams.set("uploaderId", uploaderFilter);
 
       const response = await fetch(
         `/api/orgs/${orgSlug}/documents?${queryParams.toString()}`
@@ -129,11 +144,44 @@ export default function DocumentsPage(): React.JSX.Element {
       setIsLoading(false);
       setIsInitialLoading(false);
     }
-  }, [orgSlug, page, dateFromFilter, dateToFilter, linkedFilter, fileTypeFilter, searchFilter, router]);
+  }, [orgSlug, page, dateFromFilter, dateToFilter, linkedFilter, fileTypeFilter, searchFilter, vendorFilter, clientFilter, amountMinFilter, amountMaxFilter, uploaderFilter, router]);
 
   React.useEffect(() => {
     loadDocuments();
   }, [loadDocuments]);
+
+  // Load lookup data for filters
+  React.useEffect(() => {
+    const loadLookups = async () => {
+      try {
+        const [vendorsRes, clientsRes, membersRes] = await Promise.all([
+          fetch(`/api/orgs/${orgSlug}/vendors`),
+          fetch(`/api/orgs/${orgSlug}/clients`),
+          fetch(`/api/orgs/${orgSlug}/members?pageSize=100`),
+        ]);
+
+        if (vendorsRes.ok) {
+          const vendorsData = await vendorsRes.json();
+          setVendors(vendorsData);
+        }
+
+        if (clientsRes.ok) {
+          const clientsData = await clientsRes.json();
+          setClients(clientsData);
+        }
+
+        if (membersRes.ok) {
+          const membersData = await membersRes.json();
+          setUploaders(membersData.members || []);
+        }
+      } catch (error) {
+        console.error("Error loading lookup data:", error);
+        // Non-critical, so just log
+      }
+    };
+
+    loadLookups();
+  }, [orgSlug]);
 
   // Handle file upload
   const handleFileUpload = async (files: FileList | null) => {
@@ -353,6 +401,106 @@ export default function DocumentsPage(): React.JSX.Element {
             </div>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="vendor">Vendor</Label>
+              <Select
+                value={vendorFilter}
+                onValueChange={(value) => {
+                  setVendorFilter(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger id="vendor">
+                  <SelectValue placeholder="All Vendors" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Vendors</SelectItem>
+                  {vendors.map((vendor) => (
+                    <SelectItem key={vendor.id} value={vendor.id}>
+                      {vendor.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="client">Client</Label>
+              <Select
+                value={clientFilter}
+                onValueChange={(value) => {
+                  setClientFilter(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger id="client">
+                  <SelectValue placeholder="All Clients" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Clients</SelectItem>
+                  {clients.map((client) => (
+                    <SelectItem key={client.id} value={client.id}>
+                      {client.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="amountMin">Min Amount</Label>
+              <Input
+                id="amountMin"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={amountMinFilter}
+                onChange={(e) => {
+                  setAmountMinFilter(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="amountMax">Max Amount</Label>
+              <Input
+                id="amountMax"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={amountMaxFilter}
+                onChange={(e) => {
+                  setAmountMaxFilter(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="uploader">Uploaded By</Label>
+              <Select
+                value={uploaderFilter}
+                onValueChange={(value) => {
+                  setUploaderFilter(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger id="uploader">
+                  <SelectValue placeholder="All Uploaders" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Uploaders</SelectItem>
+                  {uploaders.map((uploader) => (
+                    <SelectItem key={uploader.id} value={uploader.id}>
+                      {uploader.name || uploader.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="search">Search</Label>
             <Input
@@ -377,6 +525,11 @@ export default function DocumentsPage(): React.JSX.Element {
                 setLinkedFilter("all");
                 setFileTypeFilter("all");
                 setSearchFilter("");
+                setVendorFilter("all");
+                setClientFilter("all");
+                setAmountMinFilter("");
+                setAmountMaxFilter("");
+                setUploaderFilter("all");
                 setPage(1);
               }}
             >

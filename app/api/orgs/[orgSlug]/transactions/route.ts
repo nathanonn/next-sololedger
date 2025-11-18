@@ -131,6 +131,11 @@ export async function GET(
         account: true,
         vendor: true,
         client: true,
+        _count: {
+          select: {
+            documents: true,
+          },
+        },
       },
       orderBy: { date: "desc" },
     });

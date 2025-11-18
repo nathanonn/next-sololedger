@@ -490,7 +490,7 @@ export function TransactionForm({
           disabled={isLoading}
         />
         <p className="text-xs text-muted-foreground">
-          Amount in your organization's base currency ({settings.baseCurrency})
+          Amount in your organization&apos;s base currency ({settings.baseCurrency})
         </p>
       </div>
 

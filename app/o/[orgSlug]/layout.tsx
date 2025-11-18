@@ -126,6 +126,12 @@ export default async function OrgLayout({
       sectionId: "business",
     },
     {
+      id: "documents",
+      label: "Documents",
+      href: `/o/${orgSlug}/documents`,
+      sectionId: "business",
+    },
+    {
       id: "accounts",
       label: "Accounts",
       href: `/o/${orgSlug}/settings/accounts`,

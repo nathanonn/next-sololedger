@@ -45,7 +45,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { formatDate, formatTransactionAmount } from "@/lib/sololedger-formatters";
 import type { DateFormat, DecimalSeparator, ThousandsSeparator } from "@prisma/client";
-import { ChevronsUpDown, Trash2 } from "lucide-react";
+import { ChevronsUpDown, Trash2, Paperclip } from "lucide-react";
 
 interface Transaction {
   id: string;
@@ -63,6 +63,9 @@ interface Transaction {
   vendor?: { id: string; name: string } | null;
   clientName?: string | null;
   vendorName?: string | null;
+  _count?: {
+    documents: number;
+  };
 }
 
 interface OrgSettings {
@@ -854,7 +857,22 @@ export default function TransactionsPage(): React.JSX.Element {
                         settings.thousandsSeparator
                       )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
+                      {transaction._count && transaction._count.documents > 0 && (
+                        <Button
+                          asChild
+                          variant="outline"
+                          size="sm"
+                          className="gap-1"
+                        >
+                          <Link
+                            href={`/o/${orgSlug}/transactions/${transaction.id}#documents`}
+                          >
+                            <Paperclip className="h-3 w-3" />
+                            {transaction._count.documents}
+                          </Link>
+                        </Button>
+                      )}
                       <Button
                         asChild
                         variant="outline"

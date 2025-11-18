@@ -95,6 +95,7 @@ POST /api/integrations/[provider]/disconnect # Disconnect and revoke/remove toke
 - Server-first: default Server Components; add `'use client'` only when needed.
 - API routes must set `export const runtime = "nodejs"` for DB access.
 - Security red lines: see `AGENTS.md`.
+- **Backend-first implementation**: Complete all API endpoints with full validation, security, and audit logging before building UI. This ensures stable API contracts, enables faster UI iteration, provides clear separation of concerns, and readies the system for mobile/external integrations.
 
 ## Multi-Tenant Patterns (Sololedger)
 
@@ -106,10 +107,14 @@ Always filter soft-deleted records: `where: { organizationId: org.id, deletedAt:
 
 ### Permission Layers
 
-- **requireMembership**: GET endpoints (members need read access)
-- **requireAdminOrSuperadmin**: PATCH/POST/DELETE endpoints (write/config operations)
+- **requireMembership**: GET endpoints and regular operations (members need read access and basic functionality)
+- **requireAdminOrSuperadmin**: PATCH/POST/DELETE endpoints, destructive operations, and configuration changes
 
-Example: Financial settings GET = `requireMembership` (members need formatting), PATCH = `requireAdminOrSuperadmin`
+**Tiered permission strategy**: Regular operations (create, read, update, soft delete) should be accessible to all members, while destructive operations (hard delete, permanent changes) require elevated privileges. This balances accessibility with protection.
+
+Examples:
+- Financial settings GET = `requireMembership` (members need formatting), PATCH = `requireAdminOrSuperadmin`
+- Document upload/link/soft delete = `requireMembership`, hard delete = `requireAdminOrSuperadmin`
 
 ### Route Parameters
 
@@ -129,6 +134,84 @@ currencyCode: z.string().length(3).transform((val) => val.toUpperCase())
 ### Prisma Decimals
 
 Always convert `Decimal` to `Number`: `const total = Number(decimal) * rate`
+
+### Prisma Query Patterns
+
+**Complex filtering with OR/AND combinations**
+
+When combining multiple OR conditions in a single query, wrap them in AND to avoid conflicts:
+
+```typescript
+// Example: Combining date range OR with search field OR
+const where: Prisma.RecordWhereInput = { organizationId: org.id };
+
+// First OR condition (date range with fallback)
+if (startDate || endDate) {
+  where.OR = [
+    { dateField: { gte: startDate, lte: endDate } },
+    { fallbackDate: { gte: startDate, lte: endDate } }
+  ];
+}
+
+// Second OR condition (search across fields)
+if (searchQuery) {
+  const searchConditions = [
+    { field1: { contains: searchQuery } },
+    { field2: { contains: searchQuery } }
+  ];
+
+  // Must wrap both OR conditions in AND
+  if (where.OR) {
+    where.AND = [{ OR: where.OR }, { OR: searchConditions }];
+    delete where.OR;
+  } else {
+    where.OR = searchConditions;
+  }
+}
+```
+
+**Filtering many-to-many relations with conditions on target model**
+
+When querying through join tables, you cannot filter directly on fields that exist only on the target model. Navigate through the nested relation:
+
+```typescript
+// Schema: Model A ↔ JoinTable ↔ Model B (B has deletedAt, JoinTable does not)
+
+// ❌ WRONG - deletedAt doesn't exist on join table
+const result = await prisma.modelA.findUnique({
+  where: { id },
+  include: {
+    joinTableRelation: {
+      where: { deletedAt: null }  // Error!
+    }
+  }
+});
+
+// ✅ CORRECT - filter through nested relation, then flatten
+const result = await prisma.modelA.findUnique({
+  where: { id },
+  include: {
+    joinTableRelation: {
+      where: {
+        modelB: { deletedAt: null }  // Navigate to target model
+      },
+      include: {
+        modelB: {  // Include actual data
+          select: { id: true, name: true, ... }
+        }
+      }
+    }
+  }
+});
+
+// Flatten the response
+const flattened = {
+  ...result,
+  relatedItems: result.joinTableRelation.map(jt => jt.modelB)
+};
+```
+
+**Key insight**: Prisma's relation name for join tables refers to the join table entries, not the target model. Always navigate through the target model field to access its properties.
 
 ### Soft Deletes
 
@@ -220,6 +303,24 @@ BCRYPT_ROUNDS=12
 
 ````
 6. ❌ Handle OAuth or store provider tokens in client; server-only. APP_ENCRYPTION_KEY required when storing tokens.
+
+## Common Pitfalls
+
+### @paralleldrive/cuid2 Import
+
+The cuid2 package changed its API between v1 and v2. Always use the correct import:
+
+```typescript
+// ❌ WRONG - v1 pattern, will fail with "Export cuid doesn't exist"
+import { cuid } from '@paralleldrive/cuid2';
+const id = cuid();
+
+// ✅ CORRECT - v2 exports createId
+import { createId } from '@paralleldrive/cuid2';
+const id = createId();
+```
+
+**Root cause**: @paralleldrive/cuid2 v2.x changed the main export from `cuid` to `createId`. Always check package TypeScript definitions when upgrading dependencies.
 
 ## Notes
 

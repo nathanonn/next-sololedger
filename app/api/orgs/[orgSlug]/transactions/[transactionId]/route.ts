@@ -49,6 +49,30 @@ export async function GET(
         account: true,
         vendor: true,
         client: true,
+        documents: {
+          where: {
+            document: {
+              deletedAt: null,
+            },
+          },
+          include: {
+            document: {
+              select: {
+                id: true,
+                displayName: true,
+                filenameOriginal: true,
+                mimeType: true,
+                fileSizeBytes: true,
+                type: true,
+                documentDate: true,
+                uploadedAt: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+        },
       },
     });
 
@@ -66,7 +90,13 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ transaction });
+    // Transform the nested documents structure
+    const transactionWithDocuments = {
+      ...transaction,
+      documents: transaction.documents.map(td => td.document),
+    };
+
+    return NextResponse.json({ transaction: transactionWithDocuments });
   } catch (error) {
     console.error("Error fetching transaction:", error);
     return NextResponse.json(
@@ -474,7 +504,7 @@ export async function PATCH(
       data.amountSecondary !== undefined ||
       data.currencySecondary !== undefined;
 
-    let legacyData: {
+    const legacyData: {
       amountOriginal?: number;
       currencyOriginal?: string;
       exchangeRateToBase?: number;

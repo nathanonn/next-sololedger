@@ -31,7 +31,9 @@ import {
   Image as ImageIcon,
   File,
   Paperclip,
+  Sparkles,
 } from "lucide-react";
+import { RunExtractionDialog } from "@/components/features/documents/run-extraction-dialog";
 
 interface Document {
   id: string;
@@ -99,6 +101,13 @@ export default function DocumentsPage(): React.JSX.Element {
   // Upload state
   const [isUploading, setIsUploading] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // AI Extraction state
+  const [extractionDialogOpen, setExtractionDialogOpen] = React.useState(false);
+  const [selectedDocumentForExtraction, setSelectedDocumentForExtraction] = React.useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   // Load documents
   const loadDocuments = React.useCallback(async () => {
@@ -589,6 +598,20 @@ export default function DocumentsPage(): React.JSX.Element {
                           <Button
                             variant="ghost"
                             size="sm"
+                            onClick={() => {
+                              setSelectedDocumentForExtraction({
+                                id: doc.id,
+                                name: doc.displayName,
+                              });
+                              setExtractionDialogOpen(true);
+                            }}
+                            title="Run AI Extraction"
+                          >
+                            <Sparkles className="h-4 w-4 text-primary" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             asChild
                           >
                             <Link href={`/o/${orgSlug}/documents/${doc.id}`}>
@@ -674,6 +697,17 @@ export default function DocumentsPage(): React.JSX.Element {
           )}
         </CardContent>
       </Card>
+
+      {/* Run Extraction Dialog */}
+      {selectedDocumentForExtraction && (
+        <RunExtractionDialog
+          open={extractionDialogOpen}
+          onOpenChange={setExtractionDialogOpen}
+          documentId={selectedDocumentForExtraction.id}
+          documentName={selectedDocumentForExtraction.name}
+          orgSlug={orgSlug}
+        />
+      )}
     </div>
   );
 }

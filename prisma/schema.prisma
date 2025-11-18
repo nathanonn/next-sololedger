@@ -36,6 +36,7 @@ model User {
   updatedIntegrations  OrganizationIntegration[] @relation("IntegrationUpdatedBy")
   transactions         Transaction[]             @relation("TransactionCreator")
   uploadedDocuments    Document[]                @relation("DocumentUploader")
+  documentExtractions  DocumentExtraction[]      @relation("DocumentExtractionCreator")
 
   @@index([email])
   @@index([defaultOrganizationId])
@@ -115,9 +116,10 @@ model Organization {
   accounts         Account[]
   categories       Category[]
   vendors          Vendor[]
-  clients          Client[]
-  transactions     Transaction[]
-  documents        Document[]
+  clients              Client[]
+  transactions         Transaction[]
+  documents            Document[]
+  documentExtractions  DocumentExtraction[]
 
   @@index([slug])
   @@index([createdById])
@@ -369,6 +371,18 @@ enum DocumentType {
   OTHER
 }
 
+enum DocumentExtractionStatus {
+  RAW
+  REVIEWED_DRAFT
+  APPLIED
+}
+
+enum AiProvider {
+  openai
+  gemini
+  anthropic
+}
+
 // OrganizationSettings: business details and financial configuration
 model OrganizationSettings {
   id                   String             @id @default(cuid())
@@ -572,6 +586,7 @@ model Document {
   organization     Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   uploadedByUser   User                  @relation("DocumentUploader", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
   transactions     TransactionDocument[]
+  extractions      DocumentExtraction[]
 
   @@index([organizationId])
   @@index([organizationId, deletedAt])
@@ -596,4 +611,37 @@ model TransactionDocument {
   @@index([documentId])
   @@index([transactionId])
   @@map("transaction_documents")
+}
+
+// DocumentExtraction: AI-extracted data from documents
+model DocumentExtraction {
+  id                    String                    @id @default(cuid())
+  organizationId        String
+  documentId            String
+  createdByUserId       String
+  status                DocumentExtractionStatus  @default(RAW)
+  templateKey           String?                   @db.VarChar(100) // e.g., "standard_receipt", "invoice"
+  customPrompt          String?                   @db.Text
+  provider              AiProvider
+  modelName             String                    @db.VarChar(100)
+  documentType          DocumentType              @default(OTHER)
+  summaryTotalAmount    Decimal?                  @db.Decimal(18, 2)
+  summaryCurrency       String?                   @db.VarChar(3) // ISO 4217
+  summaryTransactionDate DateTime?
+  overallConfidence     Decimal?                  @db.Decimal(5, 4) // 0.0000 to 1.0000
+  isActive              Boolean                   @default(false)
+  payload               Json                      @db.Json // Full extraction object
+  appliedTransactionIds Json?                     @db.Json // Array of transaction IDs
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("DocumentExtractionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, documentId, isActive])
+  @@index([organizationId, documentId, createdAt(sort: Desc)])
+  @@index([organizationId, documentType, summaryTransactionDate])
+  @@index([organizationId, summaryCurrency])
+  @@map("document_extractions")
 }

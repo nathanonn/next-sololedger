@@ -40,6 +40,7 @@ import {
   X,
   Link as LinkIcon,
 } from "lucide-react";
+import { ExtractionSummaryCard } from "@/components/features/documents/extraction/extraction-summary-card";
 
 interface LinkedTransaction {
   id: string;
@@ -551,6 +552,13 @@ export default function DocumentDetailPage(): React.JSX.Element {
               </Button>
             </CardContent>
           </Card>
+
+          {/* AI Extraction */}
+          <ExtractionSummaryCard
+            orgSlug={orgSlug}
+            documentId={documentId}
+            documentName={document.displayName}
+          />
         </div>
       </div>
 

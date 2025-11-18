@@ -7,7 +7,7 @@ import {
 } from "@/lib/org-helpers";
 import { DashboardShell } from "@/components/features/dashboard/dashboard-shell";
 import { env } from "@/lib/env";
-import { Settings, Building2 } from "lucide-react";
+import { Settings, Building2, FileText } from "lucide-react";
 import { db } from "@/lib/db";
 
 /**
@@ -123,6 +123,12 @@ export default async function OrgLayout({
       id: "transactions",
       label: "Transactions",
       href: `/o/${orgSlug}/transactions`,
+      sectionId: "business",
+    },
+    {
+      id: "documents",
+      label: "Documents",
+      href: `/o/${orgSlug}/documents`,
       sectionId: "business",
     },
     {

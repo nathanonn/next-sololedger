@@ -35,6 +35,7 @@ model User {
   createdIntegrations  OrganizationIntegration[] @relation("IntegrationCreatedBy")
   updatedIntegrations  OrganizationIntegration[] @relation("IntegrationUpdatedBy")
   transactions         Transaction[]             @relation("TransactionCreator")
+  uploadedDocuments    Document[]                @relation("DocumentUploader")
 
   @@index([email])
   @@index([defaultOrganizationId])
@@ -116,6 +117,7 @@ model Organization {
   vendors          Vendor[]
   clients          Client[]
   transactions     Transaction[]
+  documents        Document[]
 
   @@index([slug])
   @@index([createdById])
@@ -360,6 +362,13 @@ enum ThousandsSeparator {
   NONE
 }
 
+enum DocumentType {
+  RECEIPT
+  INVOICE
+  BANK_STATEMENT
+  OTHER
+}
+
 // OrganizationSettings: business details and financial configuration
 model OrganizationSettings {
   id                   String             @id @default(cuid())
@@ -380,6 +389,7 @@ model OrganizationSettings {
   softClosedBefore     DateTime? // Transactions before this date are in soft-closed period
   isTaxRegistered      Boolean?
   defaultTaxRate       Decimal?           @db.Decimal(5, 2)
+  documentRetentionDays Int? // Intended retention before hard delete
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
@@ -519,9 +529,10 @@ model Transaction {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   account      Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
   category     Category     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  vendor       Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
-  client       Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  user         User         @relation("TransactionCreator", fields: [userId], references: [id], onDelete: Restrict)
+  vendor       Vendor?              @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  client       Client?              @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  user         User                 @relation("TransactionCreator", fields: [userId], references: [id], onDelete: Restrict)
+  documents    TransactionDocument[]
 
   @@index([organizationId])
   @@index([organizationId, date])
@@ -538,4 +549,51 @@ model Transaction {
   @@index([clientId])
   @@index([userId])
   @@map("transactions")
+}
+
+// Document: organization's document library (receipts, invoices, statements)
+model Document {
+  id               String       @id @default(cuid())
+  organizationId   String
+  uploadedByUserId String
+  storageKey       String       @db.Text // Internal path/key for storage backend
+  filenameOriginal String       @db.VarChar(255)
+  displayName      String       @db.VarChar(255) // User-facing, editable
+  mimeType         String       @db.VarChar(100)
+  fileSizeBytes    Int
+  type             DocumentType @default(OTHER)
+  documentDate     DateTime? // Optional invoice/receipt date
+  uploadedAt       DateTime     @default(now())
+  textContent      String?      @db.Text // OCR / AI-extracted text for search
+  deletedAt        DateTime? // Soft delete / Trash
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  organization     Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedByUser   User                  @relation("DocumentUploader", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  transactions     TransactionDocument[]
+
+  @@index([organizationId])
+  @@index([organizationId, deletedAt])
+  @@index([organizationId, documentDate])
+  @@index([organizationId, uploadedAt])
+  @@index([organizationId, filenameOriginal])
+  @@index([organizationId, type])
+  @@index([organizationId, mimeType])
+  @@map("documents")
+}
+
+// TransactionDocument: many-to-many join between transactions and documents
+model TransactionDocument {
+  transactionId String
+  documentId    String
+  createdAt     DateTime @default(now())
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  document    Document    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@id([transactionId, documentId])
+  @@index([documentId])
+  @@index([transactionId])
+  @@map("transaction_documents")
 }

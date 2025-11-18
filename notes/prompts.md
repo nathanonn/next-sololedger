@@ -42,6 +42,8 @@ IMPORTANT: Always wrap codeblocks with triple backticks around the wireframes fo
 
 Read the plan at @notes/plan.md and @notes/wireframes.md, and implement the plan accordingly. Use the wireframes as a guide for the implementation.
 
+Please use the "build-insights-logger" skill to automatically log meaningful insights, discoveries, and decisions during coding session.
+
 # Review
 
 Please read the git diff, and review the code changes to see if the implementation is correct and follows the plan @notes/plan.md and wireframes @notes/wireframes.md, correctly.

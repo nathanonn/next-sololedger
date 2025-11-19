@@ -149,3 +149,65 @@ export function getClientIp(request: Request): string | undefined {
 
   return undefined;
 }
+
+/**
+ * Create access token from API key
+ * Used by the API key exchange endpoint
+ */
+export async function createAccessTokenFromApiKey(params: {
+  apiKeyId: string;
+  userId: string;
+  userEmail: string;
+  userRole: string;
+  sessionVersion: number;
+  organizationId: string;
+}): Promise<string> {
+  const { apiKeyId, userId, userEmail, userRole, sessionVersion, organizationId } = params;
+
+  return signAccessJwt({
+    sub: userId,
+    email: userEmail,
+    role: userRole,
+    tokenVersion: sessionVersion,
+    authMethod: "api_key",
+    apiKeyId,
+    organizationId,
+  });
+}
+
+/**
+ * Get current user from Bearer token (for API key auth)
+ * Similar to getCurrentUser but accepts a token parameter
+ */
+export async function getUserFromBearerToken(
+  token: string
+): Promise<CurrentUser | null> {
+  try {
+    const payload = await verifyAccessJwt(token);
+
+    // Load user from DB
+    const user = await db.user.findUnique({
+      where: { id: payload.sub },
+    });
+
+    if (!user) return null;
+
+    // Check sessionVersion
+    if (user.sessionVersion !== payload.tokenVersion) {
+      return null; // Session invalidated
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      emailVerifiedAt: user.emailVerifiedAt,
+      passwordHash: user.passwordHash,
+      sessionVersion: user.sessionVersion,
+      defaultOrganizationId: user.defaultOrganizationId,
+    };
+  } catch {
+    return null;
+  }
+}

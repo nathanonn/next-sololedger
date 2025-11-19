@@ -18,6 +18,7 @@ const PUBLIC_PATHS = [
   "/api/auth/dev-signin",
   "/api/auth/signout",
   "/api/auth/refresh",
+  "/api/auth/api-key/exchange",
 ];
 
 // Paths that should always be accessible

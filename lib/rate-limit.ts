@@ -82,3 +82,65 @@ export async function recordOtpRequest(
     },
   });
 }
+
+/**
+ * Generic in-memory rate limiter using sliding window
+ * For production, consider Redis or a database-backed solution
+ */
+const rateLimitStore = new Map<
+  string,
+  Array<{ timestamp: number }>
+>();
+
+export async function rateLimit(
+  key: string,
+  limit: number,
+  windowSeconds: number
+): Promise<{ success: boolean; remaining: number }> {
+  const now = Date.now();
+  const windowMs = windowSeconds * 1000;
+
+  // Get or create bucket
+  let bucket = rateLimitStore.get(key);
+  if (!bucket) {
+    bucket = [];
+    rateLimitStore.set(key, bucket);
+  }
+
+  // Remove expired entries
+  const validEntries = bucket.filter(
+    (entry) => now - entry.timestamp < windowMs
+  );
+  rateLimitStore.set(key, validEntries);
+
+  // Check limit
+  if (validEntries.length >= limit) {
+    return { success: false, remaining: 0 };
+  }
+
+  // Add new entry
+  validEntries.push({ timestamp: now });
+  rateLimitStore.set(key, validEntries);
+
+  return { success: true, remaining: limit - validEntries.length };
+}
+
+// Cleanup old entries periodically (every 5 minutes)
+if (typeof setInterval !== "undefined") {
+  setInterval(() => {
+    const now = Date.now();
+    const maxAge = 60 * 60 * 1000; // 1 hour
+
+    for (const [key, bucket] of rateLimitStore.entries()) {
+      const validEntries = bucket.filter(
+        (entry) => now - entry.timestamp < maxAge
+      );
+
+      if (validEntries.length === 0) {
+        rateLimitStore.delete(key);
+      } else {
+        rateLimitStore.set(key, validEntries);
+      }
+    }
+  }, 5 * 60 * 1000);
+}

@@ -13,6 +13,9 @@ export type AccessTokenPayload = {
   email: string;
   role: string;
   tokenVersion: number;
+  authMethod?: "password" | "otp" | "api_key"; // Optional: how the token was obtained
+  apiKeyId?: string; // Optional: for api_key auth method
+  organizationId?: string; // Optional: org context for API key tokens
 };
 
 export type RefreshTokenPayload = {

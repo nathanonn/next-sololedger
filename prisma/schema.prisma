@@ -37,6 +37,7 @@ model User {
   transactions         Transaction[]             @relation("TransactionCreator")
   uploadedDocuments    Document[]                @relation("DocumentUploader")
   documentExtractions  DocumentExtraction[]      @relation("DocumentExtractionCreator")
+  apiKeys              ApiKey[]                  @relation("UserApiKeys")
 
   @@index([email])
   @@index([defaultOrganizationId])
@@ -91,6 +92,31 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+// ApiKey: personal API keys for MCP and external integrations
+model ApiKey {
+  id             String    @id @default(cuid())
+  userId         String
+  organizationId String
+  name           String    @db.VarChar(255)
+  prefix         String    @db.VarChar(16) // Short prefix for identification (e.g., "slk_abc123")
+  secretHash     String    @db.VarChar(255) // bcrypt hash of the full key
+  scopes         Json?     @db.Json // Reserved for future scope restrictions
+  expiresAt      DateTime?
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user         User         @relation("UserApiKeys", fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation("OrganizationApiKeys", fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([prefix])
+  @@index([userId])
+  @@index([organizationId])
+  @@index([prefix])
+  @@map("api_keys")
+}
+
 // Organization: tenant isolation boundary
 model Organization {
   id                 String   @id @default(cuid())
@@ -120,6 +146,7 @@ model Organization {
   transactions         Transaction[]
   documents            Document[]
   documentExtractions  DocumentExtraction[]
+  apiKeys              ApiKey[]                  @relation("OrganizationApiKeys")
 
   @@index([slug])
   @@index([createdById])

@@ -24,6 +24,7 @@ export type CurrentUser = {
   passwordHash: string | null;
   sessionVersion: number;
   defaultOrganizationId: string | null;
+  apiKeyOrganizationId?: string | null; // Set when auth via API key, restricts org access
 };
 
 /**
@@ -76,6 +77,22 @@ export async function getCurrentUser(
       return null; // Session invalidated
     }
 
+    // For API key authentication, verify the key is still valid
+    if (payload.authMethod === "api_key" && payload.apiKeyId) {
+      const apiKey = await db.apiKey.findUnique({
+        where: { id: payload.apiKeyId },
+      });
+
+      // Reject if key doesn't exist, is revoked, or has expired
+      if (!apiKey || apiKey.revokedAt !== null) {
+        return null;
+      }
+
+      if (apiKey.expiresAt && apiKey.expiresAt < new Date()) {
+        return null;
+      }
+    }
+
     return {
       id: user.id,
       email: user.email,
@@ -85,6 +102,7 @@ export async function getCurrentUser(
       passwordHash: user.passwordHash,
       sessionVersion: user.sessionVersion,
       defaultOrganizationId: user.defaultOrganizationId,
+      apiKeyOrganizationId: payload.authMethod === "api_key" ? payload.organizationId : null,
     };
   } catch {
     return null;
@@ -230,6 +248,22 @@ export async function getUserFromBearerToken(
       return null; // Session invalidated
     }
 
+    // For API key authentication, verify the key is still valid
+    if (payload.authMethod === "api_key" && payload.apiKeyId) {
+      const apiKey = await db.apiKey.findUnique({
+        where: { id: payload.apiKeyId },
+      });
+
+      // Reject if key doesn't exist, is revoked, or has expired
+      if (!apiKey || apiKey.revokedAt !== null) {
+        return null;
+      }
+
+      if (apiKey.expiresAt && apiKey.expiresAt < new Date()) {
+        return null;
+      }
+    }
+
     return {
       id: user.id,
       email: user.email,
@@ -239,8 +273,29 @@ export async function getUserFromBearerToken(
       passwordHash: user.passwordHash,
       sessionVersion: user.sessionVersion,
       defaultOrganizationId: user.defaultOrganizationId,
+      apiKeyOrganizationId: payload.authMethod === "api_key" ? payload.organizationId : null,
     };
   } catch {
     return null;
   }
+}
+
+/**
+ * Validate that an API key user has access to the requested organization
+ * Returns true if:
+ * - User is not authenticated via API key (regular auth, no restriction)
+ * - User's API key organization matches the requested organization
+ * Returns false if API key is scoped to a different organization
+ */
+export function validateApiKeyOrgAccess(
+  user: CurrentUser,
+  requestedOrgId: string
+): boolean {
+  // If not API key auth, allow access (regular cookie-based auth)
+  if (!user.apiKeyOrganizationId) {
+    return true;
+  }
+
+  // If API key auth, verify the organization matches
+  return user.apiKeyOrganizationId === requestedOrgId;
 }

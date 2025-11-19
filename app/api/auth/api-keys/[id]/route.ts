@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getCurrentUser, getClientIp } from "@/lib/auth-helpers";
+import { getCurrentUser, getClientIp, validateApiKeyOrgAccess } from "@/lib/auth-helpers";
 import {
   updateApiKeyScopesAndExpiry,
   createApiKeyAuditLog,
@@ -54,6 +54,14 @@ export async function PATCH(
     if (existingKey.userId !== user.id) {
       return NextResponse.json(
         { error: "forbidden", message: "Access denied to this API key" },
+        { status: 403 }
+      );
+    }
+
+    // For API key auth, verify organization constraint
+    if (!validateApiKeyOrgAccess(user, existingKey.organizationId)) {
+      return NextResponse.json(
+        { error: "forbidden", message: "API key not authorized for this organization" },
         { status: 403 }
       );
     }

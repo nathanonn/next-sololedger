@@ -74,12 +74,26 @@ export function EditApiKeyDialog({ apiKey, open, onOpenChange, onSuccess }: Prop
     return "custom";
   };
 
+  // Calculate initial custom days value
+  const getInitialCustomDays = (): string => {
+    if (!apiKey.expiresAt) return "";
+    const expiresAt = new Date(apiKey.expiresAt);
+    const now = new Date();
+    const diffDays = Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+    // If it's a custom duration (not 30 or 90 days), return the number of days
+    if (diffDays < 28 || (diffDays > 32 && diffDays < 85) || diffDays > 95) {
+      return diffDays.toString();
+    }
+    return ""; // Standard durations (30 or 90 days) don't need custom value
+  };
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: apiKey.name,
       expiryOption: getInitialExpiryOption(),
-      customDays: "",
+      customDays: getInitialCustomDays(),
     },
   });
 

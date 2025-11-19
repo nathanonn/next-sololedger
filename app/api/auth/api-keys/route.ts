@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getCurrentUser, getClientIp } from "@/lib/auth-helpers";
+import { getCurrentUser, getClientIp, validateApiKeyOrgAccess } from "@/lib/auth-helpers";
 import {
   createApiKey,
   listApiKeysForUser,
@@ -32,6 +32,14 @@ export async function GET(request: Request): Promise<Response> {
 
     // If organizationId is provided, verify user is a member
     if (organizationId) {
+      // For API key auth, verify organization constraint
+      if (!validateApiKeyOrgAccess(user, organizationId)) {
+        return NextResponse.json(
+          { error: "forbidden", message: "API key not authorized for this organization" },
+          { status: 403 }
+        );
+      }
+
       const membership = await db.membership.findUnique({
         where: {
           userId_organizationId: {
@@ -100,6 +108,14 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const { name, organizationId, scopes, expiresAt } = validation.data;
+
+    // For API key auth, verify organization constraint
+    if (!validateApiKeyOrgAccess(user, organizationId)) {
+      return NextResponse.json(
+        { error: "forbidden", message: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
 
     // Verify user is a member of the organization
     const membership = await db.membership.findUnique({

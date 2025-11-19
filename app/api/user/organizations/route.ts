@@ -18,7 +18,28 @@ export async function GET(request: Request): Promise<Response> {
       );
     }
 
-    // Get all memberships with organization details
+    // If API key auth, return only the scoped organization
+    if (user.apiKeyOrganizationId) {
+      const org = await db.organization.findUnique({
+        where: { id: user.apiKeyOrganizationId },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      });
+
+      if (!org) {
+        return NextResponse.json(
+          { error: "not_found", message: "Organization not found" },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({ organizations: [org] }, { status: 200 });
+    }
+
+    // Cookie-based auth: return all memberships
     const memberships = await db.membership.findMany({
       where: {
         userId: user.id,

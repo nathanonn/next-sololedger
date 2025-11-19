@@ -30,16 +30,23 @@ export async function GET(request: Request): Promise<Response> {
     const { searchParams } = new URL(request.url);
     const organizationId = searchParams.get("organizationId") || undefined;
 
-    // If organizationId is provided, verify user is a member
-    if (organizationId) {
-      // For API key auth, verify organization constraint
-      if (!validateApiKeyOrgAccess(user, organizationId)) {
+    // If API key auth, enforce organization scope
+    if (user.apiKeyOrganizationId) {
+      // Reject attempts to access other organizations
+      if (organizationId && organizationId !== user.apiKeyOrganizationId) {
         return NextResponse.json(
           { error: "forbidden", message: "API key not authorized for this organization" },
           { status: 403 }
         );
       }
 
+      // Force org context to the API key's scoped organization
+      const apiKeys = await listApiKeysForUser(user.id, user.apiKeyOrganizationId);
+      return NextResponse.json({ apiKeys }, { status: 200 });
+    }
+
+    // Cookie-based auth: allow optional org filtering
+    if (organizationId) {
       const membership = await db.membership.findUnique({
         where: {
           userId_organizationId: {

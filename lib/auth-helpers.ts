@@ -24,16 +24,43 @@ export type CurrentUser = {
   passwordHash: string | null;
   sessionVersion: number;
   defaultOrganizationId: string | null;
+  apiKeyOrganizationId?: string | null; // Set when auth via API key, restricts org access
 };
+
+/**
+ * Get authentication token from request
+ * Checks Authorization header (Bearer token) first, then falls back to cookies
+ * This enables both cookie-based (browser) and header-based (API key) authentication
+ */
+export async function getAuthFromRequest(
+  request?: Request
+): Promise<string | null | undefined> {
+  // Check Authorization header first (for API key / Bearer token auth)
+  if (request) {
+    const authHeader = request.headers.get("authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      return authHeader.slice(7); // Remove "Bearer " prefix
+    }
+  }
+
+  // Fall back to cookie-based auth
+  return await getAccessToken();
+}
 
 /**
  * Get current user from access token
  * Verifies JWT and checks sessionVersion against DB
  * Returns null if invalid or session revoked
+ *
+ * Supports both cookie-based auth (browser) and Bearer token auth (API keys):
+ * - Pass request parameter to enable Bearer token support
+ * - Omit request parameter to use cookie-only auth (server components)
  */
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+export async function getCurrentUser(
+  request?: Request
+): Promise<CurrentUser | null> {
   try {
-    const token = await getAccessToken();
+    const token = await getAuthFromRequest(request);
     if (!token) return null;
 
     const payload = await verifyAccessJwt(token);
@@ -50,6 +77,22 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       return null; // Session invalidated
     }
 
+    // For API key authentication, verify the key is still valid
+    if (payload.authMethod === "api_key" && payload.apiKeyId) {
+      const apiKey = await db.apiKey.findUnique({
+        where: { id: payload.apiKeyId },
+      });
+
+      // Reject if key doesn't exist, is revoked, or has expired
+      if (!apiKey || apiKey.revokedAt !== null) {
+        return null;
+      }
+
+      if (apiKey.expiresAt && apiKey.expiresAt < new Date()) {
+        return null;
+      }
+    }
+
     return {
       id: user.id,
       email: user.email,
@@ -59,6 +102,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       passwordHash: user.passwordHash,
       sessionVersion: user.sessionVersion,
       defaultOrganizationId: user.defaultOrganizationId,
+      apiKeyOrganizationId: payload.authMethod === "api_key" ? payload.organizationId : null,
     };
   } catch {
     return null;
@@ -148,4 +192,110 @@ export function getClientIp(request: Request): string | undefined {
   if (realIp) return realIp;
 
   return undefined;
+}
+
+/**
+ * Create access token from API key
+ * Used by the API key exchange endpoint
+ */
+export async function createAccessTokenFromApiKey(params: {
+  apiKeyId: string;
+  userId: string;
+  userEmail: string;
+  userRole: string;
+  sessionVersion: number;
+  organizationId: string;
+}): Promise<string> {
+  const {
+    apiKeyId,
+    userId,
+    userEmail,
+    userRole,
+    sessionVersion,
+    organizationId,
+  } = params;
+
+  return signAccessJwt({
+    sub: userId,
+    email: userEmail,
+    role: userRole,
+    tokenVersion: sessionVersion,
+    authMethod: "api_key",
+    apiKeyId,
+    organizationId,
+  });
+}
+
+/**
+ * Get current user from Bearer token (for API key auth)
+ * Similar to getCurrentUser but accepts a token parameter
+ */
+export async function getUserFromBearerToken(
+  token: string
+): Promise<CurrentUser | null> {
+  try {
+    const payload = await verifyAccessJwt(token);
+
+    // Load user from DB
+    const user = await db.user.findUnique({
+      where: { id: payload.sub },
+    });
+
+    if (!user) return null;
+
+    // Check sessionVersion
+    if (user.sessionVersion !== payload.tokenVersion) {
+      return null; // Session invalidated
+    }
+
+    // For API key authentication, verify the key is still valid
+    if (payload.authMethod === "api_key" && payload.apiKeyId) {
+      const apiKey = await db.apiKey.findUnique({
+        where: { id: payload.apiKeyId },
+      });
+
+      // Reject if key doesn't exist, is revoked, or has expired
+      if (!apiKey || apiKey.revokedAt !== null) {
+        return null;
+      }
+
+      if (apiKey.expiresAt && apiKey.expiresAt < new Date()) {
+        return null;
+      }
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      emailVerifiedAt: user.emailVerifiedAt,
+      passwordHash: user.passwordHash,
+      sessionVersion: user.sessionVersion,
+      defaultOrganizationId: user.defaultOrganizationId,
+      apiKeyOrganizationId: payload.authMethod === "api_key" ? payload.organizationId : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Validate that an API key user has access to the requested organization
+ * Returns true if:
+ * - User is not authenticated via API key (regular auth, no restriction)
+ * - User's API key organization matches the requested organization
+ * Returns false if API key is scoped to a different organization
+ */
+export function validateApiKeyOrgAccess(
+  user: CurrentUser,
+  requestedOrgId: string
+): boolean {
+  // If not API key auth, allow access (regular cookie-based auth)
+  if (!user.apiKeyOrganizationId) {
+    return true;
+  }
+
+  // If API key auth, verify the organization matches
+  return user.apiKeyOrganizationId === requestedOrgId;
 }

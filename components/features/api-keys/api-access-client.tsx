@@ -19,13 +19,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -68,12 +61,13 @@ type NewApiKeyResponse = {
   fullKey: string;
 };
 
-export default function ApiAccessPage(): JSX.Element {
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+type Props = {
+  org: Organization;
+};
+
+export function ApiAccessClient({ org }: Props): JSX.Element {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingOrgs, setLoadingOrgs] = useState(true);
   const [reloadTrigger, setReloadTrigger] = useState(0);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingKey, setEditingKey] = useState<ApiKey | null>(null);
@@ -81,51 +75,12 @@ export default function ApiAccessPage(): JSX.Element {
   const [newApiKeyData, setNewApiKeyData] = useState<NewApiKeyResponse | null>(null);
   const router = useRouter();
 
-  // Load organizations on mount
+  // Load API keys when component mounts or reload is triggered
   useEffect(() => {
-    const loadOrganizations = async (): Promise<void> => {
-      try {
-        const response = await fetch("/api/user/organizations");
-        if (!response.ok) {
-          if (response.status === 401) {
-            router.push("/login");
-            return;
-          }
-          throw new Error("Failed to load organizations");
-        }
-        const data = await response.json();
-        const orgs = data.organizations || [];
-        setOrganizations(orgs);
-
-        // Auto-select first org if only one, otherwise select all (null)
-        if (orgs.length === 1) {
-          setSelectedOrgId(orgs[0].id);
-        } else {
-          setSelectedOrgId(null); // Show all orgs
-        }
-      } catch {
-        toast.error("Failed to load organizations");
-      } finally {
-        setLoadingOrgs(false);
-      }
-    };
-
-    loadOrganizations();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Load API keys when selected org changes
-  useEffect(() => {
-    if (loadingOrgs) return; // Wait for orgs to load first
-
     const loadApiKeys = async (): Promise<void> => {
       setLoading(true);
       try {
-        const url = selectedOrgId
-          ? `/api/auth/api-keys?organizationId=${selectedOrgId}`
-          : "/api/auth/api-keys";
-
-        const response = await fetch(url);
+        const response = await fetch(`/api/auth/api-keys?organizationId=${org.id}`);
         if (!response.ok) {
           if (response.status === 401) {
             router.push("/login");
@@ -144,7 +99,7 @@ export default function ApiAccessPage(): JSX.Element {
 
     loadApiKeys();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedOrgId, loadingOrgs, reloadTrigger]);
+  }, [org.id, reloadTrigger]);
 
   const reloadApiKeys = (): void => {
     setReloadTrigger((prev) => prev + 1);
@@ -191,18 +146,8 @@ export default function ApiAccessPage(): JSX.Element {
     return d.toLocaleDateString();
   };
 
-  if (loadingOrgs) {
-    return (
-      <div className="container mx-auto p-6 max-w-6xl">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 w-48 bg-muted rounded" />
-          <div className="h-64 bg-muted rounded" />
-        </div>
-      </div>
-    );
-  }
-
-  const showOrgSelector = organizations.length > 1;
+  // Filter out revoked keys
+  const activeApiKeys = apiKeys.filter(key => !key.revokedAt);
 
   return (
     <div className="container mx-auto p-6 max-w-6xl">
@@ -210,41 +155,17 @@ export default function ApiAccessPage(): JSX.Element {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">API Access</h1>
           <p className="text-muted-foreground mt-2">
-            Manage your personal API keys for MCP and integrations.
+            Manage API keys for MCP and integrations.
           </p>
         </div>
-
-        {showOrgSelector && (
-          <div className="flex items-center gap-2">
-            <label htmlFor="org-selector" className="text-sm font-medium">
-              Organization:
-            </label>
-            <Select
-              value={selectedOrgId || "all"}
-              onValueChange={(value) => setSelectedOrgId(value === "all" ? null : value)}
-            >
-              <SelectTrigger id="org-selector" className="w-[280px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Organizations</SelectItem>
-                {organizations.map((org) => (
-                  <SelectItem key={org.id} value={org.id}>
-                    {org.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
 
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Your API Keys</CardTitle>
+                <CardTitle>API Keys</CardTitle>
                 <CardDescription>
-                  Create and manage API keys to access your organizations programmatically
+                  Create and manage API keys to access this organization programmatically
                 </CardDescription>
               </div>
               <Button onClick={() => setCreateDialogOpen(true)}>
@@ -259,12 +180,12 @@ export default function ApiAccessPage(): JSX.Element {
                 <div className="animate-spin h-8 w-8 mx-auto border-4 border-primary border-t-transparent rounded-full mb-4" />
                 <p className="text-muted-foreground">Loading API keys...</p>
               </div>
-            ) : apiKeys.length === 0 ? (
+            ) : activeApiKeys.length === 0 ? (
               <div className="text-center py-12">
                 <Key className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <h3 className="text-lg font-semibold mb-2">No API keys yet</h3>
                 <p className="text-muted-foreground mb-4">
-                  Create your first API key to connect MCP or other tools to your SoloLedger workspace.
+                  Create your first API key to connect MCP or other tools to this organization.
                 </p>
                 <Button onClick={() => setCreateDialogOpen(true)}>
                   <Plus className="h-4 w-4 mr-2" />
@@ -277,18 +198,16 @@ export default function ApiAccessPage(): JSX.Element {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Prefix</TableHead>
-                    <TableHead>Organization</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Last Used</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {apiKeys.map((key) => (
+                  {activeApiKeys.map((key) => (
                     <TableRow key={key.id}>
                       <TableCell className="font-medium">{key.name}</TableCell>
                       <TableCell className="font-mono text-sm">{key.prefix}</TableCell>
-                      <TableCell>{key.organization.name}</TableCell>
                       <TableCell>{getStatusBadge(key)}</TableCell>
                       <TableCell className="text-muted-foreground">
                         {formatDate(key.lastUsedAt)}
@@ -343,6 +262,7 @@ export default function ApiAccessPage(): JSX.Element {
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         onSuccess={handleCreateSuccess}
+        organizationId={org.id}
       />
 
       {editingKey && (

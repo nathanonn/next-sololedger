@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -23,13 +23,6 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -56,7 +49,6 @@ type NewApiKeyResponse = {
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
-  organizationId: z.string().cuid("Please select an organization"),
   expiryOption: z.enum(["never", "90days", "30days", "custom"]),
   customDays: z.string().optional(),
 });
@@ -67,47 +59,20 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: (data: NewApiKeyResponse) => void;
+  organizationId: string;
 };
 
-export function CreateApiKeyDialog({ open, onOpenChange, onSuccess }: Props): JSX.Element {
+export function CreateApiKeyDialog({ open, onOpenChange, onSuccess, organizationId }: Props): JSX.Element {
   const [loading, setLoading] = useState(false);
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [loadingOrgs, setLoadingOrgs] = useState(true);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
-      organizationId: "",
       expiryOption: "90days",
       customDays: "",
     },
   });
-
-  // Load organizations
-  useEffect(() => {
-    const loadOrganizations = async (): Promise<void> => {
-      try {
-        const response = await fetch("/api/user/organizations");
-        if (!response.ok) throw new Error("Failed to load organizations");
-        const data = await response.json();
-        setOrganizations(data.organizations || []);
-        // Auto-select if only one org
-        if (data.organizations?.length === 1) {
-          form.setValue("organizationId", data.organizations[0].id);
-        }
-      } catch {
-        toast.error("Failed to load organizations");
-      } finally {
-        setLoadingOrgs(false);
-      }
-    };
-
-    if (open) {
-      loadOrganizations();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
 
   const onSubmit = async (values: FormValues): Promise<void> => {
     setLoading(true);
@@ -136,7 +101,7 @@ export function CreateApiKeyDialog({ open, onOpenChange, onSuccess }: Props): JS
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: values.name,
-          organizationId: values.organizationId,
+          organizationId,
           expiresAt,
         }),
       });
@@ -180,38 +145,6 @@ export function CreateApiKeyDialog({ open, onOpenChange, onSuccess }: Props): JS
                   </FormControl>
                   <FormDescription>
                     A descriptive name to identify this API key
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="organizationId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Organization</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                    disabled={loadingOrgs || organizations.length === 1}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select organization" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {organizations.map((org) => (
-                        <SelectItem key={org.id} value={org.id}>
-                          {org.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    The organization this key will have access to
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

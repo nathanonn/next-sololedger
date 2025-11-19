@@ -25,7 +25,6 @@ import {
   Settings,
   Users,
   LayoutDashboard,
-  Key,
 } from "lucide-react";
 import type { Section, Page, CurrentOrg } from "./dashboard-shell";
 
@@ -87,10 +86,6 @@ function UserMenuContent({
       >
         <User className="mr-2 h-4 w-4" />
         Profile
-      </DropdownMenuItem>
-      <DropdownMenuItem onClick={() => router.push("/account/api-access")}>
-        <Key className="mr-2 h-4 w-4" />
-        API Access
       </DropdownMenuItem>
       {currentOrg &&
         (currentOrg.role === "admin" || currentOrg.role === "superadmin") && (

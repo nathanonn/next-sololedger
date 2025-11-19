@@ -174,6 +174,13 @@ export default async function OrgLayout({
       sectionId: "settings",
     },
     {
+      id: "api-access",
+      label: "API Access",
+      href: `/o/${orgSlug}/settings/api-access`,
+      sectionId: "settings",
+      // All members can manage API keys
+    },
+    {
       id: "organization",
       label: "Organization",
       href: `/o/${orgSlug}/settings/organization/general`,

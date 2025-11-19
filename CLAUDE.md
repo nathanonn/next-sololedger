@@ -61,6 +61,17 @@ POST /api/auth/profile/set-password      # Set password (no current)
 POST /api/auth/profile/change-password   # Change password (requires current)
 ```
 
+### Bearer Token Support
+
+`getCurrentUser(request?)` supports both cookie-based (browser) and Bearer token (API key) authentication:
+
+- Pass optional `Request` parameter to API routes: `const user = await getCurrentUser(request)`
+- Helper checks `Authorization: Bearer <token>` header first, falls back to cookies
+- Maintains backward compatibility (server components work without passing request)
+- Enables API key authentication flow via `/api/auth/api-key/exchange`
+
+Pattern: Backend-first implementation means retrofitting existing auth infrastructure to support new flows end-to-end, not just creating new endpoints.
+
 ## Dashboard Shell (quick)
 
 Two-level navigation (Sections → Pages), resizable/collapsible sidebar, mobile drawer (Sheet), per-user persistence.
@@ -321,6 +332,22 @@ const id = createId();
 ```
 
 **Root cause**: @paralleldrive/cuid2 v2.x changed the main export from `cuid` to `createId`. Always check package TypeScript definitions when upgrading dependencies.
+
+### Toast Notifications
+
+This codebase uses **Sonner** for toast notifications, not shadcn's built-in toast or custom hooks:
+
+```typescript
+// ✅ CORRECT - Sonner is installed
+import { toast } from "sonner"
+toast.success("Operation successful")
+toast.error("Error message")
+
+// ❌ WRONG - @/hooks/use-toast doesn't exist in this codebase
+import { useToast } from "@/hooks/use-toast"
+```
+
+Always check existing dependencies before adding new UI patterns from shadcn docs.
 
 ## Notes
 

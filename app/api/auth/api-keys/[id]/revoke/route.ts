@@ -14,8 +14,8 @@ export async function POST(
   { params }: { params: { id: string } }
 ): Promise<Response> {
   try {
-    // Authenticate
-    const user = await getCurrentUser();
+    // Authenticate (supports both cookie and Bearer token)
+    const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json(
         { error: "unauthorized", message: "Authentication required" },

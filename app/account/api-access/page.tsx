@@ -19,6 +19,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -31,6 +38,12 @@ import { EditApiKeyDialog } from "@/components/features/api-keys/edit-api-key-di
 import { RevokeApiKeyDialog } from "@/components/features/api-keys/revoke-api-key-dialog";
 import { CopyApiKeyDialog } from "@/components/features/api-keys/copy-api-key-dialog";
 import { toast } from "sonner";
+
+type Organization = {
+  id: string;
+  name: string;
+  slug: string;
+};
 
 type ApiKey = {
   id: string;
@@ -56,53 +69,101 @@ type NewApiKeyResponse = {
 };
 
 export default function ApiAccessPage(): JSX.Element {
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingOrgs, setLoadingOrgs] = useState(true);
+  const [reloadTrigger, setReloadTrigger] = useState(0);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingKey, setEditingKey] = useState<ApiKey | null>(null);
   const [revokingKey, setRevokingKey] = useState<ApiKey | null>(null);
   const [newApiKeyData, setNewApiKeyData] = useState<NewApiKeyResponse | null>(null);
   const router = useRouter();
 
-  // Load API keys
-  const loadApiKeys = async (): Promise<void> => {
-    try {
-      const response = await fetch("/api/auth/api-keys");
-      if (!response.ok) {
-        if (response.status === 401) {
-          router.push("/login");
-          return;
-        }
-        throw new Error("Failed to load API keys");
-      }
-      const data = await response.json();
-      setApiKeys(data.apiKeys || []);
-    } catch {
-      toast.error("Failed to load API keys");
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Load organizations on mount
   useEffect(() => {
-    loadApiKeys();
+    const loadOrganizations = async (): Promise<void> => {
+      try {
+        const response = await fetch("/api/user/organizations");
+        if (!response.ok) {
+          if (response.status === 401) {
+            router.push("/login");
+            return;
+          }
+          throw new Error("Failed to load organizations");
+        }
+        const data = await response.json();
+        const orgs = data.organizations || [];
+        setOrganizations(orgs);
+
+        // Auto-select first org if only one, otherwise select all (null)
+        if (orgs.length === 1) {
+          setSelectedOrgId(orgs[0].id);
+        } else {
+          setSelectedOrgId(null); // Show all orgs
+        }
+      } catch {
+        toast.error("Failed to load organizations");
+      } finally {
+        setLoadingOrgs(false);
+      }
+    };
+
+    loadOrganizations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Load API keys when selected org changes
+  useEffect(() => {
+    if (loadingOrgs) return; // Wait for orgs to load first
+
+    const loadApiKeys = async (): Promise<void> => {
+      setLoading(true);
+      try {
+        const url = selectedOrgId
+          ? `/api/auth/api-keys?organizationId=${selectedOrgId}`
+          : "/api/auth/api-keys";
+
+        const response = await fetch(url);
+        if (!response.ok) {
+          if (response.status === 401) {
+            router.push("/login");
+            return;
+          }
+          throw new Error("Failed to load API keys");
+        }
+        const data = await response.json();
+        setApiKeys(data.apiKeys || []);
+      } catch {
+        toast.error("Failed to load API keys");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadApiKeys();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOrgId, loadingOrgs, reloadTrigger]);
+
+  const reloadApiKeys = (): void => {
+    setReloadTrigger((prev) => prev + 1);
+  };
 
   const handleCreateSuccess = (data: NewApiKeyResponse): void => {
     setNewApiKeyData(data);
     setCreateDialogOpen(false);
-    loadApiKeys();
+    reloadApiKeys();
   };
 
   const handleEditSuccess = (): void => {
     setEditingKey(null);
-    loadApiKeys();
+    reloadApiKeys();
   };
 
   const handleRevokeSuccess = (): void => {
     setRevokingKey(null);
-    loadApiKeys();
+    reloadApiKeys();
   };
 
   const getStatusBadge = (key: ApiKey): JSX.Element => {
@@ -130,7 +191,7 @@ export default function ApiAccessPage(): JSX.Element {
     return d.toLocaleDateString();
   };
 
-  if (loading) {
+  if (loadingOrgs) {
     return (
       <div className="container mx-auto p-6 max-w-6xl">
         <div className="animate-pulse space-y-4">
@@ -141,6 +202,8 @@ export default function ApiAccessPage(): JSX.Element {
     );
   }
 
+  const showOrgSelector = organizations.length > 1;
+
   return (
     <div className="container mx-auto p-6 max-w-6xl">
       <div className="space-y-6">
@@ -150,6 +213,30 @@ export default function ApiAccessPage(): JSX.Element {
             Manage your personal API keys for MCP and integrations.
           </p>
         </div>
+
+        {showOrgSelector && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="org-selector" className="text-sm font-medium">
+              Organization:
+            </label>
+            <Select
+              value={selectedOrgId || "all"}
+              onValueChange={(value) => setSelectedOrgId(value === "all" ? null : value)}
+            >
+              <SelectTrigger id="org-selector" className="w-[280px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Organizations</SelectItem>
+                {organizations.map((org) => (
+                  <SelectItem key={org.id} value={org.id}>
+                    {org.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         <Card>
           <CardHeader>
@@ -167,7 +254,12 @@ export default function ApiAccessPage(): JSX.Element {
             </div>
           </CardHeader>
           <CardContent>
-            {apiKeys.length === 0 ? (
+            {loading ? (
+              <div className="text-center py-12">
+                <div className="animate-spin h-8 w-8 mx-auto border-4 border-primary border-t-transparent rounded-full mb-4" />
+                <p className="text-muted-foreground">Loading API keys...</p>
+              </div>
+            ) : apiKeys.length === 0 ? (
               <div className="text-center py-12">
                 <Key className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <h3 className="text-lg font-semibold mb-2">No API keys yet</h3>

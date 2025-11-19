@@ -8,9 +8,9 @@ export const runtime = "nodejs";
  * GET /api/user/organizations
  * Get all organizations the current user belongs to
  */
-export async function GET(): Promise<Response> {
+export async function GET(request: Request): Promise<Response> {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json(
         { error: "unauthorized", message: "Authentication required" },

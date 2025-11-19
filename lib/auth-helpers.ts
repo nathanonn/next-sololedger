@@ -27,13 +27,39 @@ export type CurrentUser = {
 };
 
 /**
+ * Get authentication token from request
+ * Checks Authorization header (Bearer token) first, then falls back to cookies
+ * This enables both cookie-based (browser) and header-based (API key) authentication
+ */
+export async function getAuthFromRequest(
+  request?: Request
+): Promise<string | null | undefined> {
+  // Check Authorization header first (for API key / Bearer token auth)
+  if (request) {
+    const authHeader = request.headers.get("authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      return authHeader.slice(7); // Remove "Bearer " prefix
+    }
+  }
+
+  // Fall back to cookie-based auth
+  return await getAccessToken();
+}
+
+/**
  * Get current user from access token
  * Verifies JWT and checks sessionVersion against DB
  * Returns null if invalid or session revoked
+ *
+ * Supports both cookie-based auth (browser) and Bearer token auth (API keys):
+ * - Pass request parameter to enable Bearer token support
+ * - Omit request parameter to use cookie-only auth (server components)
  */
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+export async function getCurrentUser(
+  request?: Request
+): Promise<CurrentUser | null> {
   try {
-    const token = await getAccessToken();
+    const token = await getAuthFromRequest(request);
     if (!token) return null;
 
     const payload = await verifyAccessJwt(token);
@@ -162,7 +188,14 @@ export async function createAccessTokenFromApiKey(params: {
   sessionVersion: number;
   organizationId: string;
 }): Promise<string> {
-  const { apiKeyId, userId, userEmail, userRole, sessionVersion, organizationId } = params;
+  const {
+    apiKeyId,
+    userId,
+    userEmail,
+    userRole,
+    sessionVersion,
+    organizationId,
+  } = params;
 
   return signAccessJwt({
     sub: userId,

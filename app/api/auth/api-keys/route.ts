@@ -17,8 +17,8 @@ export const runtime = "nodejs";
  */
 export async function GET(request: Request): Promise<Response> {
   try {
-    // Authenticate
-    const user = await getCurrentUser();
+    // Authenticate (supports both cookie and Bearer token)
+    const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json(
         { error: "unauthorized", message: "Authentication required" },
@@ -68,8 +68,8 @@ export async function GET(request: Request): Promise<Response> {
  */
 export async function POST(request: Request): Promise<Response> {
   try {
-    // Authenticate
-    const user = await getCurrentUser();
+    // Authenticate (supports both cookie and Bearer token)
+    const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json(
         { error: "unauthorized", message: "Authentication required" },

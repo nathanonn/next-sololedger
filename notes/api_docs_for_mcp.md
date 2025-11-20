@@ -1422,24 +1422,13 @@ Key actions are logged to `audit_logs` table for compliance and security.
 
 **Logged Events**:
 - `org_updated`, `org_deleted`
-- `member_invited`, `member_removed`, `role_changed`
 - `document.upload`, `document.delete`, `document.download`, `document.link`, `document.unlink`
-- AI usage (separate `ai_logs` table)
 
 **Metadata**: Includes relevant context (user ID, IP address, resource IDs, names, changes)
 
 ### Rate Limiting
 
-Certain endpoints have rate limits to prevent abuse.
-
-**AI Endpoints**:
-- Per-organization limits
-- Per-IP limits
-- Rate limit headers in response
-
-**Invitations**:
-- Per-organization daily limit
-- Per-IP 15-minute limit
+API endpoints may have rate limits to prevent abuse. Rate limit information is provided in response headers when applicable.
 
 **Headers**:
 ```
@@ -1707,4 +1696,4 @@ server.tool({
 
 **Last Updated**: 2025-11-20
 **API Version**: 1.0
-**Total Endpoints**: 67 organization-scoped endpoints
+**Total Endpoints**: 60 organization-scoped endpoints

@@ -49,6 +49,42 @@ export const ThousandsSeparatorSchema = z.enum([
 ]);
 export type ThousandsSeparator = z.infer<typeof ThousandsSeparatorSchema>;
 
+/**
+ * Array string schema helper
+ *
+ * Accepts both native arrays and stringified arrays from Claude Code's MCP client.
+ * Claude Code serializes array parameters to JSON strings, so we need to parse them.
+ *
+ * Usage: ArrayStringSchema(z.string(), 1) for non-empty string arrays
+ *
+ * @param itemSchema - Zod schema for array items
+ * @param min - Optional minimum array length (default: no minimum)
+ * @returns Union schema that accepts both array and stringified array
+ */
+export function ArrayStringSchema<T extends z.ZodTypeAny>(
+  itemSchema: T,
+  min?: number
+) {
+  const arraySchema = min ? z.array(itemSchema).min(min) : z.array(itemSchema);
+
+  return z.union([
+    arraySchema,
+    z.string().transform((val, ctx) => {
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+        // If parsed but not an array, wrap in array
+        return [val];
+      } catch {
+        // If JSON parse fails, treat as single value
+        return [val];
+      }
+    })
+  ]).pipe(arraySchema);
+}
+
 // ============================================================================
 // Transaction Schemas
 // ============================================================================

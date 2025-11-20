@@ -12,7 +12,7 @@ You can also find a few PDF files in @worktrees/feat_mcp_server/uploads folder t
 
 Can you test out this workflow?
 
-1. upload the PDF (/home/pi/Dev/next-sololedger/worktrees/feat_mcp_server/uploads/Invoice-1B4CA695-0012.pdf) as a document using the MCP server.
+1. upload the PDF (/home/pi/Dev/next-sololedger/worktrees/feat_mcp_server/uploads/Invoice-D4E6C4EB-0036.pdf) as a document using the MCP server.
 2. Create a transaction using the MCP server with the uploaded document transaction details. Don't use the AI extraction feature for now. Manually fill in the transaction details.
 3. Link the uploaded document to the created transaction using the MCP server.
 

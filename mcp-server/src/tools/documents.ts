@@ -17,6 +17,7 @@ import {
   UpdateDocumentSchema,
   DocumentTransactionsSchema,
   AIExtractSchema,
+  ArrayStringSchema,
 } from "../types.js";
 import fs from "fs/promises";
 import path from "path";
@@ -32,9 +33,7 @@ export function registerDocumentTools(server: any, client: APIClient) {
     "documents_upload",
     "Upload one or more document files (receipts, invoices, statements, etc.). Supports PDF, JPEG, PNG, and TXT files up to 10MB each. Returns uploaded document IDs and metadata.",
     {
-      filePaths: z
-        .array(z.string())
-        .min(1)
+      filePaths: ArrayStringSchema(z.string(), 1)
         .describe("Array of absolute file paths to upload"),
     },
     async (args: { filePaths: string[] }) => {
@@ -378,9 +377,7 @@ export function registerDocumentTools(server: any, client: APIClient) {
     "Link a document to one or more transactions. Returns all currently linked transactions for this document.",
     {
       documentId: z.string().describe("Document ID"),
-      transactionIds: z
-        .array(z.string())
-        .min(1)
+      transactionIds: ArrayStringSchema(z.string(), 1)
         .describe("Array of transaction IDs to link"),
     },
     async (args: { documentId: string } & z.infer<typeof DocumentTransactionsSchema>) => {
@@ -409,9 +406,7 @@ export function registerDocumentTools(server: any, client: APIClient) {
     "Unlink a document from one or more transactions. Returns remaining linked transactions.",
     {
       documentId: z.string().describe("Document ID"),
-      transactionIds: z
-        .array(z.string())
-        .min(1)
+      transactionIds: ArrayStringSchema(z.string(), 1)
         .describe("Array of transaction IDs to unlink"),
     },
     async (args: { documentId: string } & z.infer<typeof DocumentTransactionsSchema>) => {
@@ -443,8 +438,7 @@ export function registerDocumentTools(server: any, client: APIClient) {
     "Extract data from a document using AI. Optional: specify fields to extract or custom prompt. Creates a new extraction record. Returns extraction ID and status.",
     {
       documentId: z.string().describe("Document ID to extract data from"),
-      fields: z
-        .array(z.string())
+      fields: ArrayStringSchema(z.string())
         .optional()
         .describe("Specific fields to extract (e.g., ['date', 'amount', 'vendor'])"),
       prompt: z.string().optional().describe("Custom extraction prompt"),

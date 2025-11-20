@@ -174,6 +174,22 @@ The server implements intelligent token caching:
 
 This means you'll only see one `/api/auth/api-key/exchange` call even when making dozens of API requests.
 
+### Parameter Handling & Claude Code Compatibility
+
+The MCP server implements **defensive parameter parsing** to handle different MCP client behaviors:
+
+**Array Parameters**: Tools that accept arrays (e.g., `filePaths`, `documentIds`) use `ArrayStringSchema()` which accepts both:
+- Native arrays: `["doc_id_1", "doc_id_2"]`
+- JSON-stringified arrays: `"[\"doc_id_1\", \"doc_id_2\"]"` (from Claude Code)
+
+**Numeric Parameters**: API routes accept both numbers and numeric strings for amounts:
+- Native numbers: `20.00`
+- Numeric strings: `"20.00"` (automatically parsed)
+
+This dual-format support ensures compatibility across different MCP clients while maintaining type safety through Zod validation. The pattern follows the existing defensive approach used in the SoloLedger API endpoints.
+
+**Note**: After rebuilding the MCP server (`npm run build`), reconnect to the MCP server in Claude Code to load the updated dist/ files.
+
 ### Dual-Currency Transactions
 
 Transactions support both base currency (organization default) and optional secondary currency:

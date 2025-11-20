@@ -1,11 +1,11 @@
 # SoloLedger MCP Server
 
-Model Context Protocol (MCP) server for SoloLedger financial management API. Enables AI assistants to interact with your SoloLedger organization through 47 comprehensive tools covering transactions, documents, and organizational setup.
+Model Context Protocol (MCP) server for SoloLedger financial management API. Enables AI assistants to interact with your SoloLedger organization through 48 comprehensive tools covering transactions, documents, and organizational setup.
 
 ## Features
 
 - **Intelligent Token Management**: Bearer token caching with automatic refresh (1-hour lifetime, 60-second buffer)
-- **Comprehensive Coverage**: 47 tools across all major SoloLedger features
+- **Comprehensive Coverage**: 48 tools across all major SoloLedger features
 - **Dual-Currency Support**: Full support for transactions in base and secondary currencies
 - **Document Management**: Upload, link, download, and AI data extraction
 - **Financial Reporting**: P&L reports, category breakdowns, vendor analytics
@@ -101,10 +101,11 @@ Comprehensive transaction management with dual-currency support:
 - `transactions_link_documents` - Link documents to transaction
 - `transactions_unlink_documents` - Unlink documents from transaction
 
-### 📁 Documents (12 tools)
+### 📁 Documents (13 tools)
 
 Document management with AI extraction:
 
+- `documents_upload` - Upload files (PDF, JPEG, PNG, TXT) from local file paths
 - `documents_list` - List/search documents with pagination and filters
 - `documents_get` - Get document details with all linked transactions
 - `documents_update` - Update metadata (name, type, date)
@@ -173,6 +174,22 @@ The server implements intelligent token caching:
 
 This means you'll only see one `/api/auth/api-key/exchange` call even when making dozens of API requests.
 
+### Parameter Handling & Claude Code Compatibility
+
+The MCP server implements **defensive parameter parsing** to handle different MCP client behaviors:
+
+**Array Parameters**: Tools that accept arrays (e.g., `filePaths`, `documentIds`) use `ArrayStringSchema()` which accepts both:
+- Native arrays: `["doc_id_1", "doc_id_2"]`
+- JSON-stringified arrays: `"[\"doc_id_1\", \"doc_id_2\"]"` (from Claude Code)
+
+**Numeric Parameters**: API routes accept both numbers and numeric strings for amounts:
+- Native numbers: `20.00`
+- Numeric strings: `"20.00"` (automatically parsed)
+
+This dual-format support ensures compatibility across different MCP clients while maintaining type safety through Zod validation. The pattern follows the existing defensive approach used in the SoloLedger API endpoints.
+
+**Note**: After rebuilding the MCP server (`npm run build`), reconnect to the MCP server in Claude Code to load the updated dist/ files.
+
 ### Dual-Currency Transactions
 
 Transactions support both base currency (organization default) and optional secondary currency:
@@ -212,11 +229,42 @@ Resources can be soft-deleted (moved to trash) and later restored or permanently
 
 ### Create Expense with Receipt
 
+Complete workflow to record an expense and attach a receipt/invoice document:
+
 ```
-1. transactions_create (EXPENSE, vendorName, categoryId, accountId)
-2. documents_upload (receipt file)
-3. transactions_link_documents (transactionId, documentIds)
+1. documents_upload
+   - Provide file path(s) to upload (e.g., ["/path/to/invoice.pdf"])
+   - Supported formats: PDF, JPEG, PNG, TXT (max 10MB each)
+   - Returns document ID(s) in response
+
+2. transactions_create
+   - type: "EXPENSE"
+   - date: "2025-03-24" (YYYY-MM-DD format)
+   - description: "Invoice description"
+   - amountBase: 20.00
+   - categoryId: Get from categories_list (e.g., "Software & Subscriptions")
+   - accountId: Get from accounts_list
+   - vendorId: Get from vendors_list OR use vendorName for auto-creation
+   - status: "POSTED" (or "DRAFT" for future-dated transactions)
+   - Returns transaction ID in response
+
+3. transactions_link_documents
+   - transactionId: From step 2
+   - documentIds: [documentId from step 1]
+   - Links the document to the transaction
+   - Verify with transactions_get to see linked documents
 ```
+
+**Example Response Flow:**
+- Upload returns: `{ documents: [{ id: "doc_abc123", ... }] }`
+- Create returns: `{ transaction: { id: "txn_xyz789", ... } }`
+- Link returns: `{ linkedDocuments: [...] }` with full document metadata
+
+**Important Notes:**
+- `documents_upload` requires **absolute file paths** to files on the local filesystem
+- After uploading, the document appears in the SoloLedger web app immediately
+- After linking, the document is visible in the transaction's document list
+- If MCP server was rebuilt, reconnect to the MCP server to pick up any new tools
 
 ### Monthly P&L Report
 

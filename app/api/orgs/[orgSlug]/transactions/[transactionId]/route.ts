@@ -197,12 +197,19 @@ export async function PATCH(
 
     // Validate request body - dual-currency model
     // NOTE: currencyBase is NOT accepted from client - always forced to org's baseCurrency
+    // NOTE: amountBase and amountSecondary accept both number and string types for MCP compatibility
     const updateTransactionSchema = z
       .object({
         type: z.enum(["INCOME", "EXPENSE"]).optional(),
         status: z.enum(["DRAFT", "POSTED"]).optional(),
-        amountBase: z.number().positive().optional(),
-        amountSecondary: z.number().positive().nullable().optional(),
+        amountBase: z.union([
+          z.number(),
+          z.string().transform(val => parseFloat(val))
+        ]).pipe(z.number().positive()).optional(),
+        amountSecondary: z.union([
+          z.number(),
+          z.string().transform(val => parseFloat(val))
+        ]).pipe(z.number().positive()).nullable().optional(),
         currencySecondary: z
           .string()
           .length(3)

@@ -4,7 +4,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth-helpers';
+import { getCurrentUser, validateApiKeyOrgAccess } from '@/lib/auth-helpers';
 import { getOrgBySlug, requireMembership } from '@/lib/org-helpers';
 import { db } from '@/lib/db';
 import { extractDocument } from '@/lib/ai/document-extraction';

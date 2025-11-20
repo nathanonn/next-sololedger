@@ -19,6 +19,7 @@ import {
   BulkTransactionActionSchema,
   TransactionDocumentsSchema,
   ExportRangeSchema,
+  ArrayStringSchema,
 } from "../types.js";
 
 export function registerTransactionTools(server: any, client: APIClient) {
@@ -277,7 +278,7 @@ export function registerTransactionTools(server: any, client: APIClient) {
     "transactions_bulk_update",
     "Perform bulk operations on multiple transactions: change category, change status, or delete. Returns success/failure count with details of any failures.",
     {
-      transactionIds: z.array(z.string()).min(1).describe("Array of transaction IDs"),
+      transactionIds: ArrayStringSchema(z.string(), 1).describe("Array of transaction IDs"),
       action: z
         .enum(["changeCategory", "changeStatus", "delete"])
         .describe("Action to perform"),
@@ -381,9 +382,17 @@ export function registerTransactionTools(server: any, client: APIClient) {
       status: z.enum(["DRAFT", "POSTED"]).optional().describe("Status filter"),
     },
     async (args: z.infer<typeof ExportRangeSchema>) => {
+      // Map MCP parameter names to API endpoint parameter names for compatibility
+      const apiParams = {
+        from: args.dateFrom,
+        to: args.dateTo,
+        type: args.type,
+        status: args.status,
+      };
+
       const csvData = await client.post(
         `/api/orgs/${orgSlug}/transactions/export-range`,
-        args
+        apiParams
       );
       return {
         content: [
@@ -405,7 +414,7 @@ export function registerTransactionTools(server: any, client: APIClient) {
     "Link one or more documents to a transaction. Documents must exist and belong to the organization. Returns updated list of linked documents.",
     {
       transactionId: z.string().describe("Transaction ID"),
-      documentIds: z.array(z.string()).min(1).describe("Array of document IDs to link"),
+      documentIds: ArrayStringSchema(z.string(), 1).describe("Array of document IDs to link"),
     },
     async (args: { transactionId: string } & z.infer<typeof TransactionDocumentsSchema>) => {
       const { transactionId, ...data } = args;
@@ -433,7 +442,7 @@ export function registerTransactionTools(server: any, client: APIClient) {
     "Unlink one or more documents from a transaction. Returns remaining linked documents.",
     {
       transactionId: z.string().describe("Transaction ID"),
-      documentIds: z.array(z.string()).min(1).describe("Array of document IDs to unlink"),
+      documentIds: ArrayStringSchema(z.string(), 1).describe("Array of document IDs to unlink"),
     },
     async (args: { transactionId: string } & z.infer<typeof TransactionDocumentsSchema>) => {
       const { transactionId, ...data } = args;

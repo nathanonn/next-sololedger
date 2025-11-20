@@ -17,10 +17,80 @@ import {
   UpdateDocumentSchema,
   DocumentTransactionsSchema,
   AIExtractSchema,
+  ArrayStringSchema,
 } from "../types.js";
+import fs from "fs/promises";
+import path from "path";
 
 export function registerDocumentTools(server: any, client: APIClient) {
   const orgSlug = client.getOrgSlug();
+
+  // =========================================================================
+  // Upload Documents
+  // =========================================================================
+
+  server.tool(
+    "documents_upload",
+    "Upload one or more document files (receipts, invoices, statements, etc.). Supports PDF, JPEG, PNG, and TXT files up to 10MB each. Returns uploaded document IDs and metadata.",
+    {
+      filePaths: ArrayStringSchema(z.string(), 1)
+        .describe("Array of absolute file paths to upload"),
+    },
+    async (args: { filePaths: string[] }) => {
+      try {
+        // Read and prepare files
+        const files: Array<{ filename: string; content: Buffer; mimeType: string }> = [];
+
+        for (const filePath of args.filePaths) {
+          const content = await fs.readFile(filePath);
+          const filename = path.basename(filePath);
+          const ext = path.extname(filename).toLowerCase();
+
+          // Determine MIME type
+          let mimeType: string;
+          if (ext === ".pdf") {
+            mimeType = "application/pdf";
+          } else if (ext === ".jpg" || ext === ".jpeg") {
+            mimeType = "image/jpeg";
+          } else if (ext === ".png") {
+            mimeType = "image/png";
+          } else if (ext === ".txt") {
+            mimeType = "text/plain";
+          } else {
+            throw new Error(`Unsupported file type: ${ext}`);
+          }
+
+          files.push({ filename, content, mimeType });
+        }
+
+        // Upload files
+        const result = await client.uploadFiles(
+          `/api/orgs/${orgSlug}/documents`,
+          files
+        );
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Uploaded ${files.length} file(s)\n\n${JSON.stringify(result, null, 2)}`,
+            },
+          ],
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Failed to upload documents: ${errorMessage}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
 
   // =========================================================================
   // List Documents
@@ -307,9 +377,7 @@ export function registerDocumentTools(server: any, client: APIClient) {
     "Link a document to one or more transactions. Returns all currently linked transactions for this document.",
     {
       documentId: z.string().describe("Document ID"),
-      transactionIds: z
-        .array(z.string())
-        .min(1)
+      transactionIds: ArrayStringSchema(z.string(), 1)
         .describe("Array of transaction IDs to link"),
     },
     async (args: { documentId: string } & z.infer<typeof DocumentTransactionsSchema>) => {
@@ -338,9 +406,7 @@ export function registerDocumentTools(server: any, client: APIClient) {
     "Unlink a document from one or more transactions. Returns remaining linked transactions.",
     {
       documentId: z.string().describe("Document ID"),
-      transactionIds: z
-        .array(z.string())
-        .min(1)
+      transactionIds: ArrayStringSchema(z.string(), 1)
         .describe("Array of transaction IDs to unlink"),
     },
     async (args: { documentId: string } & z.infer<typeof DocumentTransactionsSchema>) => {
@@ -372,8 +438,7 @@ export function registerDocumentTools(server: any, client: APIClient) {
     "Extract data from a document using AI. Optional: specify fields to extract or custom prompt. Creates a new extraction record. Returns extraction ID and status.",
     {
       documentId: z.string().describe("Document ID to extract data from"),
-      fields: z
-        .array(z.string())
+      fields: ArrayStringSchema(z.string())
         .optional()
         .describe("Specific fields to extract (e.g., ['date', 'amount', 'vendor'])"),
       prompt: z.string().optional().describe("Custom extraction prompt"),

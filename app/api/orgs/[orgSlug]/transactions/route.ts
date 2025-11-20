@@ -228,12 +228,19 @@ export async function POST(
 
     // Validate request body - dual-currency model
     // NOTE: currencyBase is NOT accepted from client - always forced to org's baseCurrency
+    // NOTE: amountBase and amountSecondary accept both number and string types for MCP compatibility
     const transactionSchema = z
       .object({
         type: z.enum(["INCOME", "EXPENSE"]),
         status: z.enum(["DRAFT", "POSTED"]),
-        amountBase: z.number().positive("Base amount must be greater than 0"),
-        amountSecondary: z.number().positive().nullable().optional(),
+        amountBase: z.union([
+          z.number(),
+          z.string().transform(val => parseFloat(val))
+        ]).pipe(z.number().positive("Base amount must be greater than 0")),
+        amountSecondary: z.union([
+          z.number(),
+          z.string().transform(val => parseFloat(val))
+        ]).pipe(z.number().positive()).nullable().optional(),
         currencySecondary: z
           .string()
           .length(3)

@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<evaluations>
+  <description>
+    Comprehensive evaluation questions for SoloLedger MCP Server.
+    These questions test the AI's ability to use multiple tools, navigate
+    hierarchical data, perform calculations, and answer realistic business
+    intelligence queries.
+  </description>
+
+  <qa_pair>
+    <question>
+      What is the name of the income category that has been used most frequently
+      (by transaction count) in the last 12 months, excluding categories that
+      are marked as inactive?
+    </question>
+    <answer>Replace with actual category name after testing</answer>
+    <tools_required>categories_list, categories_usage</tools_required>
+    <complexity>Medium - Requires filtering, sorting, and excluding inactive categories</complexity>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      Find the vendor with the highest total expense amount in Q4 2024 (October 1
+      to December 31, 2024). What is the exact total amount spent with this vendor
+      during this period, rounded to 2 decimal places?
+    </question>
+    <answer>Replace with actual amount after testing</answer>
+    <tools_required>vendors_list, transactions_list</tools_required>
+    <complexity>High - Requires date filtering, vendor totals, and amount aggregation</complexity>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      What is the base currency code (3 letters) configured for the organization?
+    </question>
+    <answer>Replace with actual currency code after testing</answer>
+    <tools_required>settings_financial_get</tools_required>
+    <complexity>Low - Single tool call</complexity>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      How many expense categories are currently marked as "includeInPnL: true"
+      AND "active: true"? Provide only the count as a number.
+    </question>
+    <answer>Replace with actual count after testing</answer>
+    <tools_required>categories_list</tools_required>
+    <complexity>Medium - Requires filtering by multiple boolean fields</complexity>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      Find all POSTED transactions that have documents linked to them. What is
+      the transaction ID of the most recent POSTED transaction (by date) that
+      has at least one document attached? If multiple transactions share the
+      same most recent date, provide the transaction ID that comes first
+      alphabetically.
+    </question>
+    <answer>Replace with actual transaction ID after testing</answer>
+    <tools_required>transactions_list, documents_list</tools_required>
+    <complexity>High - Requires cross-referencing transactions and documents, date sorting</complexity>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      What is the fiscal year start month number (1-12) configured in the
+      financial settings? For example, 1 means January, 7 means July, etc.
+    </question>
+    <answer>Replace with actual month number after testing</answer>
+    <tools_required>settings_financial_get</tools_required>
+    <complexity>Low - Single tool call</complexity>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      Find the category that is a child category (has a parentId) with the type
+      "EXPENSE". What is the name of its parent category? If there are multiple
+      child expense categories, provide the parent name of the one whose child
+      name comes first alphabetically.
+    </question>
+    <answer>Replace with actual parent category name after testing</answer>
+    <tools_required>categories_list</tools_required>
+    <complexity>Medium - Requires hierarchical navigation and sorting</complexity>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      What is the total number of DRAFT transactions (both INCOME and EXPENSE)
+      that currently exist in the system (not in trash)? Provide only the count
+      as a number.
+    </question>
+    <answer>Replace with actual count after testing</answer>
+    <tools_required>transactions_list</tools_required>
+    <complexity>Medium - Requires status filtering and counting</complexity>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      Find the account that is marked as the default account (isDefault: true).
+      What is the exact balance (income minus expenses) for this account over
+      the last 30 days, rounded to 2 decimal places?
+    </question>
+    <answer>Replace with actual balance after testing</answer>
+    <tools_required>accounts_list, accounts_balances</tools_required>
+    <complexity>High - Requires finding default account then calculating balance</complexity>
+  </qa_pair>
+
+  <qa_pair>
+    <question>
+      How many documents in the system have the type "RECEIPT" and are currently
+      linked to at least one transaction (not in trash)? Provide only the count
+      as a number.
+    </question>
+    <answer>Replace with actual count after testing</answer>
+    <tools_required>documents_list</tools_required>
+    <complexity>Medium - Requires type and linked status filtering</complexity>
+  </qa_pair>
+
+  <instructions>
+    To use these evaluations:
+
+    1. Set up a test organization with sample data
+    2. For each question:
+       a. Manually solve using the MCP tools
+       b. Record the correct answer
+       c. Replace the placeholder answer in this file
+    3. Run the evaluation script to test AI performance
+    4. Answers should be stable (not change over time)
+    5. All questions use READ-ONLY operations
+
+    Note: Before running automated evaluations, you must populate the actual
+    answers by manually solving each question with real data in your test
+    organization.
+  </instructions>
+</evaluations>

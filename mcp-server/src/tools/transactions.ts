@@ -381,9 +381,17 @@ export function registerTransactionTools(server: any, client: APIClient) {
       status: z.enum(["DRAFT", "POSTED"]).optional().describe("Status filter"),
     },
     async (args: z.infer<typeof ExportRangeSchema>) => {
+      // Map MCP parameter names to API endpoint parameter names for compatibility
+      const apiParams = {
+        from: args.dateFrom,
+        to: args.dateTo,
+        type: args.type,
+        status: args.status,
+      };
+
       const csvData = await client.post(
         `/api/orgs/${orgSlug}/transactions/export-range`,
-        args
+        apiParams
       );
       return {
         content: [

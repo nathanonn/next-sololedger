@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser, validateApiKeyOrgAccess } from "@/lib/auth-helpers";
 import { getOrgBySlug, requireAdminOrSuperadmin } from "@/lib/org-helpers";
 import { generateTransactionsCsv, AVAILABLE_CSV_COLUMNS, type CsvColumn } from "@/lib/export-helpers";
 
@@ -22,7 +22,7 @@ export async function POST(
     const { orgSlug } = await context.params;
 
     // Authenticate user
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(req);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -45,6 +45,14 @@ export async function POST(
         { status: 403 }
       );
     }
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
+
 
     // Parse request body
     const body = await req.json();

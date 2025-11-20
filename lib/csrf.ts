@@ -49,8 +49,17 @@ export function isRequestOriginValid(request: Request): boolean {
 /**
  * Validate CSRF and return error message if invalid
  * Returns null if valid, error string if invalid
+ *
+ * Skips validation for Bearer token requests (API key authentication)
+ * as they don't require CSRF protection (not cookie-based)
  */
 export async function validateCsrf(request: Request): Promise<string | null> {
+  // Skip CSRF check for Bearer token requests
+  const authHeader = request.headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    return null;
+  }
+
   if (!isRequestOriginValid(request)) {
     return "Invalid origin";
   }

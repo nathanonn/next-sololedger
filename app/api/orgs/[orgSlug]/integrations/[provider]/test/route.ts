@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { z } from "zod";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser, validateApiKeyOrgAccess } from "@/lib/auth-helpers";
 import { getOrgBySlug, requireAdminOrSuperadmin } from "@/lib/org-helpers";
 import { validateCsrf } from "@/lib/csrf";
 import { env } from "@/lib/env";
@@ -52,7 +52,7 @@ export async function POST(
     }
 
     const { orgSlug, provider } = await params;
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     if (!user) {
       return NextResponse.json(
@@ -84,6 +84,14 @@ export async function POST(
     } catch {
       return NextResponse.json(
         { ok: false, code: "FORBIDDEN", message: "Admin or superadmin access required" },
+        { status: 403 }
+      );
+    }
+
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { ok: false, code: "FORBIDDEN", message: "API key not authorized for this organization" },
         { status: 403 }
       );
     }

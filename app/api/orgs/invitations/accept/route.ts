@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser, validateApiKeyOrgAccess } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
@@ -20,7 +20,7 @@ export async function POST(request: Request): Promise<Response> {
       return NextResponse.json({ error: csrfError }, { status: 403 });
     }
 
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json(
         { error: "You must be signed in to accept an invitation" },

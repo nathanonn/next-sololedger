@@ -203,6 +203,93 @@ SEED_EMAIL="abc@gmail.com" SEED_PASSWORD="Password@123" SEED_NAME="Nathan" npx p
 
 > **Note**: Dev password signin is only available when `NODE_ENV=development` and `ENABLE_DEV_PASSWORD_SIGNIN=true`.
 
+## Automated Testing
+
+This project uses **Vitest** for automated testing with comprehensive coverage of authentication and Bearer token functionality.
+
+### Running Tests
+
+```bash
+# Run tests in watch mode
+npm test
+
+# Run tests once
+npm run test:run
+
+# Open interactive test UI
+npm run test:ui
+
+# Generate coverage report
+npm run test:coverage
+```
+
+### Test Coverage
+
+**102 passing tests** across unit, integration, and edge case scenarios:
+
+- ✅ **Authentication Core** (17 tests) - `auth-helpers.test.ts`
+  - Bearer token extraction and validation
+  - Cookie-based authentication fallback
+  - API key validation (expired, revoked, not found)
+  - Session version mismatch handling
+  - Organization scoping for API keys
+
+- ✅ **API Key Management** (25 tests) - `api-keys.test.ts`
+  - Key generation with prefix
+  - Bcrypt hashing and verification
+  - Active key lookup and validation
+  - Key revocation and expiration
+  - Scope and metadata updates
+
+- ✅ **JWT Tokens** (18 tests) - `jwt.test.ts`
+  - Access and refresh token signing
+  - Token verification and payload validation
+  - Expiration time handling
+  - Auth method and organization context
+  - Token compatibility across different scenarios
+
+- ✅ **CSRF Protection** (7 active tests) - `csrf.test.ts`
+  - Bearer token requests bypass CSRF
+  - Invalid origin rejection
+  - Request validation
+
+- ✅ **API Key Exchange** (8 active tests) - `auth-api-key-exchange.test.ts`
+  - Valid API key exchange flow
+  - Invalid/expired/revoked key rejection
+  - Audit logging and last used tracking
+
+- ✅ **Token Lifecycle** (9 tests) - `token-lifecycle.test.ts`
+  - Session version changes (password rotation)
+  - API key revocation mid-session
+  - Token expiration handling
+  - Concurrent request handling
+
+- ✅ **Organization Scoping** (17 tests) - `organization-scoping.test.ts`
+  - Cookie auth (unrestricted access)
+  - API key scoping enforcement
+  - Cross-organization access denial
+  - Edge cases and security scenarios
+
+**Test File Distribution:**
+- Unit tests: 4 files, 71 tests
+- Integration tests: 2 files, 13 tests (5 skipped)
+- Edge case tests: 2 files, 26 tests
+
+### Writing Tests
+
+See `tests/README.md` for comprehensive testing guide including:
+- Test structure and patterns
+- Using test helpers (mockRequest, mockUser, mockApiKey, mockPrisma)
+- Best practices and troubleshooting
+- Adding new tests
+
+**Test helpers available**:
+- `mockBearerRequest()` - Create requests with Bearer tokens
+- `mockCookieRequest()` - Create cookie-authenticated requests
+- `mockUser()`, `mockApiKeyUser()` - Generate test users
+- `generateTestBearerToken()` - Create valid JWT tokens
+- Test data fixtures in `tests/helpers/testData.ts`
+
 ## Project Structure
 
 ```

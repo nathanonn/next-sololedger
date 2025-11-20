@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser, validateApiKeyOrgAccess } from "@/lib/auth-helpers";
 import { getOrgBySlug, requireAdminOrSuperadmin } from "@/lib/org-helpers";
 import { validateCsrf } from "@/lib/csrf";
 import { db } from "@/lib/db";
@@ -34,7 +34,7 @@ export async function DELETE(
     }
 
     const { orgSlug, provider } = await params;
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -57,6 +57,14 @@ export async function DELETE(
         { status: 403 }
       );
     }
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
+
 
     // Validate provider
     if (!isIntegrationAllowed(provider)) {

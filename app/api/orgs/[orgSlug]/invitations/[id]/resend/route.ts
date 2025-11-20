@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser, validateApiKeyOrgAccess } from "@/lib/auth-helpers";
 import { getOrgBySlug, requireAdminOrSuperadmin } from "@/lib/org-helpers";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
@@ -27,7 +27,7 @@ export async function POST(
       return NextResponse.json({ error: csrfError }, { status: 403 });
     }
 
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -49,6 +49,14 @@ export async function POST(
         { status: 403 }
       );
     }
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
+
 
     // Find invitation
     const invitation = await db.invitation.findUnique({

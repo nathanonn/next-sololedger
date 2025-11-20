@@ -31,7 +31,7 @@ export async function POST(
 ): Promise<Response> {
   try {
     const { orgSlug, documentId, extractionId } = await params;
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -54,6 +54,14 @@ export async function POST(
         { status: 403 }
       );
     }
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
+
 
     // Verify extraction exists and belongs to this org/document
     const extraction = await db.documentExtraction.findFirst({

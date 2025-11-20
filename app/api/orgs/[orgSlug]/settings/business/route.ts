@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser, validateApiKeyOrgAccess } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
@@ -27,7 +27,7 @@ export async function PATCH(
       return NextResponse.json({ error: csrfError }, { status: 403 });
     }
 
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -46,6 +46,14 @@ export async function PATCH(
     } catch {
       return NextResponse.json(
         { error: "Admin access required" },
+        { status: 403 }
+      );
+    }
+
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
         { status: 403 }
       );
     }
@@ -151,7 +159,7 @@ export async function GET(
   {  params }: { params: Promise<{ orgSlug: string }> }
 ): Promise<Response> {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -170,6 +178,14 @@ export async function GET(
     } catch {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
+
 
     // Get organization and settings
     const orgWithSettings = await db.organization.findUnique({

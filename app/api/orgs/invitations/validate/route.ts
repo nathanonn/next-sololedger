@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser, validateApiKeyOrgAccess } from "@/lib/auth-helpers";
 import { validateInvitationToken } from "@/lib/invitation-helpers";
 import { db } from "@/lib/db";
 
@@ -35,7 +35,7 @@ export async function GET(request: Request): Promise<Response> {
     const invitation = tokenValidation.invitation;
 
     // Check if user is authenticated
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     let alreadyMember = false;
     let userIsSuperadmin = false;

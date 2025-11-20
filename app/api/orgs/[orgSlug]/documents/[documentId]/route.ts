@@ -6,7 +6,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser, validateApiKeyOrgAccess } from "@/lib/auth-helpers";
 import { getOrgBySlug, requireMembership } from "@/lib/org-helpers";
 import { db } from "@/lib/db";
 import { z } from "zod";
@@ -29,7 +29,7 @@ export async function GET(
 ): Promise<Response> {
   try {
     const { orgSlug, documentId } = await params;
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -52,6 +52,14 @@ export async function GET(
         { status: 403 }
       );
     }
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
+
 
     // Get document with linked transactions
     const document = await db.document.findFirst({
@@ -149,7 +157,7 @@ export async function PATCH(
 ): Promise<Response> {
   try {
     const { orgSlug, documentId } = await params;
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -169,6 +177,14 @@ export async function PATCH(
     } catch {
       return NextResponse.json(
         { error: "Membership required" },
+        { status: 403 }
+      );
+    }
+
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
         { status: 403 }
       );
     }
@@ -254,7 +270,7 @@ export async function DELETE(
 ): Promise<Response> {
   try {
     const { orgSlug, documentId } = await params;
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -274,6 +290,14 @@ export async function DELETE(
     } catch {
       return NextResponse.json(
         { error: "Membership required" },
+        { status: 403 }
+      );
+    }
+
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
         { status: 403 }
       );
     }

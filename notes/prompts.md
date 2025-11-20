@@ -4,7 +4,7 @@
 
 ```
 ./worktrees.sh setup \
-  --branches feat/api_bearer_tokens_auth \
+  --branches feat/mcp_server \
   --db-url postgresql://pi:password@localhost:5432/nextsololedger
 ```
 
@@ -17,7 +17,7 @@
 ## merge
 
 ```
-./worktrees.sh merge --branches feat/api_bearer_tokens_auth --into main
+./worktrees.sh merge --branches feat/mcp_server --into main
 ```
 
 # create wireframes based on plan

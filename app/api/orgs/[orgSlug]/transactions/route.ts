@@ -203,6 +203,14 @@ export async function POST(
       );
     }
 
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
+
     // Load organization settings to get base currency
     const orgSettings = await db.organizationSettings.findUnique({
       where: { organizationId: org.id },

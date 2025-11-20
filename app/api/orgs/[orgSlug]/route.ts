@@ -107,6 +107,14 @@ export async function PATCH(
       );
     }
 
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
+
     // Validate request body
     const updateOrgSchema = z.object({
       name: z

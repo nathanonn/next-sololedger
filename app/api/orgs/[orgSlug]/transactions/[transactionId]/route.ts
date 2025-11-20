@@ -152,6 +152,14 @@ export async function PATCH(
       );
     }
 
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
+
     // Verify transaction belongs to this org
     const existing = await db.transaction.findUnique({
       where: { id: transactionId },
@@ -612,6 +620,14 @@ export async function DELETE(
     } catch {
       return NextResponse.json(
         { error: "Access denied" },
+        { status: 403 }
+      );
+    }
+
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
         { status: 403 }
       );
     }

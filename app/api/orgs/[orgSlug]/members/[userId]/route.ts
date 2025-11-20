@@ -220,6 +220,14 @@ export async function DELETE(
           { status: 403 }
         );
       }
+
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
     }
 
     // Check if target user is a member

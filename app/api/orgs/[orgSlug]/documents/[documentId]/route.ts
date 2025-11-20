@@ -181,6 +181,14 @@ export async function PATCH(
       );
     }
 
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
+
     // Parse and validate body
     const body = await request.json();
     const validationResult = updateSchema.safeParse(body);
@@ -282,6 +290,14 @@ export async function DELETE(
     } catch {
       return NextResponse.json(
         { error: "Membership required" },
+        { status: 403 }
+      );
+    }
+
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
         { status: 403 }
       );
     }

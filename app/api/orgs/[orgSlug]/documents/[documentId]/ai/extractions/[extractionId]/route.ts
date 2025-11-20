@@ -169,6 +169,14 @@ export async function PATCH(
       );
     }
 
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
+
     // Parse request body
     const body = await request.json();
     const { payload, status, appliedTransactionIds } = body;

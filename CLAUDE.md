@@ -63,12 +63,14 @@ POST /api/auth/profile/change-password   # Change password (requires current)
 
 ### Bearer Token Support
 
-`getCurrentUser(request?)` supports both cookie-based (browser) and Bearer token (API key) authentication:
+`getCurrentUser(request)` supports both cookie-based (browser) and Bearer token (API key) authentication:
 
-- Pass optional `Request` parameter to API routes: `const user = await getCurrentUser(request)`
+- **Always pass `Request` parameter to API routes**: `const user = await getCurrentUser(request)`
 - Helper checks `Authorization: Bearer <token>` header first, falls back to cookies
-- Maintains backward compatibility (server components work without passing request)
+- Server components can omit request for cookie-only auth
 - Enables API key authentication flow via `/api/auth/api-key/exchange`
+
+**Critical**: Always pass the request parameter in API routes. Omitting it prevents Bearer token authentication from working, as the helper cannot check the Authorization header.
 
 Pattern: Backend-first implementation means retrofitting existing auth infrastructure to support new flows end-to-end, not just creating new endpoints.
 
@@ -112,9 +114,29 @@ POST /api/integrations/[provider]/disconnect # Disconnect and revoke/remove toke
 
 ### API Route Structure
 
-Standard flow: `getCurrentUser()` → `getOrgBySlug()` → permission check → query with `org.id`
+Standard flow: `getCurrentUser(request)` → `getOrgBySlug()` → permission check → API key validation → query with `org.id`
 
 Always filter soft-deleted records: `where: { organizationId: org.id, deletedAt: null }`
+
+**Defense in Depth Pattern**: Organization-scoped routes require three security layers:
+
+```typescript
+// Layer 1: User authentication
+const user = await getCurrentUser(request);
+
+// Layer 2: Membership check
+await requireMembership(user.id, org.id);
+
+// Layer 3: API key organization scoping validation
+if (!validateApiKeyOrgAccess(user, org.id)) {
+  return NextResponse.json(
+    { error: "API key not authorized for this organization" },
+    { status: 403 }
+  );
+}
+```
+
+This ensures cookie-based auth continues to work (no `apiKeyOrganizationId` = check passes) while restricting API key auth to the scoped organization. All three layers are required for organization-scoped routes.
 
 ### Permission Layers
 
@@ -124,6 +146,7 @@ Always filter soft-deleted records: `where: { organizationId: org.id, deletedAt:
 **Tiered permission strategy**: Regular operations (create, read, update, soft delete) should be accessible to all members, while destructive operations (hard delete, permanent changes) require elevated privileges. This balances accessibility with protection.
 
 Examples:
+
 - Financial settings GET = `requireMembership` (members need formatting), PATCH = `requireAdminOrSuperadmin`
 - Document upload/link/soft delete = `requireMembership`, hard delete = `requireAdminOrSuperadmin`
 
@@ -136,10 +159,12 @@ Examples:
 
 ```typescript
 // ❌ WRONG
-currencyCode: z.string().length(3).toUpperCase()
+currencyCode: z.string().length(3).toUpperCase();
 
 // ✅ CORRECT
-currencyCode: z.string().length(3).transform((val) => val.toUpperCase())
+currencyCode: z.string()
+  .length(3)
+  .transform((val) => val.toUpperCase());
 ```
 
 ### Prisma Decimals
@@ -160,7 +185,7 @@ const where: Prisma.RecordWhereInput = { organizationId: org.id };
 if (startDate || endDate) {
   where.OR = [
     { dateField: { gte: startDate, lte: endDate } },
-    { fallbackDate: { gte: startDate, lte: endDate } }
+    { fallbackDate: { gte: startDate, lte: endDate } },
   ];
 }
 
@@ -168,7 +193,7 @@ if (startDate || endDate) {
 if (searchQuery) {
   const searchConditions = [
     { field1: { contains: searchQuery } },
-    { field2: { contains: searchQuery } }
+    { field2: { contains: searchQuery } },
   ];
 
   // Must wrap both OR conditions in AND
@@ -348,6 +373,66 @@ import { useToast } from "@/hooks/use-toast"
 ```
 
 Always check existing dependencies before adding new UI patterns from shadcn docs.
+
+## Testing Patterns
+
+### Environment Variables in Test Setup
+
+Environment variables MUST be set BEFORE any imports in `tests/setup.ts`:
+
+```typescript
+// ✅ CORRECT - Set env vars first
+process.env.NODE_ENV = "test";
+process.env.DATABASE_URL = "postgresql://...";
+process.env.JWT_SECRET = "test-secret-key";
+// ... other vars
+
+import "@testing-library/jest-dom/vitest";
+import { db } from "@/lib/db";
+```
+
+**Why**: Modules like `lib/env.ts` that use Zod validation run at import time, making `beforeAll()` hooks too late.
+
+**Design lesson**: Avoid top-level validation in modules for better testability. Prefer lazy validation or factory patterns.
+
+### Vitest Mock Ordering
+
+Mock ordering is critical for Vitest to work correctly:
+
+```typescript
+// ✅ CORRECT ORDER
+// 1. Import mock helper
+import { prismaMock } from "@/tests/helpers/mockPrisma";
+
+// 2. Call vi.mock() BEFORE importing module under test
+vi.mock("@/lib/db", () => ({ db: prismaMock }));
+
+// 3. Import module under test AFTER mocking
+import { getCurrentUser } from "@/lib/auth-helpers";  // Now uses mock
+```
+
+**Why**: Vitest hoists `vi.mock()` calls, but modules are evaluated at import time. Import order matters!
+
+### Crypto Module Mocking
+
+Node.js `crypto` module requires both default and named exports for CommonJS/ESM compatibility:
+
+```typescript
+vi.mock("crypto", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("crypto")>();
+  const mockRandomBytes = (size: number) => ({
+    toString: () => "DETERMINISTIC_OUTPUT"
+  });
+
+  return {
+    ...actual,
+    default: { ...actual, randomBytes: mockRandomBytes },
+    randomBytes: mockRandomBytes,  // Both default AND named export
+  };
+});
+```
+
+**Why**: Vitest requires both export styles for deterministic testing of API key generation and other crypto operations.
 
 ## Notes
 

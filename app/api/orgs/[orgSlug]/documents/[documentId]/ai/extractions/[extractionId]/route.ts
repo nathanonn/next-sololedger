@@ -33,7 +33,7 @@ export async function GET(
 ): Promise<Response> {
   try {
     const { orgSlug, documentId, extractionId } = await params;
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -137,7 +137,7 @@ export async function PATCH(
 ): Promise<Response> {
   try {
     const { orgSlug, documentId, extractionId } = await params;
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

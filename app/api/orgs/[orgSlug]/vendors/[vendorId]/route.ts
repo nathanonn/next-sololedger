@@ -23,7 +23,7 @@ export async function PATCH(
   { params }: { params: Promise<{ orgSlug: string; vendorId: string }> }
 ): Promise<Response> {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

@@ -52,7 +52,7 @@ export async function POST(
     }
 
     const { orgSlug, provider } = await params;
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     if (!user) {
       return NextResponse.json(

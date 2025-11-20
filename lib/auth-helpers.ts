@@ -9,6 +9,7 @@ import {
   setAccessCookie,
   setRefreshCookie,
 } from "@/lib/jwt";
+import { type NextRequest } from "next/server";
 
 /**
  * Auth helpers for server components and route handlers
@@ -33,7 +34,7 @@ export type CurrentUser = {
  * This enables both cookie-based (browser) and header-based (API key) authentication
  */
 export async function getAuthFromRequest(
-  request?: Request
+  request?: Request | NextRequest
 ): Promise<string | null | undefined> {
   // Check Authorization header first (for API key / Bearer token auth)
   if (request) {
@@ -53,11 +54,11 @@ export async function getAuthFromRequest(
  * Returns null if invalid or session revoked
  *
  * Supports both cookie-based auth (browser) and Bearer token auth (API keys):
- * - Pass request parameter to enable Bearer token support
- * - Omit request parameter to use cookie-only auth (server components)
+ * - Pass request parameter to enable Bearer token support (for API routes)
+ * - Omit request parameter to use cookie-only auth (for server components)
  */
 export async function getCurrentUser(
-  request?: Request
+  request?: Request | NextRequest
 ): Promise<CurrentUser | null> {
   try {
     const token = await getAuthFromRequest(request);
@@ -183,7 +184,7 @@ export function safeRedirect(next?: string | null): string {
 /**
  * Get client IP from request
  */
-export function getClientIp(request: Request): string | undefined {
+export function getClientIp(request: Request | NextRequest): string | undefined {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
     return forwarded.split(",")[0].trim();

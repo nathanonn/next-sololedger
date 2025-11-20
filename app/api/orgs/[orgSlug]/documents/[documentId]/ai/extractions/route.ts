@@ -23,7 +23,7 @@ export async function GET(
 ): Promise<Response> {
   try {
     const { orgSlug, documentId } = await params;
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

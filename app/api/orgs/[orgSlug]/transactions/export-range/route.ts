@@ -22,7 +22,7 @@ export async function POST(
     const { orgSlug } = await context.params;
 
     // Authenticate user
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(req);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

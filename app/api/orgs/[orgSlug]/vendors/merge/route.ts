@@ -20,7 +20,7 @@ export async function POST(
   { params }: { params: Promise<{ orgSlug: string }> }
 ): Promise<Response> {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

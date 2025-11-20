@@ -35,7 +35,7 @@ export async function GET(request: Request): Promise<Response> {
     const invitation = tokenValidation.invitation;
 
     // Check if user is authenticated
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     let alreadyMember = false;
     let userIsSuperadmin = false;

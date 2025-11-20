@@ -22,7 +22,7 @@ export async function POST(
       return NextResponse.json({ error: csrfError }, { status: 403 });
     }
 
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

@@ -50,7 +50,7 @@ export async function POST(
     }
 
     const { orgSlug } = await params;
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

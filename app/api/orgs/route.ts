@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser, validateApiKeyOrgAccess } from "@/lib/auth-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
@@ -30,7 +30,47 @@ export async function GET(request: Request): Promise<Response> {
 
     let orgs;
 
-    if (userIsSuperadmin) {
+    // If authenticated via API key, only return the scoped organization
+    if (user.apiKeyOrganizationId) {
+      const scopedOrg = await db.organization.findUnique({
+        where: { id: user.apiKeyOrganizationId },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      if (!scopedOrg) {
+        return NextResponse.json(
+          { error: "Organization not found" },
+          { status: 404 }
+        );
+      }
+
+      // Get user's role in the scoped organization
+      const membership = await db.membership.findUnique({
+        where: {
+          userId_organizationId: {
+            userId: user.id,
+            organizationId: scopedOrg.id,
+          },
+        },
+      });
+
+      orgs = [
+        {
+          id: scopedOrg.id,
+          name: scopedOrg.name,
+          slug: scopedOrg.slug,
+          role: membership?.role || "member",
+          createdAt: scopedOrg.createdAt,
+          updatedAt: scopedOrg.updatedAt,
+        },
+      ];
+    } else if (userIsSuperadmin) {
       // Superadmins see all organizations
       const allOrgs = await db.organization.findMany({
         select: {
@@ -104,6 +144,14 @@ export async function POST(request: Request): Promise<Response> {
     const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Prevent API key authentication from creating organizations
+    if (user.apiKeyOrganizationId) {
+      return NextResponse.json(
+        { error: "Organization creation via API key is not allowed" },
+        { status: 403 }
+      );
     }
 
     // Validate request body

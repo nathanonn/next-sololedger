@@ -46,6 +46,14 @@ export async function GET(
         { status: 403 }
       );
     }
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
+
 
     // Verify document exists and belongs to this organization
     const document = await db.document.findFirst({

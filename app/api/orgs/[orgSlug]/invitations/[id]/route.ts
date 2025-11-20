@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser, validateApiKeyOrgAccess } from "@/lib/auth-helpers";
 import { getOrgBySlug, requireAdminOrSuperadmin } from "@/lib/org-helpers";
 import { db } from "@/lib/db";
 import { validateCsrf } from "@/lib/csrf";
@@ -46,6 +46,14 @@ export async function DELETE(
         { status: 403 }
       );
     }
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
+
 
     // Find invitation
     const invitation = await db.invitation.findUnique({

@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser, validateApiKeyOrgAccess } from "@/lib/auth-helpers";
 import { getOrgBySlug, requireMembership } from "@/lib/org-helpers";
 import { getProfitAndLoss } from "@/lib/reporting-helpers";
 import { db } from "@/lib/db";
@@ -39,6 +39,14 @@ export async function GET(
 
     // Require membership
     await requireMembership(user.id, org.id);
+
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
 
     // Get financial settings
     const settings = await db.organizationSettings.findUnique({
@@ -116,6 +124,14 @@ export async function POST(
 
     // Require membership
     await requireMembership(user.id, org.id);
+
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
 
     // Get financial settings
     const settings = await db.organizationSettings.findUnique({

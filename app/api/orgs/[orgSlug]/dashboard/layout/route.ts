@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser, validateApiKeyOrgAccess } from "@/lib/auth-helpers";
 import { getOrgBySlug, getUserMembership } from "@/lib/org-helpers";
 import { db } from "@/lib/db";
 import { DASHBOARD_WIDGETS } from "@/components/features/dashboard/dashboard-config";
@@ -48,6 +48,14 @@ export async function POST(
     const membership = await getUserMembership(user.id, org.id);
     if (!membership) {
       return NextResponse.json({ error: "Not a member of this organization" }, { status: 403 });
+    }
+
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
     }
 
     // Parse and validate request body

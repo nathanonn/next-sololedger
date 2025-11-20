@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser, validateApiKeyOrgAccess } from "@/lib/auth-helpers";
 import { getOrgBySlug, requireAdminOrSuperadmin } from "@/lib/org-helpers";
 import { env } from "@/lib/env";
 import { isIntegrationAllowed } from "@/lib/integrations/providers";
@@ -56,6 +56,14 @@ export async function GET(
         { status: 403 }
       );
     }
+    // Validate API key organization access
+    if (!validateApiKeyOrgAccess(user, org.id)) {
+      return NextResponse.json(
+        { error: "API key not authorized for this organization" },
+        { status: 403 }
+      );
+    }
+
 
     // Note: LinkedIn's UGC Posts API has limited analytics without Marketing Developer Program
     // We can fetch recent posts, but detailed metrics (likes, comments, shares) may be restricted

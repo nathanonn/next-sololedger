@@ -147,6 +147,7 @@ model Organization {
   documents            Document[]
   documentExtractions  DocumentExtraction[]
   apiKeys              ApiKey[]                  @relation("OrganizationApiKeys")
+  tags                 Tag[]
 
   @@index([slug])
   @@index([createdById])
@@ -561,7 +562,6 @@ model Transaction {
   vendorName  String?   @db.VarChar(255)
   clientId    String?
   clientName  String?   @db.VarChar(255)
-  tags        String?   @db.Text
   notes       String?   @db.Text
   deletedAt   DateTime?
   createdAt   DateTime  @default(now())
@@ -574,6 +574,7 @@ model Transaction {
   client       Client?              @relation(fields: [clientId], references: [id], onDelete: SetNull)
   user         User                 @relation("TransactionCreator", fields: [userId], references: [id], onDelete: Restrict)
   documents    TransactionDocument[]
+  transactionTags TransactionTag[]
 
   @@index([organizationId])
   @@index([organizationId, date])
@@ -638,6 +639,38 @@ model TransactionDocument {
   @@index([documentId])
   @@index([transactionId])
   @@map("transaction_documents")
+}
+
+// Tag: label for transactions, scoped per organization
+model Tag {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String    @db.VarChar(255)
+  nameLower      String    @db.VarChar(255)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  transactions TransactionTag[]
+
+  @@unique([organizationId, nameLower])
+  @@index([organizationId, nameLower])
+  @@map("tags")
+}
+
+// TransactionTag: many-to-many join between transactions and tags
+model TransactionTag {
+  transactionId String
+  tagId         String
+  createdAt     DateTime @default(now())
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  tag         Tag         @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([transactionId, tagId])
+  @@index([tagId])
+  @@index([transactionId])
+  @@map("transaction_tags")
 }
 
 // DocumentExtraction: AI-extracted data from documents

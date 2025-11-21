@@ -65,6 +65,12 @@ export async function GET(
     const fromParam = searchParams.get("from");
     const toParam = searchParams.get("to");
     const typeParam = searchParams.get("type") || "both";
+    const tagIds = searchParams
+      .get("tagIds")
+      ?.split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+    const tagMode = searchParams.get("tagMode") === "all" ? "all" : "any";
 
     // Default to YTD if no dates provided
     let from: Date;
@@ -94,6 +100,8 @@ export async function GET(
       from,
       to,
       typeFilter,
+      tagIds,
+      tagMode,
     });
 
     // Return result with org settings

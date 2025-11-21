@@ -46,6 +46,7 @@ import { toast } from "sonner";
 import { formatDate, formatTransactionAmount } from "@/lib/sololedger-formatters";
 import type { DateFormat, DecimalSeparator, ThousandsSeparator } from "@prisma/client";
 import { ChevronsUpDown, Trash2, Paperclip } from "lucide-react";
+import { TagMultiSelect } from "@/components/features/tags/tag-multi-select";
 
 interface Transaction {
   id: string;
@@ -63,6 +64,7 @@ interface Transaction {
   vendor?: { id: string; name: string } | null;
   clientName?: string | null;
   vendorName?: string | null;
+  tags?: Tag[];
   _count?: {
     documents: number;
   };
@@ -91,6 +93,11 @@ interface Client {
   name: string;
 }
 
+interface Tag {
+  id: string;
+  name: string;
+}
+
 export default function TransactionsPage(): React.JSX.Element {
   const params = useParams();
   const router = useRouter();
@@ -102,6 +109,7 @@ export default function TransactionsPage(): React.JSX.Element {
   const [categories, setCategories] = React.useState<Category[]>([]);
   const [vendors, setVendors] = React.useState<Vendor[]>([]);
   const [clients, setClients] = React.useState<Client[]>([]);
+  const [tags, setTags] = React.useState<Tag[]>([]);
 
   // Basic filters
   const [typeFilter, setTypeFilter] = React.useState<string>("all");
@@ -118,6 +126,8 @@ export default function TransactionsPage(): React.JSX.Element {
   const [amountMinFilter, setAmountMinFilter] = React.useState<string>("");
   const [amountMaxFilter, setAmountMaxFilter] = React.useState<string>("");
   const [currencyFilter, setCurrencyFilter] = React.useState<string>("all");
+  const [selectedTagIds, setSelectedTagIds] = React.useState<string[]>([]);
+  const [tagMode, setTagMode] = React.useState<"any" | "all">("any");
 
   // Selection state for bulk actions
   const [selectedTransactionIds, setSelectedTransactionIds] = React.useState<string[]>([]);
@@ -172,6 +182,12 @@ export default function TransactionsPage(): React.JSX.Element {
           setClients(clientsData.clients || []);
         }
 
+        const tagsResponse = await fetch(`/api/orgs/${orgSlug}/tags`);
+        if (tagsResponse.ok) {
+          const tagsData = await tagsResponse.json();
+          setTags(tagsData.tags || []);
+        }
+
         await loadTransactions();
       } catch (error) {
         console.error("Error loading organization:", error);
@@ -198,6 +214,19 @@ export default function TransactionsPage(): React.JSX.Element {
     // Apply type filter from URL
     const typeParam = urlParams.get("type");
     if (typeParam) setTypeFilter(typeParam);
+
+    const tagIdsParam = urlParams.get("tagIds");
+    if (tagIdsParam) {
+      const ids = tagIdsParam.split(",").filter((id) => id.trim());
+      if (ids.length > 0) {
+        setSelectedTagIds(ids);
+      }
+    }
+
+    const tagModeParam = urlParams.get("tagMode");
+    if (tagModeParam === "all" || tagModeParam === "any") {
+      setTagMode(tagModeParam);
+    }
 
     // Apply status filter from URL
     const statusParam = urlParams.get("status");
@@ -241,6 +270,10 @@ export default function TransactionsPage(): React.JSX.Element {
       if (amountMinFilter) params.append("amountMin", amountMinFilter);
       if (amountMaxFilter) params.append("amountMax", amountMaxFilter);
       if (currencyFilter !== "all") params.append("currency", currencyFilter);
+      if (selectedTagIds.length > 0) {
+        params.append("tagIds", selectedTagIds.join(","));
+        params.append("tagMode", tagMode);
+      }
 
       const response = await fetch(
         `/api/orgs/${orgSlug}/transactions?${params.toString()}`
@@ -271,6 +304,8 @@ export default function TransactionsPage(): React.JSX.Element {
     setAmountMinFilter("");
     setAmountMaxFilter("");
     setCurrencyFilter("all");
+    setSelectedTagIds([]);
+    setTagMode("any");
     loadTransactions();
   }
 
@@ -463,7 +498,8 @@ export default function TransactionsPage(): React.JSX.Element {
         (t.clientName && t.clientName.toLowerCase().includes(search)) ||
         (t.client?.name && t.client.name.toLowerCase().includes(search)) ||
         (t.vendorName && t.vendorName.toLowerCase().includes(search)) ||
-        (t.vendor?.name && t.vendor.name.toLowerCase().includes(search))
+        (t.vendor?.name && t.vendor.name.toLowerCase().includes(search)) ||
+        t.tags?.some((tag) => tag.name.toLowerCase().includes(search))
     );
   }, [transactions, searchFilter]);
 
@@ -699,6 +735,24 @@ export default function TransactionsPage(): React.JSX.Element {
             </div>
           </div>
 
+          <div className="grid gap-4 md:grid-cols-2">
+            <TagMultiSelect
+              tags={tags}
+              selectedTagIds={selectedTagIds}
+              onChange={setSelectedTagIds}
+              tagMode={tagMode}
+              onModeChange={setTagMode}
+              disabled={isLoading}
+            />
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <Label className="text-sm">Tag filtering</Label>
+              <p>
+                Choose one or more tags to filter transactions. Use match mode
+                to switch between any/all tag requirements.
+              </p>
+            </div>
+          </div>
+
           <div className="flex gap-2">
             <Button onClick={() => loadTransactions()} disabled={isLoading}>
               {isLoading ? "Loading..." : "Apply Filters"}
@@ -839,6 +893,15 @@ export default function TransactionsPage(): React.JSX.Element {
                           <> • Vendor: {transaction.vendorName || transaction.vendor?.name}</>
                         )}
                     </div>
+                    {transaction.tags && transaction.tags.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {transaction.tags.map((tag) => (
+                          <Badge key={tag.id} variant="outline" className="text-xs">
+                            {tag.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-4">

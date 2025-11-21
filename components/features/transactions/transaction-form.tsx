@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -37,9 +38,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { AlertCircle, Check, ChevronsUpDown } from "lucide-react";
+import { AlertCircle, Check, ChevronsUpDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ISO_CURRENCIES, COMMON_CURRENCIES, isValidCurrencyCode } from "@/lib/currencies";
+import {
+  MAX_TAGS_PER_TRANSACTION,
+  MAX_TAG_LENGTH,
+} from "@/lib/tag-helpers";
 
 interface Category {
   id: string;
@@ -73,6 +78,11 @@ interface Client {
   phone?: string | null;
 }
 
+interface TagOption {
+  id: string;
+  name: string;
+}
+
 interface OrgSettings {
   baseCurrency: string;
   softClosedBefore?: string | null;
@@ -92,6 +102,7 @@ interface TransactionData {
   vendorName?: string;
   clientName?: string;
   notes?: string;
+  tags?: TagOption[];
 }
 
 interface TransactionFormProps {
@@ -99,6 +110,7 @@ interface TransactionFormProps {
   settings: OrgSettings;
   categories: Category[];
   accounts: Account[];
+  tags: TagOption[];
   initialData?: TransactionData;
   transactionId?: string;
   softClosedBefore?: string | null;
@@ -109,6 +121,7 @@ export function TransactionForm({
   settings,
   categories,
   accounts,
+  tags,
   initialData,
   transactionId,
   softClosedBefore,
@@ -158,6 +171,11 @@ export function TransactionForm({
   );
   const [clientId, setClientId] = React.useState<string | null>(null);
   const [notes, setNotes] = React.useState<string>(initialData?.notes || "");
+  const [availableTags, setAvailableTags] = React.useState<TagOption[]>(tags);
+  const [selectedTags, setSelectedTags] = React.useState<TagOption[]>(
+    initialData?.tags || []
+  );
+  const [tagInput, setTagInput] = React.useState("");
 
   // Vendor autocomplete state
   const [vendorSuggestions, setVendorSuggestions] = React.useState<Vendor[]>(
@@ -198,6 +216,65 @@ export function TransactionForm({
     }
     return category.name;
   };
+
+  const filteredTagSuggestions = React.useMemo(() => {
+    if (!tagInput.trim()) {
+      return availableTags.filter(
+        (tag) => !selectedTags.some((selected) => selected.id === tag.id)
+      );
+    }
+    const lower = tagInput.toLowerCase();
+    return availableTags.filter(
+      (tag) =>
+        tag.name.toLowerCase().includes(lower) &&
+        !selectedTags.some((selected) => selected.id === tag.id)
+    );
+  }, [availableTags, selectedTags, tagInput]);
+
+  const handleAddTag = (name: string, existingId?: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+
+    if (selectedTags.length >= MAX_TAGS_PER_TRANSACTION) {
+      toast.error(`You can add up to ${MAX_TAGS_PER_TRANSACTION} tags.`);
+      return;
+    }
+
+    const exists = selectedTags.some(
+      (tag) => tag.name.toLowerCase() === trimmed.toLowerCase()
+    );
+
+    if (exists) {
+      toast.error("Tag already added");
+      return;
+    }
+
+    const tag: TagOption = {
+      id: existingId || `new-${trimmed.toLowerCase()}`,
+      name: trimmed,
+    };
+
+    setSelectedTags((prev) => [...prev, tag]);
+
+    if (!availableTags.some((t) => t.name.toLowerCase() === trimmed.toLowerCase())) {
+      setAvailableTags((prev) => [...prev, { id: tag.id, name: tag.name }]);
+    }
+    setTagInput("");
+  };
+
+  const handleRemoveTag = (tagId: string) => {
+    setSelectedTags((prev) => prev.filter((tag) => tag.id !== tagId));
+  };
+
+  React.useEffect(() => {
+    setAvailableTags(tags);
+  }, [tags]);
+
+  React.useEffect(() => {
+    if (initialData?.tags) {
+      setSelectedTags(initialData.tags);
+    }
+  }, [initialData]);
 
   // Debounced vendor search function
   const searchVendors = React.useCallback(
@@ -387,6 +464,7 @@ export function TransactionForm({
             clientName: type === "INCOME" ? clientName || null : null,
             clientId: type === "INCOME" ? clientId || null : null,
             notes: notes || null,
+            tags: selectedTags.map((tag) => tag.name),
             // Include soft-closed override if confirming
             ...(isInSoftClosedPeriod && { allowSoftClosedOverride: true }),
           }),
@@ -812,6 +890,78 @@ export function TransactionForm({
           </p>
         </div>
       )}
+
+      {/* Tags */}
+      <div className="space-y-2">
+        <Label>Tags</Label>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              maxLength={MAX_TAG_LENGTH}
+              placeholder="Add or search tags"
+              disabled={isLoading || selectedTags.length >= MAX_TAGS_PER_TRANSACTION}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleAddTag(tagInput);
+                }
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleAddTag(tagInput)}
+              disabled={
+                isLoading ||
+                selectedTags.length >= MAX_TAGS_PER_TRANSACTION ||
+                !tagInput.trim()
+              }
+            >
+              Add tag
+            </Button>
+          </div>
+
+          {filteredTagSuggestions.length > 0 && (
+            <div className="flex flex-wrap gap-2 text-sm">
+              <span className="text-muted-foreground">Suggestions:</span>
+              {filteredTagSuggestions.slice(0, 6).map((tag) => (
+                <Button
+                  key={tag.id}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleAddTag(tag.name, tag.id)}
+                  disabled={isLoading}
+                >
+                  {tag.name}
+                </Button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            {selectedTags.map((tag) => (
+              <Badge key={tag.id} variant="outline" className="flex items-center gap-1">
+                {tag.name}
+                <button
+                  type="button"
+                  onClick={() => handleRemoveTag(tag.id)}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label={`Remove tag ${tag.name}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Up to {MAX_TAGS_PER_TRANSACTION} tags per transaction. New tags will
+            be created automatically.
+          </p>
+        </div>
+      </div>
 
       {/* Notes */}
       <div className="space-y-2">

@@ -16,6 +16,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, Download, Info } from "lucide-react";
 import { toast } from "sonner";
 import { AVAILABLE_CSV_COLUMNS, type CsvColumn } from "@/lib/export-helpers";
+import { TagMultiSelect } from "@/components/features/tags/tag-multi-select";
+import { useOrgTags } from "@/hooks/use-org-tags";
 
 interface TransactionsExportProps {
   orgSlug: string;
@@ -39,6 +41,7 @@ const COLUMN_LABELS: Record<CsvColumn, string> = {
   currencySecondary: "Currency (Secondary)",
   exchangeRate: "Exchange Rate",
   notes: "Notes",
+  tags: "Tags",
   documentIds: "Document IDs",
   documentNames: "Document Names",
 };
@@ -60,6 +63,7 @@ const DEFAULT_COLUMNS: CsvColumn[] = [
 ];
 
 export function TransactionsExport({ orgSlug, isAdmin }: TransactionsExportProps) {
+  const { tags, isLoading: tagsLoading } = useOrgTags(orgSlug);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [columnMode, setColumnMode] = useState<"all" | "custom">("all");
@@ -67,6 +71,8 @@ export function TransactionsExport({ orgSlug, isAdmin }: TransactionsExportProps
     new Set(DEFAULT_COLUMNS)
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [tagMode, setTagMode] = useState<"any" | "all">("any");
 
   // Toggle column selection
   const toggleColumn = (column: CsvColumn) => {
@@ -121,6 +127,8 @@ export function TransactionsExport({ orgSlug, isAdmin }: TransactionsExportProps
             to,
             status: "POSTED", // Only posted transactions
             columns: columnsToExport,
+            tagIds: selectedTagIds,
+            tagMode,
           }),
         }
       );
@@ -214,6 +222,18 @@ export function TransactionsExport({ orgSlug, isAdmin }: TransactionsExportProps
                 Only POSTED transactions will be exported. Maximum date range: 5
                 years.
               </p>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium">Tags</h3>
+              <TagMultiSelect
+                tags={tags}
+                selectedTagIds={selectedTagIds}
+                onChange={setSelectedTagIds}
+                tagMode={tagMode}
+                onModeChange={setTagMode}
+                disabled={isSubmitting || tagsLoading}
+              />
             </div>
 
             {/* Column Selection */}

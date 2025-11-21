@@ -6,6 +6,12 @@ import { z } from "zod";
 import { requireMembership, getOrgBySlug } from "@/lib/org-helpers";
 import { isInSoftClosedPeriod } from "@/lib/periods";
 import { isValidCurrencyCode } from "@/lib/currencies";
+import {
+  MAX_TAG_LENGTH,
+  MAX_TAGS_PER_TRANSACTION,
+  sanitizeTagNames,
+  upsertTagsForOrg,
+} from "@/lib/tag-helpers";
 
 export const runtime = "nodejs";
 
@@ -57,6 +63,9 @@ export async function GET(
         account: true,
         vendor: true,
         client: true,
+        transactionTags: {
+          include: { tag: true },
+        },
         documents: {
           where: {
             document: {
@@ -102,6 +111,7 @@ export async function GET(
     const transactionWithDocuments = {
       ...transaction,
       documents: transaction.documents.map(td => td.document),
+      tags: transaction.transactionTags.map((link) => link.tag),
     };
 
     return NextResponse.json({ transaction: transactionWithDocuments });
@@ -230,6 +240,22 @@ export async function PATCH(
         clientId: z.string().nullable().optional(),
         clientName: z.string().nullable().optional(),
         notes: z.string().nullable().optional(),
+        tags: z
+          .array(
+            z
+              .string()
+              .trim()
+              .min(1, "Tag cannot be empty")
+              .max(
+                MAX_TAG_LENGTH,
+                `Tags must be ${MAX_TAG_LENGTH} characters or fewer`
+              )
+          )
+          .max(
+            MAX_TAGS_PER_TRANSACTION,
+            `You can add up to ${MAX_TAGS_PER_TRANSACTION} tags`
+          )
+          .optional(),
         allowSoftClosedOverride: z.boolean().optional(),
       })
       .refine(
@@ -260,6 +286,7 @@ export async function PATCH(
     }
 
     const data = validation.data;
+    const tagNames = data.tags ? sanitizeTagNames(data.tags) : undefined;
 
     // Validate secondary currency code if provided
     if (data.currencySecondary && !isValidCurrencyCode(data.currencySecondary)) {
@@ -513,6 +540,9 @@ export async function PATCH(
       }
     }
 
+    const tagRecords =
+      tagNames !== undefined ? await upsertTagsForOrg(org.id, tagNames) : null;
+
     // Determine final currency values for dual-currency model
     // currencyBase is ALWAYS the org's baseCurrency - never accept from client
     const finalAmountBase = data.amountBase ?? Number(existing.amountBase);
@@ -574,16 +604,32 @@ export async function PATCH(
         ...(finalClientId !== undefined && { clientId: finalClientId }),
         ...(finalClientName !== undefined && { clientName: finalClientName }),
         ...(data.notes !== undefined && { notes: data.notes }),
+        ...(tagRecords !== null && {
+          transactionTags: {
+            deleteMany: { transactionId },
+            create: tagRecords.map((tag) => ({
+              tagId: tag.id,
+            })),
+          },
+        }),
       },
       include: {
         category: true,
         account: true,
         vendor: true,
         client: true,
+        transactionTags: {
+          include: { tag: true },
+        },
       },
     });
 
-    return NextResponse.json({ transaction });
+    const transactionWithTags = {
+      ...transaction,
+      tags: transaction.transactionTags.map((link) => link.tag),
+    };
+
+    return NextResponse.json({ transaction: transactionWithTags });
   } catch (error) {
     console.error("Error updating transaction:", error);
     return NextResponse.json(

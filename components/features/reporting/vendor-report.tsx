@@ -17,6 +17,8 @@ import { toast } from "sonner";
 import { formatCurrency, formatDateRange } from "@/lib/sololedger-formatters";
 import type { DateFormat, DecimalSeparator, ThousandsSeparator } from "@prisma/client";
 import type { VendorReportRow } from "@/lib/reporting-types";
+import { TagMultiSelect } from "@/components/features/tags/tag-multi-select";
+import { useOrgTags } from "@/hooks/use-org-tags";
 
 interface VendorReportProps {
   orgSlug: string;
@@ -44,6 +46,7 @@ export function VendorReport({
   isAdmin,
 }: VendorReportProps) {
   const router = useRouter();
+  const { tags, isLoading: tagsLoading } = useOrgTags(orgSlug);
 
   // State
   const [from, setFrom] = useState("");
@@ -52,6 +55,8 @@ export function VendorReport({
   const [sortBy, setSortBy] = useState<"netDesc" | "name">("netDesc");
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<VendorReportData | null>(null);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [tagMode, setTagMode] = useState<"any" | "all">("any");
 
   // Fetch Vendor report data
   const fetchData = useCallback(async () => {
@@ -64,6 +69,11 @@ export function VendorReport({
       if (from && to) {
         params.append("from", from);
         params.append("to", to);
+      }
+
+      if (selectedTagIds.length > 0) {
+        params.append("tagIds", selectedTagIds.join(","));
+        params.append("tagMode", tagMode);
       }
 
       const response = await fetch(
@@ -88,7 +98,7 @@ export function VendorReport({
     } finally {
       setLoading(false);
     }
-  }, [from, to, viewFilter, orgSlug]);
+  }, [from, to, viewFilter, orgSlug, selectedTagIds, tagMode]);
 
   // Fetch on mount
   useEffect(() => {
@@ -119,6 +129,11 @@ export function VendorReport({
 
     if (vendorId) {
       params.append("vendorId", vendorId);
+    }
+
+    if (selectedTagIds.length > 0) {
+      params.append("tagIds", selectedTagIds.join(","));
+      params.append("tagMode", tagMode);
     }
 
     router.push(`/o/${orgSlug}/transactions?${params.toString()}`);
@@ -193,6 +208,18 @@ export function VendorReport({
             </div>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <TagMultiSelect
+              tags={tags}
+              selectedTagIds={selectedTagIds}
+              onChange={setSelectedTagIds}
+              tagMode={tagMode}
+              onModeChange={setTagMode}
+              disabled={loading || tagsLoading}
+              label="Filter by tags"
+            />
+          </div>
+
           <div className="flex gap-2">
             <Button onClick={fetchData} disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -208,6 +235,10 @@ export function VendorReport({
                   if (from && to) {
                     params.append("from", from);
                     params.append("to", to);
+                  }
+                  if (selectedTagIds.length > 0) {
+                    params.append("tagIds", selectedTagIds.join(","));
+                    params.append("tagMode", tagMode);
                   }
                   window.open(`/o/${orgSlug}/reports/vendors/print?${params.toString()}`, "_blank");
                 }}

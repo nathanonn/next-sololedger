@@ -64,6 +64,12 @@ export async function GET(
     const { searchParams } = new URL(req.url);
     const fromParam = searchParams.get("from");
     const toParam = searchParams.get("to");
+    const tagIds = searchParams
+      .get("tagIds")
+      ?.split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+    const tagMode = searchParams.get("tagMode") === "all" ? "all" : "any";
     const viewParam = searchParams.get("view") || "all";
 
     // Default to YTD if no dates provided
@@ -85,6 +91,8 @@ export async function GET(
       organizationId: org.id,
       from,
       to,
+      tagIds,
+      tagMode,
     });
 
     // Filter by view if specified

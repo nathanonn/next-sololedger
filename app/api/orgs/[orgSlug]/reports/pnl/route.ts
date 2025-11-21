@@ -66,6 +66,12 @@ export async function GET(
     const customFrom = searchParams.get("customFrom") || undefined;
     const customTo = searchParams.get("customTo") || undefined;
     const detailLevel = (searchParams.get("detailLevel") || "summary") as PnLDetailLevel;
+    const tagIds = searchParams
+      .get("tagIds")
+      ?.split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+    const tagMode = searchParams.get("tagMode") === "all" ? "all" : "any";
 
     // Build P&L config
     const config: PnLConfig = {
@@ -75,6 +81,8 @@ export async function GET(
       customFrom,
       customTo,
       detailLevel,
+      tagIds,
+      tagMode,
     };
 
     // Get P&L data
@@ -151,6 +159,12 @@ export async function POST(
     const customFrom = body.customFrom || undefined;
     const customTo = body.customTo || undefined;
     const detailLevel = (body.detailLevel || "summary") as PnLDetailLevel;
+    const tagIds = Array.isArray(body.tagIds)
+      ? body.tagIds
+          .map((id: unknown) => (typeof id === "string" ? id.trim() : ""))
+          .filter(Boolean)
+      : undefined;
+    const tagMode = body.tagMode === "all" ? "all" : "any";
 
     // Build P&L config
     const config: PnLConfig = {
@@ -160,6 +174,8 @@ export async function POST(
       customFrom,
       customTo,
       detailLevel,
+      tagIds,
+      tagMode,
     };
 
     // Get P&L data

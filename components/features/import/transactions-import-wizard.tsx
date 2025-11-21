@@ -401,16 +401,13 @@ export function TransactionsImportWizard({
   }
 
   async function handleCommit() {
-    if (!file) return;
+    if (!file || !summary) return;
 
-    // Count how many will be imported
-    const importCount = previewRows.filter((row) => {
-      if (row.status === "invalid") return false;
-      if (row.isDuplicateCandidate && duplicateDecisions[row.rowIndex] !== "import") {
-        return false;
-      }
-      return true;
-    }).length;
+    // Calculate import count from summary totals (not limited previewRows)
+    // This ensures we don't block commits when valid rows exist beyond the 100-row preview limit
+    const nonDuplicateValidRows = summary.validRows - summary.duplicateCandidates;
+    const duplicatesToImport = Object.values(duplicateDecisions).filter((d) => d === "import").length;
+    const importCount = nonDuplicateValidRows + duplicatesToImport;
 
     if (importCount === 0) {
       toast.error("No rows to import");

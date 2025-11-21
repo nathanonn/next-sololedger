@@ -38,7 +38,12 @@ export async function GET(
 
     const { searchParams } = new URL(request.url);
     const query = searchParams.get("query")?.toLowerCase().trim();
-    const take = Math.min(parseInt(searchParams.get("limit") || "20", 10), 50);
+    const limitParam = searchParams.get("limit");
+
+    // Only apply limit if explicitly provided, otherwise return all tags
+    const take = limitParam
+      ? Math.min(parseInt(limitParam, 10), 1000)
+      : undefined;
 
     const tags = await db.tag.findMany({
       where: {
@@ -52,7 +57,7 @@ export async function GET(
           : {}),
       },
       orderBy: { name: "asc" },
-      take: Number.isNaN(take) ? 20 : take,
+      ...(take && !Number.isNaN(take) ? { take } : {}),
     });
 
     return NextResponse.json({ tags });

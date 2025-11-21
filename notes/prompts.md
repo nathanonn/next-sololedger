@@ -4,7 +4,7 @@
 
 ```
 ./worktrees.sh setup \
-  --branches feat/mcp_server \
+  --branches feat/import_export \
   --db-url postgresql://pi:password@localhost:5432/nextsololedger
 ```
 
@@ -17,7 +17,7 @@
 ## merge
 
 ```
-./worktrees.sh merge --branches feat/mcp_server --into main
+./worktrees.sh merge --branches feat/import_export --into main
 ```
 
 # create wireframes based on plan

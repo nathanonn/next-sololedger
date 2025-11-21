@@ -45,8 +45,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { formatDate, formatTransactionAmount } from "@/lib/sololedger-formatters";
 import type { DateFormat, DecimalSeparator, ThousandsSeparator } from "@prisma/client";
-import { ChevronsUpDown, Trash2, Paperclip } from "lucide-react";
+import { ChevronsUpDown, Trash2, Paperclip, Upload } from "lucide-react";
 import { TagMultiSelect } from "@/components/features/tags/tag-multi-select";
+import { TransactionsImportWizard } from "@/components/features/import/transactions-import-wizard";
 
 interface Transaction {
   id: string;
@@ -143,6 +144,9 @@ export default function TransactionsPage(): React.JSX.Element {
   // Single transaction delete dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [transactionToDelete, setTransactionToDelete] = React.useState<string | null>(null);
+
+  // Import wizard state
+  const [importWizardOpen, setImportWizardOpen] = React.useState(false);
 
   // Load organization, settings, and lookup data
   React.useEffect(() => {
@@ -536,6 +540,10 @@ export default function TransactionsPage(): React.JSX.Element {
               <Trash2 className="h-4 w-4 mr-2" />
               Trash
             </Link>
+          </Button>
+          <Button variant="outline" onClick={() => setImportWizardOpen(true)}>
+            <Upload className="h-4 w-4 mr-2" />
+            Import CSV
           </Button>
           <Button asChild>
             <Link href={`/o/${orgSlug}/transactions/new`}>
@@ -1108,6 +1116,14 @@ export default function TransactionsPage(): React.JSX.Element {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Import Wizard */}
+      <TransactionsImportWizard
+        open={importWizardOpen}
+        onOpenChange={setImportWizardOpen}
+        orgSlug={orgSlug}
+        onImportCompleted={loadTransactions}
+      />
     </div>
   );
 }

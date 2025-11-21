@@ -38,6 +38,7 @@ model User {
   uploadedDocuments    Document[]                @relation("DocumentUploader")
   documentExtractions  DocumentExtraction[]      @relation("DocumentExtractionCreator")
   apiKeys              ApiKey[]                  @relation("UserApiKeys")
+  csvImportTemplates   CsvImportTemplate[]       @relation("CsvImportTemplateCreator")
 
   @@index([email])
   @@index([defaultOrganizationId])
@@ -148,6 +149,7 @@ model Organization {
   documentExtractions  DocumentExtraction[]
   apiKeys              ApiKey[]                  @relation("OrganizationApiKeys")
   tags                 Tag[]
+  csvImportTemplates   CsvImportTemplate[]
 
   @@index([slug])
   @@index([createdById])
@@ -704,4 +706,22 @@ model DocumentExtraction {
   @@index([organizationId, documentType, summaryTransactionDate])
   @@index([organizationId, summaryCurrency])
   @@map("document_extractions")
+}
+
+// CsvImportTemplate: saved CSV import mapping templates per organization
+model CsvImportTemplate {
+  id              String   @id @default(cuid())
+  organizationId  String
+  name            String   @db.VarChar(255)
+  config          Json     @db.Json // Column mappings, parsing options, date/number formats, direction mode
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("CsvImportTemplateCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("csv_import_templates")
 }

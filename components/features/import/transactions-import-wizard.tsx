@@ -25,6 +25,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { Upload, Loader2, CheckCircle2, XCircle, AlertCircle, ChevronLeft } from "lucide-react";
 import type { DateFormat, DecimalSeparator, ThousandsSeparator } from "@prisma/client";
+import { parse } from "csv-parse/sync";
 
 interface TransactionsImportWizardProps {
   open: boolean;
@@ -185,24 +186,29 @@ export function TransactionsImportWizard({
     }
 
     // Otherwise, go to mapping step
-    // Parse CSV to get headers
+    // Parse CSV to get headers using csv-parse (same library as backend)
     setIsLoading(true);
     try {
       const text = await file.text();
-      const lines = text.split("\n").filter((line) => line.trim());
-      if (lines.length === 0) {
+
+      // Use csv-parse to properly handle quoted delimiters and escaped characters
+      const records = parse(text, {
+        delimiter,
+        skip_empty_lines: true,
+        relax_column_count: true,
+        trim: true,
+      }) as string[][];
+
+      if (records.length === 0) {
         toast.error("CSV file is empty");
         return;
       }
 
-      const headerLine = lines[0];
-      const parsedHeaders = headerLine.split(delimiter).map((h) => h.trim().replace(/^"|"$/g, ""));
+      const parsedHeaders = records[0];
       setHeaders(parsedHeaders);
 
-      // Get sample rows (first 3)
-      const samples = lines.slice(1, 4).map((line) =>
-        line.split(delimiter).map((cell) => cell.trim().replace(/^"|"$/g, ""))
-      );
+      // Get sample rows (first 3 data rows)
+      const samples = records.slice(1, 4);
       setSampleRows(samples);
 
       setStep("mapping");

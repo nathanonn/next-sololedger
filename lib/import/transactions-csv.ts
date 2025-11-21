@@ -578,14 +578,15 @@ export async function normalizeAndValidateRows(
           currencyOriginal = currency;
           exchangeRateToBase = amountBase / amountOriginal;
         } else if (currency === settings.baseCurrency) {
-          // Primary is the base
+          // Primary is the base, secondary is foreign
+          // Treat the foreign (secondary) amount as the original currency
           amountBase = amountValue;
           currencyBase = currency;
           amountSecondary = secondaryAmount;
           currencySecondary = secondaryCurrency;
-          amountOriginal = amountValue;
-          currencyOriginal = currency;
-          exchangeRateToBase = 1.0;
+          amountOriginal = secondaryAmount;
+          currencyOriginal = secondaryCurrency;
+          exchangeRateToBase = amountBase / amountOriginal;
         } else {
           // Neither currency is the base - invalid dual-currency transaction
           errors.push(

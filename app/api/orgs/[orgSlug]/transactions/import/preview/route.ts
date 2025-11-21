@@ -15,9 +15,7 @@ import {
   detectDuplicates,
   generateImportSummary,
   type ImportTemplateConfig,
-  type DirectionMode,
 } from "@/lib/import/transactions-csv";
-import type { DateFormat, DecimalSeparator, ThousandsSeparator } from "@prisma/client";
 
 export const runtime = "nodejs";
 
@@ -139,7 +137,7 @@ export async function POST(
       } else {
         mappingConfig = parsed as ImportTemplateConfig;
       }
-    } catch (error) {
+    } catch {
       return NextResponse.json(
         { error: "Invalid mapping configuration JSON" },
         { status: 400 }
@@ -183,11 +181,12 @@ export async function POST(
       mappingConfig.parsingOptions.directionMode
     );
 
-    // Normalize and validate
+    // Normalize and validate using parsingOptions from template
     const normalizedRows = await normalizeAndValidateRows(
       rawRows,
       org.id,
-      settings
+      settings,
+      mappingConfig.parsingOptions
     );
 
     // Detect duplicates
@@ -233,9 +232,42 @@ export async function POST(
       })),
     }));
 
+    // Return ALL duplicate candidates (not just first 100) so users can make decisions
+    const duplicateCandidates = rowsWithDuplicates
+      .filter((row) => row.isDuplicateCandidate)
+      .map((row) => ({
+        rowIndex: row.rowIndex,
+        raw: row.raw,
+        normalized: row.normalized
+          ? {
+              type: row.normalized.type,
+              date: row.normalized.date.toISOString(),
+              amountBase: row.normalized.amountBase,
+              currencyBase: row.normalized.currencyBase,
+              amountSecondary: row.normalized.amountSecondary,
+              currencySecondary: row.normalized.currencySecondary,
+              description: row.normalized.description,
+              vendorName: row.normalized.vendorName,
+              clientName: row.normalized.clientName,
+              notes: row.normalized.notes,
+              tagNames: row.normalized.tagNames,
+            }
+          : undefined,
+        duplicateMatches: row.duplicateMatches.map((m) => ({
+          transactionId: m.transactionId,
+          date: m.date.toISOString(),
+          amount: m.amount,
+          currency: m.currency,
+          description: m.description,
+          vendorName: m.vendorName,
+          clientName: m.clientName,
+        })),
+      }));
+
     return NextResponse.json({
       headers: parsedData.headers,
       previewRows,
+      duplicateCandidates,
       summary,
       totalRowsParsed: rowsWithDuplicates.length,
       previewRowsShown: previewRows.length,

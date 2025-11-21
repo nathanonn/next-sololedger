@@ -220,7 +220,7 @@ export async function POST(
       } else {
         mappingConfig = parsed as ImportTemplateConfig;
       }
-    } catch (error) {
+    } catch {
       return NextResponse.json(
         { error: "Invalid mapping configuration JSON" },
         { status: 400 }
@@ -266,7 +266,8 @@ export async function POST(
     const normalizedRows = await normalizeAndValidateRows(
       rawRows,
       org.id,
-      settings
+      settings,
+      mappingConfig.parsingOptions
     );
 
     const rowsWithDuplicates = await detectDuplicates(

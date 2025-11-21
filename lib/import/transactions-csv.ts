@@ -22,7 +22,6 @@ import type {
   TransactionType,
   OrganizationSettings,
 } from "@prisma/client";
-import { z } from "zod";
 
 // ============================================================================
 // Types & Interfaces
@@ -353,7 +352,8 @@ function parseDate(dateStr: string, format: DateFormat): Date | null {
 export async function normalizeAndValidateRows(
   rawRows: RawImportRow[],
   organizationId: string,
-  settings: OrganizationSettings
+  settings: OrganizationSettings,
+  parsingOptions: CsvParsingOptions
 ): Promise<NormalizedImportRow[]> {
   // Fetch organization lookup data
   const [categories, accounts] = await Promise.all([
@@ -426,19 +426,19 @@ export async function normalizeAndValidateRows(
     }
 
     try {
-      // Parse and validate date
-      const date = parseDate(candidate.dateRaw!, settings.dateFormat);
+      // Parse and validate date using parsingOptions format
+      const date = parseDate(candidate.dateRaw!, parsingOptions.dateFormat);
       if (!date) {
         errors.push(
-          `Invalid date format. Expected ${settings.dateFormat.replace(/_/g, "/")}`
+          `Invalid date format. Expected ${parsingOptions.dateFormat.replace(/_/g, "/")}`
         );
       }
 
-      // Parse amount
+      // Parse amount using parsingOptions separators
       let amountValue = parseAmount(
         candidate.amountRaw!,
-        settings.decimalSeparator,
-        settings.thousandsSeparator
+        parsingOptions.decimalSeparator,
+        parsingOptions.thousandsSeparator
       );
 
       // Determine transaction type and adjust amount if needed
@@ -496,8 +496,8 @@ export async function normalizeAndValidateRows(
         if (candidate.secondaryAmountRaw && candidate.secondaryCurrencyRaw) {
           secondaryAmount = parseAmount(
             candidate.secondaryAmountRaw,
-            settings.decimalSeparator,
-            settings.thousandsSeparator
+            parsingOptions.decimalSeparator,
+            parsingOptions.thousandsSeparator
           );
           secondaryAmount = Math.abs(secondaryAmount);
 

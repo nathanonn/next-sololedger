@@ -165,14 +165,15 @@ export default function BusinessInfoPage(): React.JSX.Element {
   const isMember = userRole === "member";
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Business Information</CardTitle>
-        <CardDescription>
-          Manage your organization&apos;s business details and contact information
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>Business Information</CardTitle>
+          <CardDescription>
+            Manage your organization&apos;s business details and contact information
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
         {isMember && (
           <Alert className="mb-6">
             <Info className="h-4 w-4" />
@@ -297,11 +298,12 @@ export default function BusinessInfoPage(): React.JSX.Element {
           )}
         </form>
       </CardContent>
-    </Card>
+      </Card>
 
-    {/* Data Backup Panel */}
-    <div className="mt-6">
-      <DataBackupPanel orgSlug={orgSlug} isAdmin={isAdmin} />
-    </div>
+      {/* Data Backup Panel */}
+      <div className="mt-6">
+        <DataBackupPanel orgSlug={orgSlug} isAdmin={isAdmin} />
+      </div>
+    </>
   );
 }

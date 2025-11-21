@@ -76,6 +76,25 @@ interface PreviewSummary {
   duplicateCandidates: number;
 }
 
+interface DuplicateCandidate {
+  rowIndex: number;
+  raw: string[];
+  normalized?: {
+    type: string;
+    date: string;
+    amountBase: number;
+    currencyBase: string;
+    description: string;
+  };
+  duplicateMatches: Array<{
+    transactionId: string;
+    date: string;
+    amount: number;
+    currency: string;
+    description: string;
+  }>;
+}
+
 export function TransactionsImportWizard({
   open,
   onOpenChange,
@@ -234,9 +253,13 @@ export function TransactionsImportWizard({
       setSummary(data.summary);
 
       // Initialize duplicate decisions to "skip" by default
+      // Use duplicateCandidates array (includes ALL duplicates, not just first 100)
       const initialDecisions: Record<number, "import" | "skip"> = {};
-      data.previewRows.forEach((row: PreviewRow) => {
-        if (row.isDuplicateCandidate) {
+      const duplicatesToProcess = data.duplicateCandidates || data.previewRows;
+      duplicatesToProcess.forEach((row: DuplicateCandidate | PreviewRow) => {
+        if ("isDuplicateCandidate" in row && row.isDuplicateCandidate) {
+          initialDecisions[row.rowIndex] = "skip";
+        } else if ("duplicateMatches" in row && row.duplicateMatches) {
           initialDecisions[row.rowIndex] = "skip";
         }
       });
@@ -289,9 +312,13 @@ export function TransactionsImportWizard({
       setSummary(data.summary);
 
       // Initialize duplicate decisions to "skip" by default
+      // Use duplicateCandidates array (includes ALL duplicates, not just first 100)
       const initialDecisions: Record<number, "import" | "skip"> = {};
-      data.previewRows.forEach((row: PreviewRow) => {
-        if (row.isDuplicateCandidate) {
+      const duplicatesToProcess = data.duplicateCandidates || data.previewRows;
+      duplicatesToProcess.forEach((row: DuplicateCandidate | PreviewRow) => {
+        if ("isDuplicateCandidate" in row && row.isDuplicateCandidate) {
+          initialDecisions[row.rowIndex] = "skip";
+        } else if ("duplicateMatches" in row && row.duplicateMatches) {
           initialDecisions[row.rowIndex] = "skip";
         }
       });
@@ -374,18 +401,31 @@ export function TransactionsImportWizard({
       const formData = new FormData();
       formData.append("file", file);
 
-      const mappingConfig = {
-        columnMapping,
-        parsingOptions: {
-          directionMode,
-          dateFormat,
-          delimiter,
-          headerRowIndex: 0,
-          hasHeaders: true,
-          decimalSeparator: "DOT" as DecimalSeparator,
-          thousandsSeparator: "COMMA" as ThousandsSeparator,
-        },
-      };
+      const mappingConfig = selectedTemplateId
+        ? {
+            templateId: selectedTemplateId,
+            parsingOptions: {
+              directionMode,
+              dateFormat,
+              delimiter,
+              headerRowIndex: 0,
+              hasHeaders: true,
+              decimalSeparator: "DOT" as DecimalSeparator,
+              thousandsSeparator: "COMMA" as ThousandsSeparator,
+            },
+          }
+        : {
+            columnMapping,
+            parsingOptions: {
+              directionMode,
+              dateFormat,
+              delimiter,
+              headerRowIndex: 0,
+              hasHeaders: true,
+              decimalSeparator: "DOT" as DecimalSeparator,
+              thousandsSeparator: "COMMA" as ThousandsSeparator,
+            },
+          };
 
       formData.append("mappingConfig", JSON.stringify(mappingConfig));
       formData.append("decisions", JSON.stringify(duplicateDecisions));
@@ -795,7 +835,7 @@ export function TransactionsImportWizard({
 
           {step === "review" && summary && (
             <>
-              <Button variant="outline" onClick={() => setStep("mapping")}>
+              <Button variant="outline" onClick={() => setStep(selectedTemplateId ? "upload" : "mapping")}>
                 <ChevronLeft className="h-4 w-4 mr-2" />
                 Back
               </Button>

@@ -222,17 +222,10 @@ export function TransactionsImportWizard({
       const formData = new FormData();
       formData.append("file", file);
 
+      // When using a template, let the backend load the template's saved parsingOptions
+      // Don't override with defaults to preserve template's delimiter/decimal/thousands settings
       const mappingConfig = {
         templateId: selectedTemplateId,
-        parsingOptions: {
-          directionMode,
-          dateFormat,
-          delimiter,
-          headerRowIndex: 0,
-          hasHeaders: true,
-          decimalSeparator: "DOT" as DecimalSeparator,
-          thousandsSeparator: "COMMA" as ThousandsSeparator,
-        },
       };
 
       formData.append("mappingConfig", JSON.stringify(mappingConfig));
@@ -401,18 +394,11 @@ export function TransactionsImportWizard({
       const formData = new FormData();
       formData.append("file", file);
 
+      // When using a template, only send templateId to preserve template's saved settings
+      // When using manual mapping, send full config with columnMapping and parsingOptions
       const mappingConfig = selectedTemplateId
         ? {
             templateId: selectedTemplateId,
-            parsingOptions: {
-              directionMode,
-              dateFormat,
-              delimiter,
-              headerRowIndex: 0,
-              hasHeaders: true,
-              decimalSeparator: "DOT" as DecimalSeparator,
-              thousandsSeparator: "COMMA" as ThousandsSeparator,
-            },
           }
         : {
             columnMapping,

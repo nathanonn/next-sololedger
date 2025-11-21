@@ -21,6 +21,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
 import { Info, Loader2 } from "lucide-react";
 import { useBusinessSettings } from "@/hooks/use-business-settings";
+import { DataBackupPanel } from "@/components/features/settings/data-backup-panel";
 
 const businessDetailsSchema = z.object({
   businessName: z.string().min(1, "Business name is required").max(255),
@@ -164,14 +165,15 @@ export default function BusinessInfoPage(): React.JSX.Element {
   const isMember = userRole === "member";
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Business Information</CardTitle>
-        <CardDescription>
-          Manage your organization&apos;s business details and contact information
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>Business Information</CardTitle>
+          <CardDescription>
+            Manage your organization&apos;s business details and contact information
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
         {isMember && (
           <Alert className="mb-6">
             <Info className="h-4 w-4" />
@@ -296,6 +298,12 @@ export default function BusinessInfoPage(): React.JSX.Element {
           )}
         </form>
       </CardContent>
-    </Card>
+      </Card>
+
+      {/* Data Backup Panel */}
+      <div className="mt-6">
+        <DataBackupPanel orgSlug={orgSlug} isAdmin={isAdmin} />
+      </div>
+    </>
   );
 }

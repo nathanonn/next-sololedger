@@ -5,6 +5,13 @@ import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
 import { requireMembership, getOrgBySlug } from "@/lib/org-helpers";
 import { isValidCurrencyCode } from "@/lib/currencies";
+import {
+  MAX_TAG_LENGTH,
+  MAX_TAGS_PER_TRANSACTION,
+  buildTagFilter,
+  sanitizeTagNames,
+  upsertTagsForOrg,
+} from "@/lib/tag-helpers";
 
 export const runtime = "nodejs";
 
@@ -67,6 +74,8 @@ export async function GET(
     const amountMin = searchParams.get("amountMin");
     const amountMax = searchParams.get("amountMax");
     const currency = searchParams.get("currency");
+    const tagIdsParam = searchParams.get("tagIds");
+    const tagModeParam = searchParams.get("tagMode");
 
     // Build where clause
     const where: Record<string, unknown> = {
@@ -137,6 +146,11 @@ export async function GET(
       }
     }
 
+    const tagIds =
+      tagIdsParam?.split(",").map((id) => id.trim()).filter(Boolean) || [];
+    const tagMode = tagModeParam === "all" ? "all" : "any";
+    Object.assign(where, buildTagFilter(tagIds, tagMode));
+
     // Get transactions
     const transactions = await db.transaction.findMany({
       where,
@@ -145,6 +159,9 @@ export async function GET(
         account: true,
         vendor: true,
         client: true,
+        transactionTags: {
+          include: { tag: true },
+        },
         _count: {
           select: {
             documents: true,
@@ -154,7 +171,12 @@ export async function GET(
       orderBy: { date: "desc" },
     });
 
-    return NextResponse.json({ transactions });
+    const transactionsWithTags = transactions.map((transaction) => ({
+      ...transaction,
+      tags: transaction.transactionTags.map((link) => link.tag),
+    }));
+
+    return NextResponse.json({ transactions: transactionsWithTags });
   } catch (error) {
     console.error("Error fetching transactions:", error);
     return NextResponse.json(
@@ -258,6 +280,22 @@ export async function POST(
         clientId: z.string().nullable().optional(),
         clientName: z.string().nullable().optional(),
         notes: z.string().nullable().optional(),
+        tags: z
+          .array(
+            z
+              .string()
+              .trim()
+              .min(1, "Tag cannot be empty")
+              .max(
+                MAX_TAG_LENGTH,
+                `Tags must be ${MAX_TAG_LENGTH} characters or fewer`
+              )
+          )
+          .max(
+            MAX_TAGS_PER_TRANSACTION,
+            `You can add up to ${MAX_TAGS_PER_TRANSACTION} tags`
+          )
+          .optional(),
       })
       .refine(
         (data) => {
@@ -283,6 +321,7 @@ export async function POST(
     }
 
     const data = validation.data;
+    const tagNames = sanitizeTagNames(data.tags ?? []);
 
     // Validate secondary currency code if provided
     if (data.currencySecondary && !isValidCurrencyCode(data.currencySecondary)) {
@@ -457,6 +496,8 @@ export async function POST(
       }
     }
 
+    const tagRecords = await upsertTagsForOrg(org.id, tagNames);
+
     // Prepare dual-currency fields
     const isDualCurrency = !!(data.amountSecondary && data.currencySecondary);
 
@@ -502,16 +543,32 @@ export async function POST(
         clientId: finalClientId || null,
         clientName: finalClientName || null,
         notes: data.notes || null,
+        transactionTags:
+          tagRecords.length > 0
+            ? {
+                create: tagRecords.map((tag) => ({
+                  tagId: tag.id,
+                })),
+              }
+            : undefined,
       },
       include: {
         category: true,
         account: true,
         vendor: true,
         client: true,
+        transactionTags: {
+          include: { tag: true },
+        },
       },
     });
 
-    return NextResponse.json({ transaction }, { status: 201 });
+    const transactionWithTags = {
+      ...transaction,
+      tags: transaction.transactionTags.map((link) => link.tag),
+    };
+
+    return NextResponse.json({ transaction: transactionWithTags }, { status: 201 });
   } catch (error) {
     console.error("Error creating transaction:", error);
     return NextResponse.json(

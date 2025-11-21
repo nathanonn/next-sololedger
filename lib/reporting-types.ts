@@ -22,6 +22,8 @@ export interface PnLConfig {
   customFrom?: string; // ISO YYYY-MM-DD
   customTo?: string; // ISO YYYY-MM-DD
   detailLevel: PnLDetailLevel;
+  tagIds?: string[];
+  tagMode?: "any" | "all";
   referenceDate?: Date; // For testing
 }
 

@@ -64,6 +64,8 @@ export async function POST(
       categoryIds,
       vendorId,
       clientId,
+      tagIds,
+      tagMode,
       columns: requestedColumns,
     } = body;
 
@@ -93,6 +95,13 @@ export async function POST(
         { status: 400 }
       );
     }
+
+    const normalizedTagIds = Array.isArray(tagIds)
+      ? tagIds
+          .map((id: unknown) => (typeof id === "string" ? id.trim() : ""))
+          .filter(Boolean)
+      : undefined;
+    const tagFilterMode = tagMode === "all" ? "all" : "any";
 
     // Cap date span to 5 years to prevent pathological queries
     const maxSpanMs = 5 * 365 * 24 * 60 * 60 * 1000; // 5 years
@@ -132,6 +141,8 @@ export async function POST(
       categoryIds,
       vendorId,
       clientId,
+      tagIds: normalizedTagIds,
+      tagMode: tagFilterMode,
       columns,
     });
 

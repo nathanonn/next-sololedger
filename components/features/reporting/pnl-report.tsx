@@ -18,6 +18,8 @@ import { toast } from "sonner";
 import { formatCurrency, formatDateRange } from "@/lib/sololedger-formatters";
 import type { DateFormat, DecimalSeparator, ThousandsSeparator } from "@prisma/client";
 import type { PnLResult, PnLDateMode, PnLDetailLevel, PnLCategoryRow } from "@/lib/reporting-types";
+import { TagMultiSelect } from "@/components/features/tags/tag-multi-select";
+import { useOrgTags } from "@/hooks/use-org-tags";
 
 interface PnLReportProps {
   orgSlug: string;
@@ -33,6 +35,7 @@ export function PnLReport({
   isAdmin,
 }: PnLReportProps) {
   const router = useRouter();
+  const { tags, isLoading: tagsLoading } = useOrgTags(orgSlug);
 
   // State
   const [dateMode, setDateMode] = useState<PnLDateMode>("fiscalYear");
@@ -40,6 +43,8 @@ export function PnLReport({
   const [customTo, setCustomTo] = useState("");
   const [detailLevel, setDetailLevel] = useState<PnLDetailLevel>("summary");
   const [loading, setLoading] = useState(false);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [tagMode, setTagMode] = useState<"any" | "all">("any");
   const [data, setData] = useState<PnLResult & {
     baseCurrency: string;
     dateFormat: DateFormat;
@@ -66,6 +71,11 @@ export function PnLReport({
         params.append("customTo", customTo);
       }
 
+      if (selectedTagIds.length > 0) {
+        params.append("tagIds", selectedTagIds.join(","));
+        params.append("tagMode", tagMode);
+      }
+
       const response = await fetch(
         `/api/orgs/${orgSlug}/reports/pnl?${params.toString()}`
       );
@@ -82,7 +92,15 @@ export function PnLReport({
     } finally {
       setLoading(false);
     }
-  }, [dateMode, detailLevel, customFrom, customTo, orgSlug]);
+  }, [
+    dateMode,
+    detailLevel,
+    customFrom,
+    customTo,
+    orgSlug,
+    selectedTagIds,
+    tagMode,
+  ]);
 
   // Fetch on mount and when filters change
   useEffect(() => {
@@ -120,6 +138,11 @@ export function PnLReport({
       dateFrom,
       dateTo,
     });
+
+    if (selectedTagIds.length > 0) {
+      params.append("tagIds", selectedTagIds.join(","));
+      params.append("tagMode", tagMode);
+    }
 
     router.push(`/o/${orgSlug}/transactions?${params.toString()}`);
   };
@@ -277,6 +300,18 @@ export function PnLReport({
             </div>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <TagMultiSelect
+              tags={tags}
+              selectedTagIds={selectedTagIds}
+              onChange={setSelectedTagIds}
+              tagMode={tagMode}
+              onModeChange={setTagMode}
+              disabled={loading || tagsLoading}
+              label="Filter by tags"
+            />
+          </div>
+
           <div className="flex gap-2">
             <Button onClick={fetchData} disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -293,6 +328,10 @@ export function PnLReport({
                   if (dateMode === "custom" && customFrom && customTo) {
                     params.append("customFrom", customFrom);
                     params.append("customTo", customTo);
+                  }
+                  if (selectedTagIds.length > 0) {
+                    params.append("tagIds", selectedTagIds.join(","));
+                    params.append("tagMode", tagMode);
                   }
                   window.open(`/o/${orgSlug}/reports/pnl/print?${params.toString()}`, "_blank");
                 }}

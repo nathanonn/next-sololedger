@@ -43,6 +43,11 @@ interface Document {
   uploadedAt: string;
 }
 
+interface Tag {
+  id: string;
+  name: string;
+}
+
 interface Transaction {
   id: string;
   type: "INCOME" | "EXPENSE";
@@ -65,6 +70,7 @@ interface Transaction {
   vendor: { id: string; name: string } | null;
   client: { id: string; name: string } | null;
   documents: Document[];
+  tags: Tag[];
 }
 
 export default function EditTransactionPage(): React.JSX.Element {
@@ -76,6 +82,7 @@ export default function EditTransactionPage(): React.JSX.Element {
   const [settings, setSettings] = React.useState<{ baseCurrency: string } | null>(null);
   const [categories, setCategories] = React.useState<Category[]>([]);
   const [accounts, setAccounts] = React.useState<Array<{ id: string; name: string; isDefault: boolean }>>([]);
+  const [tags, setTags] = React.useState<Tag[]>([]);
   const [transaction, setTransaction] = React.useState<Transaction | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [isDeleting, setIsDeleting] = React.useState(false);
@@ -122,6 +129,12 @@ export default function EditTransactionPage(): React.JSX.Element {
         );
       } else {
         setAccounts([]);
+      }
+
+      const tagsResponse = await fetch(`/api/orgs/${orgSlug}/tags`);
+      if (tagsResponse.ok) {
+        const tagsData = await tagsResponse.json();
+        setTags(tagsData.tags || []);
       }
 
       // Load transaction
@@ -287,6 +300,7 @@ export default function EditTransactionPage(): React.JSX.Element {
                 settings={settings}
                 categories={categories}
                 accounts={accounts}
+                tags={tags}
                 initialData={transaction}
                 transactionId={transactionId}
               />

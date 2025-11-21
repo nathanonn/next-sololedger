@@ -5,6 +5,7 @@
 
 import { db } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
+import { buildTagFilter } from "@/lib/tag-helpers";
 
 /**
  * Available CSV columns
@@ -27,6 +28,7 @@ export const AVAILABLE_CSV_COLUMNS = [
   "currencySecondary",
   "exchangeRate",
   "notes",
+  "tags",
   // "documentIds",
   // "documentNames",
 ] as const;
@@ -46,6 +48,8 @@ export interface TransactionCsvExportConfig {
   categoryIds?: string[];
   vendorId?: string;
   clientId?: string;
+  tagIds?: string[];
+  tagMode?: "any" | "all";
   // Column selection
   columns: CsvColumn[];
 }
@@ -73,6 +77,8 @@ export async function generateTransactionsCsv(
     categoryIds,
     vendorId,
     clientId,
+    tagIds,
+    tagMode,
     columns,
   } = config;
 
@@ -106,11 +112,14 @@ export async function generateTransactionsCsv(
     where.clientId = clientId;
   }
 
+  Object.assign(where, buildTagFilter(tagIds, tagMode));
+
   // Determine includes based on requested columns
   const includeCategory = columns.includes("category");
   const includeAccount = columns.includes("account");
   const includeVendor = columns.includes("vendor");
   const includeClient = columns.includes("client");
+  const includeTags = columns.includes("tags");
 
   // Fetch transactions
   const transactions = await db.transaction.findMany({
@@ -120,6 +129,13 @@ export async function generateTransactionsCsv(
       account: includeAccount,
       vendor: includeVendor,
       client: includeClient,
+      transactionTags: includeTags
+        ? {
+            include: {
+              tag: true,
+            },
+          }
+        : false,
     },
     orderBy: { date: "desc" },
   });
@@ -172,6 +188,7 @@ function getColumnLabel(column: CsvColumn): string {
     currencySecondary: "Currency (Secondary)",
     exchangeRate: "Exchange Rate",
     notes: "Notes",
+    tags: "Tags",
     // documentIds: "Document IDs",
     // documentNames: "Document Names",
   };
@@ -199,6 +216,7 @@ type TransactionWithIncludes = {
   account?: { name: string } | null;
   vendor?: { name: string } | null;
   client?: { name: string } | null;
+  transactionTags?: { tag: { name: string } }[];
 };
 
 /**
@@ -273,6 +291,16 @@ function formatCsvValue(column: CsvColumn, transaction: TransactionWithIncludes)
 
     case "notes":
       return transaction.notes ? escapeCsv(transaction.notes) : "";
+
+    case "tags":
+      if (transaction.transactionTags && transaction.transactionTags.length > 0) {
+        const tagNames = transaction.transactionTags
+          .map((link) => link.tag.name)
+          .filter(Boolean)
+          .join(";");
+        return escapeCsv(tagNames);
+      }
+      return "";
 
     // Document columns are commented out because the Transaction model
     // does not have a documents relation in the current schema

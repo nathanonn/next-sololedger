@@ -4,6 +4,7 @@
  */
 
 import { db } from "@/lib/db";
+import type { Prisma } from "@prisma/client";
 import {
   getFiscalYearRange,
   getYTDRange,
@@ -20,6 +21,7 @@ import type {
   CategoryReportRow,
   VendorReportRow,
 } from "@/lib/reporting-types";
+import { buildTagFilter } from "@/lib/tag-helpers";
 
 /**
  * Compute P&L date bounds based on configuration
@@ -99,6 +101,8 @@ export function computePnLComparisonBounds(
 export async function getProfitAndLoss(
   config: PnLConfig
 ): Promise<PnLResult> {
+  const tagFilter = buildTagFilter(config.tagIds, config.tagMode);
+
   // Compute current period bounds
   const currentPeriod = computePnLDateBounds(config);
 
@@ -122,6 +126,7 @@ export async function getProfitAndLoss(
       category: {
         includeInPnL: true,
       },
+      ...tagFilter,
     },
     include: {
       category: {
@@ -156,6 +161,7 @@ export async function getProfitAndLoss(
       category: {
         includeInPnL: true,
       },
+      ...tagFilter,
     },
     select: {
       type: true,
@@ -426,17 +432,14 @@ export async function getCategoryReport(params: {
   from: Date;
   to: Date;
   typeFilter?: "INCOME" | "EXPENSE" | "both";
+  tagIds?: string[];
+  tagMode?: "any" | "all";
 }): Promise<CategoryReportResult> {
-  const { organizationId, from, to, typeFilter = "both" } = params;
+  const { organizationId, from, to, typeFilter = "both", tagIds, tagMode } = params;
+  const tagFilter = buildTagFilter(tagIds, tagMode);
 
   // Build where clause
-  const where: {
-    organizationId: string;
-    status: "POSTED";
-    deletedAt: null;
-    date: { gte: Date; lte: Date };
-    category?: { type: "INCOME" | "EXPENSE" };
-  } = {
+  const where: Prisma.TransactionWhereInput = {
     organizationId,
     status: "POSTED",
     deletedAt: null,
@@ -444,6 +447,7 @@ export async function getCategoryReport(params: {
       gte: from,
       lte: to,
     },
+    ...tagFilter,
   };
 
   // Add type filter if specified
@@ -559,8 +563,11 @@ export async function getVendorReport(params: {
   organizationId: string;
   from: Date;
   to: Date;
+  tagIds?: string[];
+  tagMode?: "any" | "all";
 }): Promise<VendorReportRow[]> {
-  const { organizationId, from, to } = params;
+  const { organizationId, from, to, tagIds, tagMode } = params;
+  const tagFilter = buildTagFilter(tagIds, tagMode);
 
   // Fetch transactions
   const transactions = await db.transaction.findMany({
@@ -572,6 +579,7 @@ export async function getVendorReport(params: {
         gte: from,
         lte: to,
       },
+      ...tagFilter,
     },
     include: {
       vendor: {

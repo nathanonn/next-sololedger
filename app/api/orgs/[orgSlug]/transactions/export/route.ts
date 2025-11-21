@@ -78,6 +78,9 @@ export async function GET(
         account: true,
         vendor: true,
         client: true,
+        transactionTags: {
+          include: { tag: true },
+        },
       },
       orderBy: { date: "desc" },
     });
@@ -103,6 +106,7 @@ export async function GET(
         "Currency (Secondary)",
         "Exchange Rate",
         "Notes",
+        "Tags",
       ].join(",")
     );
 
@@ -134,6 +138,9 @@ export async function GET(
         transaction.currencySecondary || "",
         exchangeRate,
         transaction.notes ? `"${transaction.notes.replace(/"/g, '""')}"` : "",
+        transaction.transactionTags
+          .map((link) => link.tag.name.replace(/"/g, '""'))
+          .join(";"),
       ];
 
       csvRows.push(row.join(","));

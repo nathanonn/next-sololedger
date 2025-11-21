@@ -21,6 +21,11 @@ interface Category {
   parentId: string | null;
 }
 
+interface Tag {
+  id: string;
+  name: string;
+}
+
 export default function NewTransactionPage(): React.JSX.Element {
   const params = useParams();
   const router = useRouter();
@@ -29,6 +34,7 @@ export default function NewTransactionPage(): React.JSX.Element {
   const [settings, setSettings] = React.useState<{ baseCurrency: string } | null>(null);
   const [categories, setCategories] = React.useState<Category[]>([]);
   const [accounts, setAccounts] = React.useState<Array<{ id: string; name: string; isDefault: boolean }>>([]);
+  const [tags, setTags] = React.useState<Tag[]>([]);
 
   React.useEffect(() => {
     async function loadData() {
@@ -72,6 +78,12 @@ export default function NewTransactionPage(): React.JSX.Element {
         } else {
           // User might not be admin, but that's okay for viewing
           setAccounts([]);
+        }
+
+        const tagsResponse = await fetch(`/api/orgs/${orgSlug}/tags`);
+        if (tagsResponse.ok) {
+          const tagsData = await tagsResponse.json();
+          setTags(tagsData.tags || []);
         }
       } catch (error) {
         console.error("Error loading data:", error);
@@ -161,6 +173,7 @@ export default function NewTransactionPage(): React.JSX.Element {
             settings={settings}
             categories={categories}
             accounts={accounts}
+            tags={tags}
           />
         </CardContent>
       </Card>

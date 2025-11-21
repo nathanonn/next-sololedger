@@ -577,7 +577,7 @@ export async function normalizeAndValidateRows(
           amountOriginal = amountValue;
           currencyOriginal = currency;
           exchangeRateToBase = amountBase / amountOriginal;
-        } else {
+        } else if (currency === settings.baseCurrency) {
           // Primary is the base
           amountBase = amountValue;
           currencyBase = currency;
@@ -586,14 +586,38 @@ export async function normalizeAndValidateRows(
           amountOriginal = amountValue;
           currencyOriginal = currency;
           exchangeRateToBase = 1.0;
+        } else {
+          // Neither currency is the base - invalid dual-currency transaction
+          errors.push(
+            `Dual-currency transaction requires base currency ${settings.baseCurrency} in either primary or secondary amount`
+          );
         }
       } else {
-        // Single currency transaction
+        // Single currency transaction - must match org base currency
+        if (currency !== settings.baseCurrency) {
+          errors.push(
+            `Currency "${currency}" does not match organization base currency "${settings.baseCurrency}". Provide secondary amount in ${settings.baseCurrency} or change to base currency.`
+          );
+        }
+
         amountBase = amountValue;
         currencyBase = currency;
         amountOriginal = amountValue;
         currencyOriginal = currency;
         exchangeRateToBase = 1.0;
+      }
+
+      // If there are currency validation errors, mark as invalid
+      if (errors.length > 0) {
+        normalizedRows.push({
+          rowIndex,
+          raw,
+          status: "invalid",
+          errors,
+          isDuplicateCandidate: false,
+          duplicateMatches: [],
+        });
+        continue;
       }
 
       normalizedRows.push({

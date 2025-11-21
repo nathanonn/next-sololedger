@@ -106,9 +106,11 @@ export function TransactionsImportWizard({
   const [file, setFile] = React.useState<File | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
 
-  // Upload & Options state
+  // Upload & Options state - defaults will be loaded from org settings
   const [directionMode, setDirectionMode] = React.useState<DirectionMode>("type_column");
   const [dateFormat, setDateFormat] = React.useState<DateFormat>("YYYY_MM_DD");
+  const [decimalSeparator, setDecimalSeparator] = React.useState<DecimalSeparator>("DOT");
+  const [thousandsSeparator, setThousandsSeparator] = React.useState<ThousandsSeparator>("COMMA");
   const [delimiter, setDelimiter] = React.useState(",");
   const [templates, setTemplates] = React.useState<ImportTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = React.useState<string>("");
@@ -127,32 +129,51 @@ export function TransactionsImportWizard({
   const [currentPage, setCurrentPage] = React.useState(0);
   const ROWS_PER_PAGE = 20;
 
-  // Load templates when dialog opens
+  // Load templates and org settings when dialog opens
   React.useEffect(() => {
-    if (open) {
-      loadTemplates();
-      // Reset state
-      setStep("upload");
-      setFile(null);
-      setColumnMapping({});
-      setPreviewRows([]);
-      setSummary(null);
-      setDuplicateDecisions({});
-      setCurrentPage(0);
-    }
-  }, [open, orgSlug]);
+    if (!open) return;
 
-  async function loadTemplates() {
-    try {
-      const response = await fetch(`/api/orgs/${orgSlug}/transactions/import-templates`);
-      if (response.ok) {
-        const data = await response.json();
-        setTemplates(data.templates || []);
+    async function loadTemplates() {
+      try {
+        const response = await fetch(`/api/orgs/${orgSlug}/transactions/import-templates`);
+        if (response.ok) {
+          const data = await response.json();
+          setTemplates(data.templates || []);
+        }
+      } catch (error) {
+        console.error("Error loading templates:", error);
       }
-    } catch (error) {
-      console.error("Error loading templates:", error);
     }
-  }
+
+    async function loadOrgSettings() {
+      try {
+        const response = await fetch(`/api/orgs/${orgSlug}/settings/financial`);
+        if (response.ok) {
+          const data = await response.json();
+          // Set defaults from org settings
+          if (data.settings) {
+            setDateFormat(data.settings.dateFormat);
+            setDecimalSeparator(data.settings.decimalSeparator);
+            setThousandsSeparator(data.settings.thousandsSeparator);
+          }
+        }
+      } catch (error) {
+        console.error("Error loading org settings:", error);
+      }
+    }
+
+    loadTemplates();
+    loadOrgSettings();
+
+    // Reset state
+    setStep("upload");
+    setFile(null);
+    setColumnMapping({});
+    setPreviewRows([]);
+    setSummary(null);
+    setDuplicateDecisions({});
+    setCurrentPage(0);
+  }, [open, orgSlug]);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selectedFile = e.target.files?.[0];
@@ -289,8 +310,8 @@ export function TransactionsImportWizard({
           delimiter,
           headerRowIndex: 0,
           hasHeaders: true,
-          decimalSeparator: "DOT" as DecimalSeparator,
-          thousandsSeparator: "COMMA" as ThousandsSeparator,
+          decimalSeparator,
+          thousandsSeparator,
         },
       };
 
@@ -348,8 +369,8 @@ export function TransactionsImportWizard({
           delimiter,
           headerRowIndex: 0,
           hasHeaders: true,
-          decimalSeparator: "DOT" as DecimalSeparator,
-          thousandsSeparator: "COMMA" as ThousandsSeparator,
+          decimalSeparator,
+          thousandsSeparator,
         },
       };
 
@@ -414,8 +435,8 @@ export function TransactionsImportWizard({
               delimiter,
               headerRowIndex: 0,
               hasHeaders: true,
-              decimalSeparator: "DOT" as DecimalSeparator,
-              thousandsSeparator: "COMMA" as ThousandsSeparator,
+              decimalSeparator,
+              thousandsSeparator,
             },
           };
 

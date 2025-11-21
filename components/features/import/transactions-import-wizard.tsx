@@ -129,38 +129,39 @@ export function TransactionsImportWizard({
   const [currentPage, setCurrentPage] = React.useState(0);
   const ROWS_PER_PAGE = 20;
 
+  // Hoisted helper functions (needed in multiple places)
+  const loadTemplates = React.useCallback(async () => {
+    try {
+      const response = await fetch(`/api/orgs/${orgSlug}/transactions/import-templates`);
+      if (response.ok) {
+        const data = await response.json();
+        setTemplates(data.templates || []);
+      }
+    } catch (error) {
+      console.error("Error loading templates:", error);
+    }
+  }, [orgSlug]);
+
+  const loadOrgSettings = React.useCallback(async () => {
+    try {
+      const response = await fetch(`/api/orgs/${orgSlug}/settings/financial`);
+      if (response.ok) {
+        const data = await response.json();
+        // Set defaults from org settings
+        if (data.settings) {
+          setDateFormat(data.settings.dateFormat);
+          setDecimalSeparator(data.settings.decimalSeparator);
+          setThousandsSeparator(data.settings.thousandsSeparator);
+        }
+      }
+    } catch (error) {
+      console.error("Error loading org settings:", error);
+    }
+  }, [orgSlug]);
+
   // Load templates and org settings when dialog opens
   React.useEffect(() => {
     if (!open) return;
-
-    async function loadTemplates() {
-      try {
-        const response = await fetch(`/api/orgs/${orgSlug}/transactions/import-templates`);
-        if (response.ok) {
-          const data = await response.json();
-          setTemplates(data.templates || []);
-        }
-      } catch (error) {
-        console.error("Error loading templates:", error);
-      }
-    }
-
-    async function loadOrgSettings() {
-      try {
-        const response = await fetch(`/api/orgs/${orgSlug}/settings/financial`);
-        if (response.ok) {
-          const data = await response.json();
-          // Set defaults from org settings
-          if (data.settings) {
-            setDateFormat(data.settings.dateFormat);
-            setDecimalSeparator(data.settings.decimalSeparator);
-            setThousandsSeparator(data.settings.thousandsSeparator);
-          }
-        }
-      } catch (error) {
-        console.error("Error loading org settings:", error);
-      }
-    }
 
     loadTemplates();
     loadOrgSettings();
@@ -173,7 +174,7 @@ export function TransactionsImportWizard({
     setSummary(null);
     setDuplicateDecisions({});
     setCurrentPage(0);
-  }, [open, orgSlug]);
+  }, [open, orgSlug, loadTemplates, loadOrgSettings]);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selectedFile = e.target.files?.[0];

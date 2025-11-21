@@ -757,7 +757,7 @@ export async function detectDuplicates(
         const importVendorName = normalized.vendorName?.toLowerCase().trim();
         const existingVendorName =
           existingTx.vendorName?.toLowerCase().trim() ||
-          existingTx.vendor?.name.toLowerCase().trim();
+          existingTx.vendor?.name?.toLowerCase().trim();
 
         if (importVendorName && existingVendorName && importVendorName === existingVendorName) {
           isConditionA = true;

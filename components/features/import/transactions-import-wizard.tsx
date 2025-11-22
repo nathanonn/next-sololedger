@@ -113,7 +113,7 @@ export function TransactionsImportWizard({
   const [thousandsSeparator, setThousandsSeparator] = React.useState<ThousandsSeparator>("COMMA");
   const [delimiter, setDelimiter] = React.useState(",");
   const [templates, setTemplates] = React.useState<ImportTemplate[]>([]);
-  const [selectedTemplateId, setSelectedTemplateId] = React.useState<string>("");
+  const [selectedTemplateId, setSelectedTemplateId] = React.useState<string>("none");
 
   // Mapping state
   const [headers, setHeaders] = React.useState<string[]>([]);
@@ -198,7 +198,7 @@ export function TransactionsImportWizard({
     }
 
     // If template is selected and has full mapping, go straight to preview
-    if (selectedTemplateId) {
+    if (selectedTemplateId && selectedTemplateId !== "none") {
       const template = templates.find((t) => t.id === selectedTemplateId);
       if (template) {
         // Load full template config and proceed to preview
@@ -421,7 +421,7 @@ export function TransactionsImportWizard({
 
       // When using a template, only send templateId to preserve template's saved settings
       // When using manual mapping, send full config with columnMapping and parsingOptions
-      const mappingConfig = selectedTemplateId
+      const mappingConfig = selectedTemplateId && selectedTemplateId !== "none"
         ? {
             templateId: selectedTemplateId,
           }
@@ -522,7 +522,7 @@ export function TransactionsImportWizard({
                   <SelectValue placeholder="None - configure manually" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None - configure manually</SelectItem>
+                  <SelectItem value="none">None - configure manually</SelectItem>
                   {templates.map((template) => (
                     <SelectItem key={template.id} value={template.id}>
                       {template.name}
@@ -846,7 +846,7 @@ export function TransactionsImportWizard({
 
           {step === "review" && summary && (
             <>
-              <Button variant="outline" onClick={() => setStep(selectedTemplateId ? "upload" : "mapping")}>
+              <Button variant="outline" onClick={() => setStep(selectedTemplateId && selectedTemplateId !== "none" ? "upload" : "mapping")}>
                 <ChevronLeft className="h-4 w-4 mr-2" />
                 Back
               </Button>

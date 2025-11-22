@@ -35,6 +35,8 @@ interface TransactionsImportWizardProps {
 
 type DirectionMode = "type_column" | "sign_based";
 
+type ImportMode = "csv" | "zip_with_documents";
+
 type Step = "upload" | "mapping" | "review";
 
 interface ImportTemplate {
@@ -106,6 +108,7 @@ export function TransactionsImportWizard({
   const [isLoading, setIsLoading] = React.useState(false);
 
   // Upload & Options state - defaults will be loaded from org settings
+  const [importMode, setImportMode] = React.useState<ImportMode>("csv");
   const [directionMode, setDirectionMode] = React.useState<DirectionMode>("type_column");
   const [dateFormat, setDateFormat] = React.useState<DateFormat>("YYYY_MM_DD");
   const [decimalSeparator, setDecimalSeparator] = React.useState<DecimalSeparator>("DOT");
@@ -178,13 +181,22 @@ export function TransactionsImportWizard({
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      if (!selectedFile.name.toLowerCase().endsWith(".csv")) {
-        toast.error("Please select a CSV file");
-        return;
-      }
-      if (selectedFile.size > 10 * 1024 * 1024) {
-        toast.error("File size must be less than 10MB");
-        return;
+      // Validate file based on import mode
+      if (importMode === "csv") {
+        if (!selectedFile.name.toLowerCase().endsWith(".csv")) {
+          toast.error("Please select a CSV file");
+          return;
+        }
+        if (selectedFile.size > 10 * 1024 * 1024) {
+          toast.error("CSV file size must be less than 10MB");
+          return;
+        }
+      } else if (importMode === "zip_with_documents") {
+        if (!selectedFile.name.toLowerCase().endsWith(".zip")) {
+          toast.error("Please select a ZIP file");
+          return;
+        }
+        // No size limit for ZIP files
       }
       setFile(selectedFile);
     }
@@ -253,6 +265,7 @@ export function TransactionsImportWizard({
       // Don't override with defaults to preserve template's delimiter/decimal/thousands settings
       const mappingConfig = {
         templateId: selectedTemplateId,
+        importMode,
       };
 
       formData.append("mappingConfig", JSON.stringify(mappingConfig));
@@ -303,6 +316,7 @@ export function TransactionsImportWizard({
       formData.append("file", file);
 
       const mappingConfig = {
+        importMode,
         columnMapping,
         parsingOptions: {
           directionMode,
@@ -362,6 +376,7 @@ export function TransactionsImportWizard({
     setIsLoading(true);
     try {
       const config = {
+        importMode,
         columnMapping,
         parsingOptions: {
           directionMode,
@@ -423,8 +438,10 @@ export function TransactionsImportWizard({
       const mappingConfig = selectedTemplateId && selectedTemplateId !== "none"
         ? {
             templateId: selectedTemplateId,
+            importMode,
           }
         : {
+            importMode,
             columnMapping,
             parsingOptions: {
               directionMode,
@@ -524,12 +541,30 @@ export function TransactionsImportWizard({
         {step === "upload" && (
           <div className="space-y-6">
             <div className="space-y-2">
-              <Label>CSV File</Label>
+              <Label>Import Mode</Label>
+              <RadioGroup value={importMode} onValueChange={(v) => setImportMode(v as ImportMode)}>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="csv" id="csv_mode" />
+                  <Label htmlFor="csv_mode" className="font-normal">
+                    Standard CSV
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="zip_with_documents" id="zip_mode" />
+                  <Label htmlFor="zip_mode" className="font-normal">
+                    Advanced ZIP (CSV + documents)
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            <div className="space-y-2">
+              <Label>{importMode === "csv" ? "CSV File" : "ZIP File"}</Label>
               <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center hover:border-muted-foreground/50 transition-colors">
                 <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
                 <Input
                   type="file"
-                  accept=".csv"
+                  accept={importMode === "csv" ? ".csv" : ".zip"}
                   onChange={handleFileChange}
                   className="max-w-xs mx-auto"
                 />
@@ -538,9 +573,21 @@ export function TransactionsImportWizard({
                     Selected: {file.name} ({(file.size / 1024).toFixed(1)} KB)
                   </p>
                 )}
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Accepted formats: .csv • Max size: 10 MB
-                </p>
+                {importMode === "csv" ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Accepted formats: .csv • Max size: 10 MB
+                  </p>
+                ) : (
+                  <div className="mt-2 text-xs text-muted-foreground text-left max-w-md mx-auto">
+                    <p className="font-medium mb-1">Accepted formats: .zip</p>
+                    <p className="mb-1">ZIP must contain:</p>
+                    <ul className="list-disc list-inside ml-2 space-y-0.5">
+                      <li><code className="text-xs bg-muted px-1 rounded">transactions.csv</code> with a &quot;document&quot; column</li>
+                      <li>Document files (e.g., <code className="text-xs bg-muted px-1 rounded">OpenAI/invoice.pdf</code>)</li>
+                    </ul>
+                    <p className="mt-1">Empty document cells = no document for that transaction</p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -643,6 +690,7 @@ export function TransactionsImportWizard({
                   { field: "tags", label: "Tags", required: false },
                   { field: "secondaryAmount", label: "Secondary Amount", required: false },
                   { field: "secondaryCurrency", label: "Secondary Currency", required: false },
+                  ...(importMode === "zip_with_documents" ? [{ field: "document", label: "Document (path in ZIP)", required: false }] : []),
                 ].map(({ field, label }) => (
                   <div key={field} className="space-y-1">
                     <Label className="text-xs">{label}</Label>

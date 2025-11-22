@@ -543,7 +543,7 @@ export default function TransactionsPage(): React.JSX.Element {
           </Button>
           <Button variant="outline" onClick={() => setImportWizardOpen(true)}>
             <Upload className="h-4 w-4 mr-2" />
-            Import CSV
+            Import CSV/ZIP
           </Button>
           <Button asChild>
             <Link href={`/o/${orgSlug}/transactions/new`}>

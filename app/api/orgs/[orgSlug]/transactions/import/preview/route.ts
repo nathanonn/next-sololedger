@@ -16,11 +16,21 @@ import {
   generateImportSummary,
   type ImportTemplateConfig,
 } from "@/lib/import/transactions-csv";
+import { parseTransactionsZip } from "@/lib/import/zip-transactions";
+import { validateImportDocumentsForZip } from "@/lib/import/transactions-documents";
 
 export const runtime = "nodejs";
 
-// Max file size: 10 MB
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+// Import mode type
+export type ImportMode = "csv" | "zip_with_documents";
+
+// Extended config with import mode
+interface ExtendedImportConfig extends ImportTemplateConfig {
+  importMode?: ImportMode;
+}
+
+// Max file size for CSV: 10 MB (no limit for ZIP)
+const MAX_CSV_FILE_SIZE = 10 * 1024 * 1024;
 
 /**
  * POST /api/orgs/[orgSlug]/transactions/import/preview
@@ -83,23 +93,8 @@ export async function POST(
       );
     }
 
-    // Validate file
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json(
-        { error: `File exceeds maximum size of ${MAX_FILE_SIZE / 1024 / 1024}MB` },
-        { status: 400 }
-      );
-    }
-
-    if (!file.name.toLowerCase().endsWith(".csv")) {
-      return NextResponse.json(
-        { error: "Only CSV files are supported" },
-        { status: 400 }
-      );
-    }
-
-    // Parse mapping config
-    let mappingConfig: ImportTemplateConfig;
+    // Parse mapping config first to determine import mode
+    let mappingConfig: ExtendedImportConfig;
     try {
       const parsed = JSON.parse(mappingConfigJson);
 
@@ -119,7 +114,7 @@ export async function POST(
           );
         }
 
-        mappingConfig = template.config as unknown as ImportTemplateConfig;
+        mappingConfig = template.config as unknown as ExtendedImportConfig;
 
         // Merge any overrides
         if (parsed.columnMapping) {
@@ -134,12 +129,52 @@ export async function POST(
             ...parsed.parsingOptions,
           };
         }
+        // Allow importMode override from current wizard state
+        if (parsed.importMode) {
+          mappingConfig.importMode = parsed.importMode;
+        }
       } else {
-        mappingConfig = parsed as ImportTemplateConfig;
+        mappingConfig = parsed as ExtendedImportConfig;
       }
     } catch {
       return NextResponse.json(
         { error: "Invalid mapping configuration JSON" },
+        { status: 400 }
+      );
+    }
+
+    // Default to CSV mode for backward compatibility
+    const importMode: ImportMode = mappingConfig.importMode || "csv";
+
+    // Validate file based on import mode
+    if (importMode === "csv") {
+      // CSV mode: enforce 10MB limit and .csv extension
+      if (file.size > MAX_CSV_FILE_SIZE) {
+        return NextResponse.json(
+          {
+            error: `File exceeds maximum size of ${MAX_CSV_FILE_SIZE / 1024 / 1024}MB`,
+          },
+          { status: 400 }
+        );
+      }
+
+      if (!file.name.toLowerCase().endsWith(".csv")) {
+        return NextResponse.json(
+          { error: "Only CSV files are supported in CSV mode" },
+          { status: 400 }
+        );
+      }
+    } else if (importMode === "zip_with_documents") {
+      // ZIP mode: require .zip extension, no size limit
+      if (!file.name.toLowerCase().endsWith(".zip")) {
+        return NextResponse.json(
+          { error: "ZIP file required in advanced ZIP mode" },
+          { status: 400 }
+        );
+      }
+    } else {
+      return NextResponse.json(
+        { error: `Invalid import mode: ${importMode}` },
         { status: 400 }
       );
     }
@@ -158,12 +193,36 @@ export async function POST(
 
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    const fileBuffer = Buffer.from(arrayBuffer);
+
+    // Parse based on import mode
+    let csvBuffer: Buffer;
+    let documentsByPath: Map<string, { buffer: Buffer; originalName: string }> | null = null;
+
+    if (importMode === "zip_with_documents") {
+      // ZIP mode: extract transactions.csv and documents
+      try {
+        const zipData = await parseTransactionsZip(fileBuffer);
+        csvBuffer = zipData.transactionsCsv;
+        documentsByPath = zipData.documentsByPath;
+      } catch (error) {
+        return NextResponse.json(
+          {
+            error: "Failed to parse ZIP file",
+            details: error instanceof Error ? error.message : "Unknown error",
+          },
+          { status: 400 }
+        );
+      }
+    } else {
+      // CSV mode: use file buffer directly
+      csvBuffer = fileBuffer;
+    }
 
     // Parse CSV
     let parsedData;
     try {
-      parsedData = parseCsvBuffer(buffer, mappingConfig.parsingOptions);
+      parsedData = parseCsvBuffer(csvBuffer, mappingConfig.parsingOptions);
     } catch (error) {
       return NextResponse.json(
         {
@@ -182,12 +241,20 @@ export async function POST(
     );
 
     // Normalize and validate using parsingOptions from template
-    const normalizedRows = await normalizeAndValidateRows(
+    let normalizedRows = await normalizeAndValidateRows(
       rawRows,
       org.id,
       settings,
       mappingConfig.parsingOptions
     );
+
+    // Validate documents in ZIP mode
+    if (importMode === "zip_with_documents" && documentsByPath) {
+      normalizedRows = validateImportDocumentsForZip(
+        normalizedRows,
+        documentsByPath
+      );
+    }
 
     // Detect duplicates
     const rowsWithDuplicates = await detectDuplicates(
@@ -220,6 +287,7 @@ export async function POST(
             tagNames: row.normalized.tagNames,
           }
         : undefined,
+      documentPath: row.documentPath,
       isDuplicateCandidate: row.isDuplicateCandidate,
       duplicateMatches: row.duplicateMatches.map((m) => ({
         transactionId: m.transactionId,

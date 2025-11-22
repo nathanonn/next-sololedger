@@ -49,6 +49,7 @@ export interface CsvColumnMapping {
   tags?: string;
   secondaryAmount?: string;
   secondaryCurrency?: string;
+  document?: string; // For ZIP mode: relative path to document in ZIP
 }
 
 /**
@@ -101,6 +102,7 @@ export interface RawImportRow {
     tagsRaw?: string;
     secondaryAmountRaw?: string;
     secondaryCurrencyRaw?: string;
+    documentPath?: string;
   };
 }
 
@@ -132,6 +134,7 @@ export interface NormalizedImportRow {
     notes?: string;
     tagNames?: string[];
   };
+  documentPath?: string; // For ZIP mode: relative path to document in ZIP
   isDuplicateCandidate: boolean;
   duplicateMatches: DuplicateMatch[];
 }
@@ -267,6 +270,7 @@ export function applyColumnMapping(
         tagsRaw: getValue(mapping.tags),
         secondaryAmountRaw: getValue(mapping.secondaryAmount),
         secondaryCurrencyRaw: getValue(mapping.secondaryCurrency),
+        documentPath: getValue(mapping.document),
       },
     });
   });
@@ -644,6 +648,7 @@ export async function normalizeAndValidateRows(
           notes: candidate.notes,
           tagNames,
         },
+        documentPath: candidate.documentPath,
         isDuplicateCandidate: false,
         duplicateMatches: [],
       });

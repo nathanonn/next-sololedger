@@ -156,7 +156,7 @@ export function ImportTemplateDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-[95vw] sm:max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {template ? "Edit" : "Create"} Import Template
@@ -252,7 +252,10 @@ export function ImportTemplateDialog({
                   <RadioGroup
                     value={parsingOptions.delimiter}
                     onValueChange={(value) =>
-                      setParsingOptions((prev) => ({ ...prev, delimiter: value }))
+                      setParsingOptions((prev) => ({
+                        ...prev,
+                        delimiter: value,
+                      }))
                     }
                   >
                     <div className="flex items-center space-x-2">

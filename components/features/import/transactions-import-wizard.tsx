@@ -204,11 +204,25 @@ export function TransactionsImportWizard({
 
   async function handleContinueFromUpload() {
     if (!file) {
-      toast.error("Please select a CSV file");
+      toast.error("Please select a file");
       return;
     }
 
-    // If template is selected and has full mapping, go straight to preview
+    // ZIP mode: Skip client-side parsing, backend will extract CSV from ZIP
+    if (importMode === "zip_with_documents") {
+      // ZIP import requires a template because we can't parse the ZIP client-side
+      if (selectedTemplateId && selectedTemplateId !== "none") {
+        await handlePreviewWithTemplate();
+        return;
+      } else {
+        toast.error(
+          "ZIP import requires a saved template. Please create a mapping template using a CSV file first, or select an existing template."
+        );
+        return;
+      }
+    }
+
+    // CSV mode: If template is selected and has full mapping, go straight to preview
     if (selectedTemplateId && selectedTemplateId !== "none") {
       const template = templates.find((t) => t.id === selectedTemplateId);
       if (template) {

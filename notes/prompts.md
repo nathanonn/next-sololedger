@@ -4,7 +4,7 @@
 
 ```
 ./worktrees.sh setup \
-  --branches feat/import_export \
+  --branches feat/import_by_zipped_file \
   --db-url postgresql://pi:password@localhost:5432/nextsololedger
 ```
 
@@ -17,7 +17,7 @@
 ## merge
 
 ```
-./worktrees.sh merge --branches feat/import_export --into main
+./worktrees.sh merge --branches feat/import_by_zipped_file --into main
 ```
 
 # create wireframes based on plan

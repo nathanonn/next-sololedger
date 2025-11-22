@@ -1,321 +1,268 @@
-## CSV Import, Export & Backup – Implementation Plan
+## Advanced ZIP Transaction Import – Implementation Plan
 
-This plan implements a two-step, server-validated CSV import flow (preview → commit) plus a per-business full-data backup/export (JSON and multi-CSV ZIP), wired into the existing transactions page and respecting your decisions: import entrypoint on the transactions list, members allowed to import but only admins can back up, dual type detection (column vs sign), auto-creating vendors/clients only, org-scoped mapping templates, duplicate detection based on secondary/original amounts where present, CSV backups as ZIPs of multiple entity files, and document references limited to metadata/links.
+This plan upgrades the transaction import flow to support an advanced mode where users upload a ZIP file containing `transactions.csv` plus related document files. The existing CSV-only flow remains intact. In ZIP mode, the backend unzips the archive on the server, validates per-row document paths and file constraints during preview, and on commit uploads any referenced documents via the existing document storage abstraction and links them to the newly created transactions. Behavior follows your choices: single wizard with a mode toggle, optional `document` column mapping, row-level invalidation for missing/invalid documents, heuristic document typing, per-ZIP deduplication of documents, no global ZIP size cap (but strict per-file limits), full validation at preview, and an entrypoint labeled “Import CSV/ZIP”.
 
-### 1. Data & Domain Changes
+### 1. CSV Import Types – Add Document Path Support
 
-- Add a `CsvImportTemplate` model in `prisma/schema.prisma`:
-  - Fields: `id`, `organizationId`, `name`, `config` (Json), `createdByUserId`, `createdAt`, `updatedAt`.
-  - Relations: `organization` → `Organization`, `createdBy` → `User`.
-  - Uniqueness: `@@unique([organizationId, name])` so templates are org-scoped and shared across members.
-  - `config` stores:
-    - Column-to-field mapping (e.g. `date`, `amount`, `currency`, `description`, `type`, `vendor`, `client`, `category`, `account`, `notes`, `tags`, `secondaryAmount`, `secondaryCurrency`).
-    - Parsing options: delimiter, header row index, header presence, date format, number format, direction mode (type column vs sign-based).
+- Extend `lib/import/transactions-csv.ts`:
+  - In `CsvColumnMapping`, add an optional `document?: string` field for the CSV column that holds a document path relative to the ZIP root.
+  - In `RawImportRow.candidate`, add `documentPath?: string`.
+  - In `applyColumnMapping`:
+    - Read the mapped `document` column using the existing `getValue` helper.
+    - Store that as `candidate.documentPath` (trimmed, empty treated as `undefined`).
+  - In `NormalizedImportRow`, add a top-level `documentPath?: string`:
+    - When constructing a normalized row, copy `candidate.documentPath` into `normalizedRow.documentPath` (for valid rows) without changing any existing validation rules.
+    - Invalid rows can leave `documentPath` undefined; it’s only needed for import-time document linking.
 
-### 2. CSV Import Backend – Core Helpers
+### 2. Import Wizard UI – CSV vs ZIP Modes & Document Mapping
 
-- Create a server-only helper module, e.g. `lib/import/transactions-csv.ts`:
-  - CSV parsing:
-    - Input: CSV `Buffer` or stream, delimiter, header row index, whether file has headers.
-    - Use a Node CSV parser (e.g. `csv-parse` or `fast-csv`), Node runtime only.
-    - Output: `{ headers: string[]; rows: string[][] }`.
-  - Mapping application:
-    - Given headers, rows, and mapping config, derive `RawImportRow` objects:
-      - `rowIndex`, `raw` (original cells), and a candidate DTO with:
-        - `directionSource` (`type` column vs `sign` mode).
-        - `amountRaw`, `currencyRaw`, optional `secondaryAmountRaw`/`secondaryCurrencyRaw`.
-        - `description`, `dateRaw`, `categoryName`, `accountName`, `vendorName`, `clientName`, `notes`, `tagsRaw`.
-  - Normalization & validation:
-    - Implement a Zod schema mirroring the dual-currency transaction POST schema:
-      - Parse dates using the selected format (default from `OrganizationSettings.dateFormat`).
-      - Normalize numbers using `decimalSeparator` / `thousandsSeparator` from `OrganizationSettings`, unless overridden.
-      - Enforce:
-        - Amount > 0 (after taking absolute value if using sign-based direction).
-        - Both secondary amount and currency together or neither.
-        - Valid ISO 4217 currency codes via `isValidCurrencyCode`.
-    - Direction resolution (3/c):
-      - Mode “Type column”: require mapped type column; coerce to `INCOME`/`EXPENSE`.
-      - Mode “Sign-based”: infer type from sign; use absolute amount for stored values.
-      - If both are present, optionally validate and mark row invalid on conflict.
-    - Category & account resolution:
-      - Lookup `Category` and `Account` by org + name (case-insensitive).
-      - If not found or wrong org, mark the row invalid with a clear error.
-    - Vendor/client resolution (4/b):
-      - For INCOME:
-        - Use client fields; if `clientName` exists and `clientId` is absent, find-or-create `Client` by lowercased name.
-      - For EXPENSE:
-        - Analogous behavior for `Vendor`.
-    - Tag handling (optional):
-      - If a Tags column is mapped, split on `;` and pass values through `sanitizeTagNames` and `upsertTagsForOrg` if tag import is enabled.
-  - Legacy fields:
-    - Compute `amountBase`/`currencyBase` and optional `amountSecondary`/`currencySecondary` as in the dual-currency model.
-    - Derive `amountOriginal`, `currencyOriginal`, `exchangeRateToBase` using the same rules as the existing POST handler.
-  - Validation result:
-    - For each row, return:
-      - `rowIndex`.
-      - A normalized transaction DTO ready for `db.transaction.create`.
-      - Status: `valid` or `invalid`.
-      - `errors: string[]` for invalid rows.
+- In `app/o/[orgSlug]/transactions/page.tsx`:
+  - Update the header button that opens the import wizard:
+    - Change its label from “Import CSV” to “Import CSV/ZIP”.
+    - Keep the wiring the same (`setImportWizardOpen(true)`).
 
-### 3. Duplicate Detection Logic
+- In `components/features/import/transactions-import-wizard.tsx`:
+  - Add an `importMode` state and type:
+    - `type ImportMode = "csv" | "zip_with_documents";`.
+    - `const [importMode, setImportMode] = React.useState<ImportMode>("csv");`.
+  - Surface the mode selector in the upload step:
+    - Add a small radio group or segmented control labeled “Import Mode” with:
+      - “Standard CSV” (`"csv"`).
+      - “Advanced ZIP (CSV + documents)” (`"zip_with_documents"`).
+    - Default to `"csv"`.
+  - Make the file input conditional:
+    - If `importMode === "csv"`:
+      - `accept=".csv"`.
+      - Help text: “Upload a CSV export from your bank or accounting tool”.
+    - If `importMode === "zip_with_documents"`:
+      - `accept=".zip"`.
+      - Help text describing:
+        - Expected structure:
+          - `/OpenAI/...pdf`, `/Google/...pdf`, `/transactions.csv`.
+        - `transactions.csv` must contain a `document` column with relative paths like `OpenAI/DHUENf-0011.pdf`.
+        - Empty `document` cells simply mean “no document for this transaction”.
+  - Extend the mapping UI:
+    - In the Field Mapping list, add an optional “Document (path in ZIP)” field.
+    - Wire it to `columnMapping.document`.
+    - Default to the CSV header named `document` if present.
+  - Ensure `mappingConfig` includes `importMode`:
+    - When building `mappingConfig` for preview and commit:
+      - Add `importMode` at the top level alongside `columnMapping` and `parsingOptions`, e.g.:
+        - `{ importMode, columnMapping, parsingOptions: { ... } }`.
+      - When using a template, allow `importMode` from the current wizard state to override or augment any stored value.
 
-- In `lib/import/transactions-csv.ts`, add duplicate detection utilities:
-  - For each valid row, prefer secondary/original values (6/b):
-    - If `amountSecondary` & `currencySecondary` present:
-      - Use `(amountSecondary, currencySecondary, date, vendorName/description)` as primary match keys.
-    - Else fall back to base:
-      - Use `(amountBase, baseCurrency, date, vendorName/description)`.
-  - Duplicate rules (per org, non-deleted only):
-    - Condition A:
-      - Same date, same normalized amount (within epsilon), and same vendor (by resolved `vendorId` or vendorName).
-    - Condition B:
-      - Same normalized amount and identical description (case-insensitive, trimmed) within a ±2 day window around the import date.
-  - Implementation notes:
-    - Avoid one-query-per-row by:
-      - Computing overall date range for the file.
-      - Pre-fetching candidate transactions for that range and relevant amount buckets.
-      - Doing fine-grained comparisons in memory.
-  - For each row, attach:
-    - `duplicateMatches: { transactionId, date, amount, currency, description, vendorName }[]` (capped to a small number).
-    - `isDuplicateCandidate: boolean`.
+### 3. ZIP Parsing Helper & Document Path Normalization
 
-### 4. Import APIs (Stateless Two-Step Flow)
+- Add `lib/import/zip-transactions.ts` (Node runtime only):
+  - Export a function:
+    - `async function parseTransactionsZip(buffer: Buffer): Promise<{ transactionsCsv: Buffer; documentsByPath: Map<string, { buffer: Buffer; originalName: string }> }>`
+  - Behavior:
+    - Use a Node ZIP library to read entries from the `buffer` without writing to disk.
+    - Identify `transactions.csv`:
+      - Accept paths like `transactions.csv`, `./transactions.csv`, or any `*/transactions.csv` (first match wins).
+      - If not found, throw a specific error (caller will map it to a 400).
+      - Return its contents as `transactionsCsv`.
+    - Build `documentsByPath`:
+      - For every other regular file entry:
+        - Compute `normalizedPath` using a helper (see below).
+        - Read the file contents into a `Buffer`.
+        - Store in `documentsByPath.set(normalizedPath, { buffer, originalName: entryFileName });`.
+      - Ignore directory entries.
+  - Add `normalizeDocumentPath(raw: string): string`:
+    - Trim whitespace.
+    - Replace backslashes with slashes.
+    - Strip leading `./` or `/`.
+    - Collapse duplicate slashes.
+    - Return the cleaned path used as a map key.
+  - Add `guessMimeType(originalName: string): string | null`:
+    - Based on extension:
+      - `.pdf` → `application/pdf`.
+      - `.png` → `image/png`.
+      - `.jpg` / `.jpeg` → `image/jpeg`.
+      - `.txt` → `text/plain`.
+    - Return `null` for unsupported extensions so validation can treat them as invalid.
+  - Do not enforce any explicit ZIP size limit in this helper; only operate on the given buffer (ZIP size policy is handled at the route level).
 
-- Preview route: `app/api/orgs/[orgSlug]/transactions/import/preview/route.ts`:
-  - `export const runtime = "nodejs"`.
-  - Method: `POST`.
-  - Auth:
-    - Use `getCurrentUser`, `getOrgBySlug`, `requireMembership`, and `validateApiKeyOrgAccess`.
-    - Allow members and admins (2/b).
-  - Input:
-    - `multipart/form-data`:
-      - `file`: CSV file.
-      - `mappingConfig`: JSON string with mapping, formats, direction mode, or a template ID.
-  - Flow:
-    - Load `OrganizationSettings` (base currency, date/number formats).
-    - Resolve mappingConfig:
-      - If template ID provided, load `CsvImportTemplate.config` and merge overrides.
-    - Parse CSV to headers/rows.
-    - Apply mapping + normalization to produce `NormalizedImportRow[]`.
-    - Run validation and duplicate detection.
-    - Response:
-      - `headers`.
-      - `previewRows`: first N rows with raw values, normalized values, status, errors, duplicate summary.
-      - `summary`: total rows, valid count, invalid count, duplicate candidate count.
-      - `duplicateRowIndexes` and a compact map of duplicate match metadata.
-    - No import-side DB writes yet, except reads (and optional tag/vendor/client upserts if you choose to do them in preview).
+### 4. Shared Document Validation for Imports
 
-- Commit route: `app/api/orgs/[orgSlug]/transactions/import/commit/route.ts`:
-  - `export const runtime = "nodejs"`.
-  - Method: `POST`.
-  - Auth & permissions: same as preview.
-  - Input:
-    - `multipart/form-data`:
-      - `file`: the CSV file (wizard re-sends the same `File`).
-      - `mappingConfig`: same configuration as preview.
-      - `decisions`: JSON mapping `rowIndex → "import" | "skip"` for duplicate rows.
-  - Flow:
-    - Re-run the same parsing/mapping/validation/duplicate detection pipeline (stateless design, 9/a).
-    - For each row:
-      - If invalid → always skip (counted as invalid).
-      - If `isDuplicateCandidate`:
-        - Check `decisions[rowIndex]`:
-          - `"skip"` → skip as duplicate.
-          - `"import"` → treat as valid import.
-          - Missing → default to `"skip"` for safety.
-      - Else if valid and not duplicate → import.
-    - Import execution:
-      - For rows to import, create transactions via Prisma:
-        - Reuse logic from POST `/transactions` for:
-          - Vendor/client auto-creation.
-          - Category/account org validation.
-          - Dual-currency and legacy field computation.
-          - Tag upsertion if tags are imported.
-      - Use reasonable batch sizes to avoid long-running transactions.
-    - Response:
-      - `{ importedCount, skippedInvalidCount, skippedDuplicateCount, totalRows }`.
-    - Audit:
-      - Create an `AuditLog` entry with `action: "transaction_import_commit"`, `organizationId`, `userId`, and counts.
+- Extract document constraints to a shared module:
+  - Create `lib/documents/validation.ts`:
+    - Export:
+      - `export const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "application/pdf", "text/plain"];` (copied from the existing documents upload API).
+      - `export const MAX_DOCUMENT_FILE_SIZE_BYTES = 10 * 1024 * 1024;`.
+      - `export function validateDocumentFile(params: { mimeType: string; sizeBytes: number }): string | null`:
+        - Return `null` if valid.
+        - Return an error message if the MIME is not in `ALLOWED_MIME_TYPES` or `sizeBytes` > `MAX_DOCUMENT_FILE_SIZE_BYTES`.
+  - Update `app/api/orgs/[orgSlug]/documents/route.ts` to import and use these constants/helpers instead of local copies, preserving current behavior.
 
-- Mapping templates route: `app/api/orgs/[orgSlug]/transactions/import-templates/route.ts`:
-  - `GET`: list templates for org (id, name, createdAt).
-  - `POST`: create a template with a unique name per org (5/a).
-  - `DELETE`: delete a template by ID.
-  - Permissions: members and admins of the org can manage templates.
+- Add `lib/import/transactions-documents.ts`:
+  - Export:
+    - `function validateImportDocumentsForZip(rows: NormalizedImportRow[], documentsByPath: Map<string, { buffer: Buffer; originalName: string }>): NormalizedImportRow[]`
+  - Behavior:
+    - For each `row`:
+      - If `row.status !== "valid"`, leave it unchanged.
+      - If `row.normalized?.documentPath` or `row.documentPath` is not set, leave it unchanged (no document requested).
+      - Otherwise:
+        - Normalize the path via `normalizeDocumentPath`.
+        - Look up `documentsByPath.get(normalizedPath)`:
+          - If not found:
+            - Add an error `Missing document "<path>" in ZIP`.
+            - Set `row.status = "invalid"` and clear `row.normalized` to avoid partial imports (row-level invalidation).
+            - Continue to next row.
+        - Derive `mimeType` via `guessMimeType(originalName)`:
+          - If `mimeType` is `null`, add an error `Unsupported document type for "<originalName>"` and mark row invalid.
+        - Call `validateDocumentFile({ mimeType, sizeBytes: buffer.length })`:
+          - If it returns an error message, push that error and mark row invalid.
+        - If all checks pass:
+          - Attach the normalized path in `row.documentPath` (or keep it unchanged) for use during commit.
+    - Return the mutated `rows` array (for chaining).
+  - This helper performs *validation only*; it does not call Prisma or the document storage.
 
-### 5. CSV Import UI – Transactions Page Wizard
+### 5. Preview Endpoint – CSV & ZIP Modes with Document Validation
 
-- Entry point (1/a):
-  - In `app/o/[orgSlug]/transactions/page.tsx`, add an “Import CSV” button in the header or actions bar (near bulk actions / Export CSV).
-  - Clicking opens a client-side wizard.
+- In `app/api/orgs/[orgSlug]/transactions/import/preview/route.ts`:
+  - Parse `mappingConfig` as today, but add `importMode` handling:
+    - If `mappingConfig.importMode` is missing, default to `"csv"` for backward compatibility.
+    - If present, assert it is either `"csv"` or `"zip_with_documents"`.
+  - If `importMode === "csv"`:
+    - Keep the existing behavior exactly:
+      - Enforce 10MB file limit against the CSV file.
+      - Require a `.csv` extension.
+      - Parse CSV via `parseCsvBuffer`, apply mapping, normalize & validate rows, detect duplicates, generate summary.
+  - If `importMode === "zip_with_documents"`:
+    - Change file validation:
+      - Require `.zip` extension; error if not.
+      - Do **not** apply the 10MB limit to the uploaded ZIP (no explicit ZIP size cap).
+    - Convert the uploaded `File` to a `Buffer` and call `parseTransactionsZip`.
+      - If `transactions.csv` is missing, return 400 with `error: "transactions.csv not found in ZIP"`.
+    - Feed `transactionsCsv` into `parseCsvBuffer` with the same `parsingOptions`.
+    - Run `applyColumnMapping` and `normalizeAndValidateRows` as usual.
+    - Call `validateImportDocumentsForZip(normalizedRows, documentsByPath)` to:
+      - Mark rows invalid when `document` is non-empty but missing in the ZIP.
+      - Mark rows invalid when document size or type violates constraints.
+    - Run `detectDuplicates` on the document-validated rows.
+    - Generate summary via `generateImportSummary`.
+  - Response shape:
+    - Keep `headers`, `previewRows`, `duplicateCandidates`, `summary`, and `totalRowsParsed` as today.
+    - Optionally include `documentPath` in `previewRows` (e.g. inside `normalized` or as a sibling property) for transparency; ensure the UI treats it as optional so older previews still render.
 
-- Wizard component: `components/features/import/transactions-import-wizard.tsx`:
-  - Props:
-    - `orgSlug`.
-    - `onImportCompleted` (callback to refresh the list).
-  - State:
-    - `file: File | null`.
-    - `step: "upload" | "mapping" | "review"`.
-    - `mappingConfig`.
-    - `selectedTemplateId`, `templates` (loaded via import-templates API).
-    - `previewRows`, `summary`, `duplicateRowIndexes`.
-    - `duplicateDecisions: Record<number, "import" | "skip">`.
+### 6. Commit Endpoint – ZIP Mode with Document Upload & Linking
 
-- Step 1 – Upload & options:
-  - Dialog UI modeled on `transaction-documents-panel`:
-    - File picker (accept `.csv`).
-    - Direction mode selector:
-      - “Use Type column (INCOME/EXPENSE)” vs “Infer from sign (positive/negative)”.
-    - Date format selector (default from org).
-    - Optional delimiter input if needed.
-    - Template dropdown:
-      - Load templates and allow user to pre-fill mapping settings.
-  - Actions:
-    - “Continue”:
-      - If mapping already known (template), call `/transactions/import/preview`.
-      - Otherwise move to mapping step.
+- In `app/api/orgs/[orgSlug]/transactions/import/commit/route.ts`:
+  - Parse `mappingConfig` with `importMode`:
+    - Same rules as preview: default to `"csv"` when missing; otherwise accept `"csv"` or `"zip_with_documents"`.
+  - For `importMode === "csv"`:
+    - Keep the current behavior exactly: CSV validation, duplicate handling, transaction creation, tag linking, and audit logging.
+  - For `importMode === "zip_with_documents"`:
+    - File handling:
+      - Require `.zip` extension; no explicit ZIP size cap.
+      - Convert `File` to `Buffer` and call `parseTransactionsZip`; error if `transactions.csv` is missing.
+    - CSV pipeline:
+      - Run `parseCsvBuffer`, `applyColumnMapping`, `normalizeAndValidateRows`, `validateImportDocumentsForZip`, and `detectDuplicates` in the same order as preview.
+      - This ensures rows invalid due to document issues are consistently treated as `status: "invalid"`.
+    - Row selection:
+      - Build `rowsToImport` exactly as today:
+        - Skip rows with `status === "invalid"`.
+        - For duplicate candidates, import only those with `decisions[rowIndex] === "import"`, others are counted as skipped duplicates.
+    - Document and link creation:
+      - Before looping:
+        - Create `const docPathToDocumentId = new Map<string, string>();`.
+      - In the inner loop, after each `transaction` is created:
+        - If `row.documentPath` (or `row.normalized?.documentPath`) is not set, continue (no document for this row).
+        - Normalize the path again via `normalizeDocumentPath` to avoid mismatch.
+        - Look up `documentsByPath.get(normalizedPath)`:
+          - If missing, this should have been caught in preview; choose the safer behavior:
+            - Do not import the document or create a link; optionally record a warning in the audit metadata. The transaction remains imported because the row passed prior validation.
+        - If present:
+          - If `docPathToDocumentId` already has the path, reuse that document id.
+          - Else:
+            - Call `guessMimeType(originalName)` and `validateDocumentFile` again as a safety check (should pass if preview was run, but commit may be called directly via API).
+            - Use `getDocumentStorage()` to `save` the buffer:
+              - Receive `storageKey`, `mimeType`, `fileSizeBytes`.
+            - Create a `Document` record via `db.document.create`:
+              - `organizationId`: org id.
+              - `uploadedByUserId`: current user id.
+              - `storageKey`, `filenameOriginal`: from storage/entry.
+              - `displayName`: filename without extension.
+              - `mimeType`, `fileSizeBytes` from storage metadata.
+              - `type`:
+                - If `normalized.type === "INCOME"`: `DocumentType.INVOICE`.
+                - If `normalized.type === "EXPENSE"`: `DocumentType.RECEIPT`.
+                - Else: `DocumentType.OTHER`.
+              - `documentDate`: set to `normalized.date`.
+              - `textContent`: `null`.
+            - Cache `docPathToDocumentId.set(normalizedPath, document.id)`.
+          - Create a link via `db.transactionDocument.create` (or `createMany` batched later) associating the `transaction.id` with this `documentId`.
+      - Maintain counters:
+        - `documentsCreated`: number of `Document` rows created.
+        - `documentLinksCreated`: number of `TransactionDocument` links created.
+    - Audit log:
+      - Extend the existing `transaction_import_commit` audit entry metadata with:
+        - `importMode: "zip_with_documents"`.
+        - `documentsCreated`.
+        - `documentLinksCreated`.
+        - Possibly a list of any document-path anomalies encountered at commit.
 
-- Step 2 – Mapping:
-  - Show detected CSV headers and samples.
-  - For each Sololedger field:
-    - Provide a dropdown bound to headers plus “Not mapped”.
-    - Required: Date, Amount, Type (if in type-column mode), Currency, Description, Category, Account.
-    - Optional: Vendor, Client, Notes, Tags, Secondary Amount, Secondary Currency.
-  - Validation hints:
-    - Inline messages when required fields are unmapped.
-  - Actions:
-    - “Preview import”:
-      - Posts file + mappingConfig to `/transactions/import/preview`.
-      - Stores `previewRows`, `summary`, `duplicateRowIndexes`, then advances to review.
-    - “Save as template”:
-      - Calls import-templates `POST` with the current mappingConfig and a user-provided name.
+### 7. Sample CSV & Docs – Document Column Visibility
 
-- Step 3 – Review & duplicates:
-  - Summary header:
-    - `totalRows`, `validRows`, `invalidRows`, `duplicateCandidates`.
-  - Table (paginated):
-    - Columns: Row #, Date, Description, Amount(s), Category, Account, Vendor/Client, Status, Errors.
-    - Status:
-      - “Valid”.
-      - “Invalid” with error tooltip or inline message.
-      - “Possible duplicate” for duplicate candidates.
-  - Duplicate handling:
-    - For each duplicate candidate row:
-      - Show a small panel or tooltip summarizing the matched existing transaction (date, amount, vendor/description).
-      - Present two options (2/b, 6/b semantics):
-        - “Import anyway (keep both)”.
-        - “Skip imported row”.
-      - Persist choice in `duplicateDecisions`.
-  - Actions:
-    - “Import N rows” (where N is computed from current decisions):
-      - Sends file + mappingConfig + `duplicateDecisions` to `/transactions/import/commit`.
-      - Shows a progress indicator while in flight.
-      - On success:
-        - Show a toast summarizing imported/skipped counts.
-        - Close wizard and trigger `onImportCompleted` to reload the transaction list.
+- In `app/api/orgs/[orgSlug]/transactions/import/sample-csv/route.ts`:
+  - Extend the headers array to include a trailing `"document"` column.
+  - For most sample rows, leave the `document` cell empty.
+  - For one or two example rows, set a value like:
+    - `"OpenAI/invoice-123.pdf"` or `"Google/statement-2025-10.pdf"`.
+  - This column remains optional:
+    - In pure CSV mode, it is mapped only if the user chooses to map it; otherwise it is ignored.
+    - In ZIP mode, users are expected to map it when they plan to include documents in the ZIP; rows with non-empty `document` values must have matching files or they become invalid.
 
-### 6. Full Data Export & Backup – Backend
+- Update `notes/todos.md` usage notes:
+  - Ensure the advanced ZIP behavior is documented:
+    - ZIP structure.
+    - `document` column semantics.
+    - Row-level invalidation rules.
+    - Heuristic `Document.type` mapping and `documentDate` usage.
 
-- Helper: `lib/backup-export.ts`:
-  - Input:
-    - `organizationId`.
-    - Options: `{ format: "json" | "csv"; includeDocumentReferences: boolean; dateFrom?: Date; dateTo?: Date }`.
-  - Common queries:
-    - `OrganizationSettings` for org.
-    - `Account`, `Category`, `Vendor`, `Client`, `Tag`.
-    - `Transaction` with:
-      - `account`, `category`, `vendor`, `client`, `transactionTags`, and `documents` via `TransactionDocument`.
-      - Optional date range filter on `date` if provided.
-    - If `includeDocumentReferences`:
-      - `Document` metadata.
-      - `TransactionDocument` join rows.
-  - JSON export:
-    - Build an object:
-      - `{ settings, accounts, categories, vendors, clients, tags, transactions, transactionTags, transactionDocuments, documents? }`.
-  - CSV/ZIP export (7/a, 8/a):
-    - Generate per-entity CSV files:
-      - `accounts.csv`, `categories.csv`, `vendors.csv`, `clients.csv`, `tags.csv`, `transactions.csv`, `transaction_tags.csv`, `transaction_documents.csv`, `documents.csv` (if requested).
-    - For `transactions.csv`, reuse `generateTransactionsCsv` or replicate its logic/headers.
-    - Use a Node ZIP library to bundle into a single ZIP buffer.
+### 8. Testing Strategy for ZIP Import
 
-- Backup export API: `app/api/orgs/[orgSlug]/backup/export/route.ts`:
-  - `export const runtime = "nodejs"`.
-  - Method: `POST`.
-  - Auth:
-    - Use `getCurrentUser`, `getOrgBySlug`, `requireMembership`, `validateApiKeyOrgAccess`.
-    - Only allow org admins and superadmins to export full backups (2/b).
-  - Input JSON:
-    - `{ format: "json" | "csv"; includeDocumentReferences: boolean; dateFrom?: string; dateTo?: string }`.
-  - Flow:
-    - Parse and validate input.
-    - Call `backup-export` helper.
-    - For JSON:
-      - Return with `Content-Type: application/json` and `Content-Disposition` `attachment; filename="sololedger-backup-<orgSlug>-<date>.json"`.
-    - For CSV:
-      - Return ZIP with `Content-Type: application/zip` and `Content-Disposition` `attachment; filename="sololedger-backup-<orgSlug>-<date>.zip"`.
-    - Log an `AuditLog` entry: `action: "org_backup_export"` plus format/options in `metadata`.
+- Integration tests (`tests/integration/api/transactions-import-zip.test.ts`):
+  - Set up mocks for Prisma (`prismaMock`), JWT, and auth helpers just like existing API tests.
+  - Use `archiver` in tests or a small pre-built ZIP fixture to:
+    - Create a ZIP containing:
+      - `transactions.csv` with a `document` column.
+      - A couple of small PDF buffers under `OpenAI/` and `Google/`.
+  - Build a `FormData` with:
+    - A `File`/`Blob` for the ZIP.
+    - A JSON `mappingConfig` including:
+      - `importMode: "zip_with_documents"`.
+      - `columnMapping` with `document` mapped to the correct header.
+      - Valid `parsingOptions`.
+  - Test preview:
+    - Valid rows with correct `document` paths are `status: "valid"` and appear in `summary.validRows`.
+    - Rows with non-empty `document` referencing a missing file are `status: "invalid"` with a “Missing document” error.
+    - Rows with oversized or unsupported document files are `status: "invalid"` with appropriate errors.
+  - Test commit:
+    - Successful import:
+      - `db.transaction.create` is called for valid rows.
+      - `db.document.create` is called exactly once per unique document path.
+      - `db.transactionDocument.create` links each transaction to the appropriate document.
+    - Duplicate paths:
+      - Multiple rows sharing the same `document` path reuse the same `Document` (one create, many links).
+    - Missing/invalid docs:
+      - Rows invalid due to documents are not imported; `skippedInvalidCount` reflects this.
+  - If necessary, extend `tests/helpers/mockRequest.ts` or add a helper to build multipart `Request` objects from `FormData`.
 
-### 7. Full Data Export & Backup – UI
+### 9. Implementation Order
 
-- Location:
-  - Add a “Data Export & Backup” section under org-level Business Settings.
-  - Server component fetches `orgSlug`, org, membership, and determines `isAdmin` as in `reports/page.tsx`.
+1. Extend `lib/import/transactions-csv.ts` with `document` mapping, `candidate.documentPath`, and `NormalizedImportRow.documentPath`.
+2. Implement `lib/import/zip-transactions.ts` with `parseTransactionsZip`, `normalizeDocumentPath`, and `guessMimeType`.
+3. Extract document validation constants into `lib/documents/validation.ts` and update the documents upload API to use them.
+4. Implement `lib/import/transactions-documents.ts` with `validateImportDocumentsForZip`.
+5. Update the preview API route to support `importMode` and ZIP behavior, integrating `parseTransactionsZip` and `validateImportDocumentsForZip`.
+6. Update the commit API route to support `importMode`, run the same validation pipeline, and add document upload + linking logic for ZIP mode.
+7. Update `TransactionsImportWizard` UI with:
+   - Mode toggle.
+   - Conditional file input.
+   - Document field mapping.
+   - `importMode` included in `mappingConfig`.
+8. Update the Transactions page button label and the sample CSV endpoint to reflect the new `document` column.
+9. Add integration tests for ZIP preview and commit, plus any small unit tests for `parseTransactionsZip` and document validation helpers.
 
-- UI component: `components/features/settings/data-backup-panel.tsx`:
-  - Props: `orgSlug`, `isAdmin`.
-  - Content:
-    - Brief description of what’s included and intended use (accountant, off-site backup).
-  - Controls:
-    - Format selector: JSON vs CSV (ZIP of multiple CSVs).
-    - Checkbox: “Include document references (metadata & links)”.
-    - Optional: date range filter for transactions (while always exporting full master data).
-  - Actions:
-    - “Download backup” button:
-      - Posts to `/api/orgs/${orgSlug}/backup/export`.
-      - Reads response as blob and triggers download (pattern from `TransactionsExport`).
-      - Shows success/error toasts.
-  - Permissions:
-    - If `!isAdmin`, show a notice and disable the button or hide the panel entirely.
-
-### 8. Permissions, Auditing & Cross-Cutting Concerns
-
-- Permissions:
-  - CSV import:
-    - Members and admins can preview and commit imports for their org.
-  - Backup export:
-    - Only admins and superadmins can run full data backups.
-- Auditing:
-  - Use `AuditLog` to record:
-    - Import commits: `transaction_import_commit` with counts and filename.
-    - Backups: `org_backup_export` with format, date range, and `includeDocumentReferences`.
-- CSRF:
-  - Apply `validateCsrf` to import/commit routes when using cookie sessions.
-  - Exempt API-key authenticated calls, consistent with existing API behavior.
-- Performance:
-  - For large CSVs:
-    - Limit preview to first N rows while still using the full row set for summary/duplicate analysis.
-    - Process imports in batches during commit.
-
-### 9. Testing Strategy
-
-- Unit tests:
-  - `lib/import/transactions-csv.ts`:
-    - CSV parsing with different delimiters and headers.
-    - Mapping and normalization for multiple date/number formats.
-    - Direction mode behavior (type column vs sign-based).
-    - Validation of required fields and currencies.
-    - Duplicate detection for both secondary and base-only scenarios.
-  - `lib/backup-export.ts`:
-    - JSON structure correctness for each entity.
-    - CSV headers and rows for each generated file.
-- Integration tests:
-  - `import/preview`:
-    - Valid imports with and without duplicates.
-    - Handling of missing mappings and invalid data.
-  - `import/commit`:
-    - Correct counts for imported vs skipped rows.
-    - Respect of duplicate decisions.
-    - Enforcement of category/account/type rules.
-  - `backup/export`:
-    - Admin can download JSON and ZIP; member is forbidden.
-    - `includeDocumentReferences` toggles document-related CSV/JSON content correctly.

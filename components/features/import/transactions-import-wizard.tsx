@@ -208,18 +208,72 @@ export function TransactionsImportWizard({
       return;
     }
 
-    // ZIP mode: Skip client-side parsing, backend will extract CSV from ZIP
+    // ZIP mode: Extract CSV from ZIP for manual mapping
     if (importMode === "zip_with_documents") {
-      // ZIP import requires a template because we can't parse the ZIP client-side
+      // If template is selected, use it (optional fast path)
       if (selectedTemplateId && selectedTemplateId !== "none") {
         await handlePreviewWithTemplate();
         return;
-      } else {
-        toast.error(
-          "ZIP import requires a saved template. Please create a mapping template using a CSV file first, or select an existing template."
-        );
-        return;
       }
+
+      // Otherwise, extract CSV from ZIP to get headers for manual mapping
+      setIsLoading(true);
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const JSZip = (await import("jszip")).default;
+        const zip = await JSZip.loadAsync(arrayBuffer);
+
+        // Find transactions.csv in ZIP (case-insensitive)
+        let csvFile = zip.file("transactions.csv");
+        if (!csvFile) {
+          // Try case-insensitive search
+          const files = Object.keys(zip.files);
+          const csvFileName = files.find((name) =>
+            name.toLowerCase().endsWith("transactions.csv")
+          );
+          if (csvFileName) {
+            csvFile = zip.file(csvFileName);
+          }
+        }
+
+        if (!csvFile) {
+          toast.error("ZIP must contain transactions.csv");
+          setIsLoading(false);
+          return;
+        }
+
+        // Extract CSV as text
+        const csvText = await csvFile.async("string");
+
+        // Parse CSV to get headers (reuse existing logic)
+        const records = parse(csvText, {
+          delimiter,
+          skip_empty_lines: true,
+          relax_column_count: true,
+          trim: true,
+        }) as string[][];
+
+        if (records.length === 0) {
+          toast.error("transactions.csv in ZIP is empty");
+          setIsLoading(false);
+          return;
+        }
+
+        const parsedHeaders = records[0];
+        setHeaders(parsedHeaders);
+
+        // Get sample rows (first 3 data rows)
+        const samples = records.slice(1, 4);
+        setSampleRows(samples);
+
+        setStep("mapping");
+      } catch (error) {
+        toast.error("Failed to extract CSV from ZIP");
+        console.error(error);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
     }
 
     // CSV mode: If template is selected and has full mapping, go straight to preview
@@ -704,7 +758,7 @@ export function TransactionsImportWizard({
                   { field: "tags", label: "Tags", required: false },
                   { field: "secondaryAmount", label: "Secondary Amount", required: false },
                   { field: "secondaryCurrency", label: "Secondary Currency", required: false },
-                  ...(importMode === "zip_with_documents" ? [{ field: "document", label: "Document (path in ZIP)", required: false }] : []),
+                  { field: "document", label: "Document", required: false },
                 ].map(({ field, label }) => (
                   <div key={field} className="space-y-1">
                     <Label className="text-xs">{label}</Label>

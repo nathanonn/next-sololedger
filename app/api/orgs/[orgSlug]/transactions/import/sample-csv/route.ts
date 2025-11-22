@@ -91,7 +91,7 @@ export async function GET(
       );
     }
 
-    const dateFormat = dateFormatParam || settings.defaultDateFormat || "DD_MM_YYYY";
+    const dateFormat = dateFormatParam || settings.dateFormat || "DD_MM_YYYY";
     const baseCurrency = settings.baseCurrency;
 
     // Fetch some categories (2 expense, 1 income)
@@ -151,6 +151,7 @@ export async function GET(
       "tags",
       "secondaryAmount",
       "secondaryCurrency",
+      "document",
     ];
 
     // Generate sample rows
@@ -170,6 +171,7 @@ export async function GET(
         "office;supplies",
         "",
         "",
+        "Office/receipt-2024-001.pdf",
       ],
       // Expense 2: Coffee meeting
       [
@@ -184,6 +186,7 @@ export async function GET(
         "",
         "Discussed Q4 project proposal",
         "networking;client-meeting",
+        "",
         "",
         "",
       ],
@@ -202,6 +205,7 @@ export async function GET(
         "consulting;project-alpha",
         "",
         "",
+        "Invoices/INV-2024-123.pdf",
       ],
       // Expense 3: Dual-currency transaction (software subscription)
       [
@@ -218,6 +222,7 @@ export async function GET(
         "software;monthly-recurring",
         baseCurrency === "USD" ? "" : "95.00",
         baseCurrency === "USD" ? "" : baseCurrency,
+        "",
       ],
       // Income 2: Another client payment
       [
@@ -232,6 +237,7 @@ export async function GET(
         "StartupXYZ Inc",
         "Monthly retainer payment",
         "design;retainer;web",
+        "",
         "",
         "",
       ],

@@ -55,6 +55,7 @@ export async function GET(
       select: {
         id: true,
         name: true,
+        config: true,
         createdAt: true,
         createdBy: {
           select: {
@@ -99,6 +100,7 @@ const createTemplateSchema = z.object({
       tags: z.string().optional(),
       secondaryAmount: z.string().optional(),
       secondaryCurrency: z.string().optional(),
+      document: z.string().optional(),
     }),
     parsingOptions: z.object({
       delimiter: z.string(),

@@ -18,6 +18,7 @@ type OrganizationTabsProps = {
   showBusinessInfo?: boolean;
   showFinancial?: boolean;
   showMembers?: boolean;
+  showImportTemplates?: boolean;
   showAiKeys?: boolean;
   showAiUsage?: boolean;
   showIntegrations?: boolean;
@@ -34,6 +35,7 @@ export function OrganizationTabs({
   showBusinessInfo = true,
   showFinancial = true,
   showMembers = true,
+  showImportTemplates = true,
   showAiKeys = true,
   showAiUsage = true,
   showIntegrations = true,
@@ -70,6 +72,13 @@ export function OrganizationTabs({
               <Badge variant="secondary" className="ml-1">
                 {membersCount}
               </Badge>
+            </TabsTrigger>
+          </Link>
+        )}
+        {showImportTemplates && (
+          <Link href={`${baseHref}/import-templates`}>
+            <TabsTrigger value="import-templates">
+              Import Templates
             </TabsTrigger>
           </Link>
         )}

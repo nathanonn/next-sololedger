@@ -15,12 +15,26 @@ import {
   detectDuplicates,
   type ImportTemplateConfig,
 } from "@/lib/import/transactions-csv";
+import { parseTransactionsZip } from "@/lib/import/zip-transactions";
+import { validateImportDocumentsForZip } from "@/lib/import/transactions-documents";
+import { normalizeDocumentPath, guessMimeType } from "@/lib/import/zip-transactions";
+import { validateDocumentFile } from "@/lib/documents/validation";
+import { getDocumentStorage } from "@/lib/documents/storage";
 import { upsertTagsForOrg, sanitizeTagNames } from "@/lib/tag-helpers";
+import type { DocumentType } from "@prisma/client";
 
 export const runtime = "nodejs";
 
-// Max file size: 10 MB
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+// Import mode type
+export type ImportMode = "csv" | "zip_with_documents";
+
+// Extended config with import mode
+interface ExtendedImportConfig extends ImportTemplateConfig {
+  importMode?: ImportMode;
+}
+
+// Max file size for CSV: 10 MB (no limit for ZIP)
+const MAX_CSV_FILE_SIZE = 10 * 1024 * 1024;
 
 // Batch size for transaction creation
 const BATCH_SIZE = 100;
@@ -155,22 +169,7 @@ export async function POST(
       );
     }
 
-    // Validate file
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json(
-        { error: `File exceeds maximum size of ${MAX_FILE_SIZE / 1024 / 1024}MB` },
-        { status: 400 }
-      );
-    }
-
-    if (!file.name.toLowerCase().endsWith(".csv")) {
-      return NextResponse.json(
-        { error: "Only CSV files are supported" },
-        { status: 400 }
-      );
-    }
-
-    // Parse decisions
+    // Parse decisions first
     let decisions: Record<number, "import" | "skip"> = {};
     if (decisionsJson) {
       try {
@@ -183,8 +182,8 @@ export async function POST(
       }
     }
 
-    // Parse mapping config (same logic as preview)
-    let mappingConfig: ImportTemplateConfig;
+    // Parse mapping config to determine import mode
+    let mappingConfig: ExtendedImportConfig;
     try {
       const parsed = JSON.parse(mappingConfigJson);
 
@@ -203,7 +202,7 @@ export async function POST(
           );
         }
 
-        mappingConfig = template.config as unknown as ImportTemplateConfig;
+        mappingConfig = template.config as unknown as ExtendedImportConfig;
 
         if (parsed.columnMapping) {
           mappingConfig.columnMapping = {
@@ -217,12 +216,52 @@ export async function POST(
             ...parsed.parsingOptions,
           };
         }
+        // Allow importMode override from current wizard state
+        if (parsed.importMode) {
+          mappingConfig.importMode = parsed.importMode;
+        }
       } else {
-        mappingConfig = parsed as ImportTemplateConfig;
+        mappingConfig = parsed as ExtendedImportConfig;
       }
     } catch {
       return NextResponse.json(
         { error: "Invalid mapping configuration JSON" },
+        { status: 400 }
+      );
+    }
+
+    // Default to CSV mode for backward compatibility
+    const importMode: ImportMode = mappingConfig.importMode || "csv";
+
+    // Validate file based on import mode
+    if (importMode === "csv") {
+      // CSV mode: enforce 10MB limit and .csv extension
+      if (file.size > MAX_CSV_FILE_SIZE) {
+        return NextResponse.json(
+          {
+            error: `File exceeds maximum size of ${MAX_CSV_FILE_SIZE / 1024 / 1024}MB`,
+          },
+          { status: 400 }
+        );
+      }
+
+      if (!file.name.toLowerCase().endsWith(".csv")) {
+        return NextResponse.json(
+          { error: "Only CSV files are supported in CSV mode" },
+          { status: 400 }
+        );
+      }
+    } else if (importMode === "zip_with_documents") {
+      // ZIP mode: require .zip extension, no size limit
+      if (!file.name.toLowerCase().endsWith(".zip")) {
+        return NextResponse.json(
+          { error: "ZIP file required in advanced ZIP mode" },
+          { status: 400 }
+        );
+      }
+    } else {
+      return NextResponse.json(
+        { error: `Invalid import mode: ${importMode}` },
         { status: 400 }
       );
     }
@@ -241,12 +280,36 @@ export async function POST(
 
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    const fileBuffer = Buffer.from(arrayBuffer);
+
+    // Parse based on import mode
+    let csvBuffer: Buffer;
+    let documentsByPath: Map<string, { buffer: Buffer; originalName: string }> | null = null;
+
+    if (importMode === "zip_with_documents") {
+      // ZIP mode: extract transactions.csv and documents
+      try {
+        const zipData = await parseTransactionsZip(fileBuffer);
+        csvBuffer = zipData.transactionsCsv;
+        documentsByPath = zipData.documentsByPath;
+      } catch (error) {
+        return NextResponse.json(
+          {
+            error: "Failed to parse ZIP file",
+            details: error instanceof Error ? error.message : "Unknown error",
+          },
+          { status: 400 }
+        );
+      }
+    } else {
+      // CSV mode: use file buffer directly
+      csvBuffer = fileBuffer;
+    }
 
     // Re-run the full pipeline (stateless design)
     let parsedData;
     try {
-      parsedData = parseCsvBuffer(buffer, mappingConfig.parsingOptions);
+      parsedData = parseCsvBuffer(csvBuffer, mappingConfig.parsingOptions);
     } catch (error) {
       return NextResponse.json(
         {
@@ -263,12 +326,20 @@ export async function POST(
       mappingConfig.parsingOptions.directionMode
     );
 
-    const normalizedRows = await normalizeAndValidateRows(
+    let normalizedRows = await normalizeAndValidateRows(
       rawRows,
       org.id,
       settings,
       mappingConfig.parsingOptions
     );
+
+    // Validate documents in ZIP mode
+    if (importMode === "zip_with_documents" && documentsByPath) {
+      normalizedRows = validateImportDocumentsForZip(
+        normalizedRows,
+        documentsByPath
+      );
+    }
 
     const rowsWithDuplicates = await detectDuplicates(
       normalizedRows,
@@ -294,6 +365,8 @@ export async function POST(
 
     // Import transactions in batches
     let importedCount = 0;
+    let documentsCreated = 0;
+    let documentLinksCreated = 0;
     const skippedInvalidCount = normalizedRows.filter(
       (r) => r.status === "invalid"
     ).length;
@@ -302,6 +375,12 @@ export async function POST(
         r.isDuplicateCandidate &&
         decisions[r.rowIndex] !== "import"
     ).length;
+
+    // Map to deduplicate documents (path -> document ID)
+    const docPathToDocumentId = new Map<string, string>();
+
+    // Get document storage instance (for ZIP mode)
+    const documentStorage = getDocumentStorage();
 
     // Process in batches
     for (let i = 0; i < rowsToImport.length; i += BATCH_SIZE) {
@@ -370,32 +449,140 @@ export async function POST(
           });
         }
 
+        // Handle document upload and linking (ZIP mode only)
+        if (importMode === "zip_with_documents" && row.documentPath && documentsByPath) {
+          const normalizedPath = normalizeDocumentPath(row.documentPath);
+          const documentEntry = documentsByPath.get(normalizedPath);
+
+          if (documentEntry) {
+            // Check if we've already uploaded this document
+            let documentId = docPathToDocumentId.get(normalizedPath);
+
+            if (!documentId) {
+              // Upload and create document record
+              const { buffer, originalName } = documentEntry;
+              const mimeType = guessMimeType(originalName);
+
+              if (mimeType) {
+                // Double-check validation (should have passed in preview, but safety first)
+                const validationError = validateDocumentFile({
+                  mimeType,
+                  sizeBytes: buffer.length,
+                });
+
+                if (!validationError) {
+                  try {
+                    // Save to storage
+                    const savedDoc = await documentStorage.save(
+                      buffer,
+                      originalName,
+                      mimeType
+                    );
+
+                    // Determine document type based on transaction type
+                    let docType: DocumentType = "OTHER";
+                    if (normalized.type === "INCOME") {
+                      docType = "INVOICE";
+                    } else if (normalized.type === "EXPENSE") {
+                      docType = "RECEIPT";
+                    }
+
+                    // Extract filename without extension for display name
+                    const displayName = originalName.replace(/\.[^/.]+$/, "");
+
+                    // Create document record
+                    const document = await db.document.create({
+                      data: {
+                        organizationId: org.id,
+                        uploadedByUserId: user.id,
+                        storageKey: savedDoc.storageKey,
+                        filenameOriginal: originalName,
+                        displayName,
+                        mimeType: savedDoc.mimeType,
+                        fileSizeBytes: savedDoc.fileSizeBytes,
+                        type: docType,
+                        documentDate: normalized.date,
+                        textContent: null,
+                      },
+                    });
+
+                    documentId = document.id;
+                    docPathToDocumentId.set(normalizedPath, documentId);
+                    documentsCreated++;
+                  } catch (error) {
+                    // Log error but don't fail the import
+                    console.error(
+                      `Failed to upload document ${originalName}:`,
+                      error
+                    );
+                  }
+                }
+              }
+            }
+
+            // Link document to transaction if we have a document ID
+            if (documentId) {
+              try {
+                await db.transactionDocument.create({
+                  data: {
+                    transactionId: transaction.id,
+                    documentId,
+                  },
+                });
+                documentLinksCreated++;
+              } catch (error) {
+                // Log error but don't fail the import
+                console.error(
+                  `Failed to link document to transaction ${transaction.id}:`,
+                  error
+                );
+              }
+            }
+          }
+        }
+
         importedCount++;
       }
     }
 
     // Create audit log
+    const auditMetadata: Record<string, unknown> = {
+      filename: file.name,
+      importedCount,
+      skippedInvalidCount,
+      skippedDuplicateCount,
+      totalRows: rowsWithDuplicates.length,
+    };
+
+    if (importMode === "zip_with_documents") {
+      auditMetadata.importMode = "zip_with_documents";
+      auditMetadata.documentsCreated = documentsCreated;
+      auditMetadata.documentLinksCreated = documentLinksCreated;
+    }
+
     await db.auditLog.create({
       data: {
         action: "transaction_import_commit",
         userId: user.id,
         organizationId: org.id,
-        metadata: {
-          filename: file.name,
-          importedCount,
-          skippedInvalidCount,
-          skippedDuplicateCount,
-          totalRows: rowsWithDuplicates.length,
-        },
+        metadata: auditMetadata as any,
       },
     });
 
-    return NextResponse.json({
+    // Return response
+    const response: Record<string, unknown> = {
       importedCount,
       skippedInvalidCount,
       skippedDuplicateCount,
       totalRows: rowsWithDuplicates.length,
-    });
+    };
+
+    if (importMode === "zip_with_documents") {
+      response.documentsCreated = documentsCreated;
+      response.documentLinksCreated = documentLinksCreated;
+    }
+
+    return NextResponse.json(response);
   } catch (error) {
     console.error("Error committing CSV import:", error);
     return NextResponse.json(

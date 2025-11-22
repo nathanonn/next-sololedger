@@ -41,8 +41,14 @@ export function mockRequest(options: MockRequestOptions = {}): Request {
 
   // Add body if provided (for POST, PATCH, PUT)
   if (body && method !== "GET" && method !== "HEAD") {
-    init.body = JSON.stringify(body);
-    headersList.set("content-type", "application/json");
+    // Handle FormData separately - don't JSON stringify it
+    if (body instanceof FormData) {
+      init.body = body;
+      // Don't set content-type for FormData - browser/fetch will set it automatically
+    } else {
+      init.body = JSON.stringify(body);
+      headersList.set("content-type", "application/json");
+    }
   }
 
   return new Request(url, init);
@@ -53,12 +59,12 @@ export function mockRequest(options: MockRequestOptions = {}): Request {
  */
 export function mockBearerRequest(
   token: string,
-  options: Omit<MockRequestOptions, "headers"> = {}
+  options: MockRequestOptions = {}
 ): Request {
   return mockRequest({
     ...options,
     headers: {
-      ...options.headers,
+      ...(options.headers || {}),
       authorization: `Bearer ${token}`,
     },
   });

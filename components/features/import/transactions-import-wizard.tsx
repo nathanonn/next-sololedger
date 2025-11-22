@@ -21,9 +21,8 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Upload, Loader2, CheckCircle2, XCircle, AlertCircle, ChevronLeft } from "lucide-react";
+import { Upload, Loader2, CheckCircle2, XCircle, AlertCircle, ChevronLeft, Download } from "lucide-react";
 import type { DateFormat, DecimalSeparator, ThousandsSeparator } from "@prisma/client";
 import { parse } from "csv-parse/sync";
 
@@ -475,6 +474,36 @@ export function TransactionsImportWizard({
 
   const totalPages = Math.ceil(previewRows.length / ROWS_PER_PAGE);
 
+  async function handleDownloadSample() {
+    setIsLoading(true);
+    try {
+      const response = await fetch(
+        `/api/orgs/${orgSlug}/transactions/import/sample-csv?dateFormat=${dateFormat}`
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to download sample CSV");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sample-transactions-import-${orgSlug}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.success("Sample CSV downloaded successfully");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to download sample CSV");
+      console.error(error);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
@@ -514,6 +543,26 @@ export function TransactionsImportWizard({
                 </p>
               </div>
             </div>
+
+            <div className="flex justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDownloadSample}
+                disabled={isLoading}
+                className="gap-2"
+              >
+                {isLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                Download Sample CSV
+              </Button>
+            </div>
+            <p className="text-xs text-center text-muted-foreground -mt-2">
+              Get a sample CSV customized with your organization&apos;s categories, accounts, and base currency
+            </p>
 
             <div className="space-y-2">
               <Label>Mapping Template (optional)</Label>
@@ -594,7 +643,7 @@ export function TransactionsImportWizard({
                   { field: "tags", label: "Tags", required: false },
                   { field: "secondaryAmount", label: "Secondary Amount", required: false },
                   { field: "secondaryCurrency", label: "Secondary Currency", required: false },
-                ].map(({ field, label, required }) => (
+                ].map(({ field, label }) => (
                   <div key={field} className="space-y-1">
                     <Label className="text-xs">{label}</Label>
                     <Select
